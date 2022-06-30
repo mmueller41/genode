@@ -11,7 +11,7 @@ struct ThreadTest::Main
 {
     Genode::Env &_env;
 
-    Main(env) : _env(env) {}
+    Main(Genode::Env &env) : _env(env) {}
 
     void execute() 
     {
