@@ -22,7 +22,7 @@ struct ThreadTest::Main
     }
 };
 
-void Genode::Component::construct(Genode::Env &env)
+void Component::construct(Genode::Env &env)
 {
     static ThreadTest::Main main(env);
     std::thread([&]
