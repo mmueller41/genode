@@ -1,30 +1,46 @@
 #include <base/component.h>
 #include <thread>
 #include <iostream>
-#include <chrono>
+#include <sched.h>
+#include <unistd.h>
 
 namespace ThreadTest {
-    struct Main;
+    class Test;
 }
 
-struct ThreadTest::Main
+class ThreadTest::Test
 {
-    Genode::Env &_env;
 
-    Main(Genode::Env &env) : _env(env) {}
+    public:
 
     void execute() 
     {
         while(true) {
-            std::cout << "Hello world" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            Genode::log("Hello world");
+            //std::cout << "Hello world" << std::endl;
+            //std::this_thread::sleep_for(std::chrono::seconds(5));
+            sleep(2);
         }
     }
 };
 
-void Component::construct(Genode::Env &env)
+int main(void)
 {
-    static ThreadTest::Main main(env);
-    std::thread([&]
-                { main.execute(); });
+    /* Create test posix thread via std::thread API */
+    ThreadTest::Test test;
+    auto test_thread = std::thread([&] { test.execute(); });
+    
+    /* Print native threads affinity */
+
+    test_thread.join();
+    return 0;
 }
+
+//void Component::construct(Genode::Env &env)
+//{
+    //static ThreadTest::Test test;
+    //Genode::log("ThreadTest constructed.");
+    //test.execute();
+    ////std::thread([&]
+                ////{ main.execute(); });
+//}
