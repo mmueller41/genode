@@ -19,7 +19,11 @@ class Thread_test::Test_thread : public Thread
     public:
         List_element<Test_thread> _list_element{this};
 
-        Test_thread(Env &env, uint16_t id, Location &location) : _env(env), _id(id) : Thread(env, Name("test_", location.xpos(), "x", location.ypos()), 4 * 4096, location, Weight(), env.cpu()) 
+        Test_thread(Env &env, uint16_t id, Location const &location) 
+        : 
+            _env(env), 
+            _id(id), 
+            Thread(env, Name("test_", location.xpos(), "x", location.ypos()), 4 * 4096, location, Weight(), env.cpu()) 
         { }
 
         void entry() override
