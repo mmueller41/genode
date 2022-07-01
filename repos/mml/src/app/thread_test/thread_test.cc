@@ -48,18 +48,28 @@ public:
     {
         Affinity::Space space = env.cpu().affinity_space();
 
-        for (unsigned i = 0; i < space.total(); i++) {
+        Genode::log("Size of Affinity space is ", space.total());
+        Genode::log("-----------------------------");
+        for (unsigned i = 1; i < space.total(); i++)
+        {
+            Affinity::Location loc = space.location_of_index(i);
+            Genode::log("1: x = ", loc.xpos(), " y = ", loc.ypos());
+        }
+        Genode::log("-----------------------------");
+
+        for (unsigned i = 1; i < space.total(); i++)
+        {
             Affinity::Location location = env.cpu().affinity_space().location_of_index(i);
             Test_thread *thread = new (_heap) Test_thread(env, (uint16_t)i, location);
             thread->start();
 
             _threads.insert(&thread->_list_element);
         }
-    }
+}
 };
 
 void Component::construct(Genode::Env &env)
 {
-    static Thread_test::Tester tester(env);
-    Genode::log("Thread tester constructed.");
+static Thread_test::Tester tester(env);
+Genode::log("Thread tester constructed.");
 }
