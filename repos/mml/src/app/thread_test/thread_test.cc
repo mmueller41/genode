@@ -50,7 +50,7 @@ public:
 
         for (unsigned i = 0; i < space.total(); i++) {
             Affinity::Location location = env.cpu().affinity_space().location_of_index(i);
-            Test_thread *thread = new (_heap) Test_thread(env, i, location);
+            Test_thread *thread = new (_heap) Test_thread(env, (uint16_t)i, location);
             thread->start();
 
             _threads.insert(&thread->_list_element);

@@ -37,7 +37,7 @@ install_config {
     </config>
 }
 set boot_modules { 
-    core init timer vfs.lib.so ld.lib.so thread_test
+    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so thread_test
 }
 build_boot_image $boot_modules
 append qemu_args "-nographic -m 64"
