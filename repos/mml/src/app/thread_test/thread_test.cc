@@ -2,6 +2,9 @@
 #include <timer_session/connection.h>
 #include <base/heap.h>
 #include <cstdint>
+#include <memory>
+#include <chrono>
+
 namespace Thread_test {
     class Tester;
     class Test_thread;
@@ -29,7 +32,10 @@ class Thread_test::Test_thread : public Thread
         {
             while(true) {
                 Genode::log("Pong from thread ", _id);
+                auto start = std::chrono::steady_clock::now ();
                 _timer.msleep(_id * 1000);
+                auto end = std::chrono::steady_clock::now();
+                Genode::log("Thread ", _id, " woke up afer", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
             }
         }
 };
@@ -65,11 +71,15 @@ public:
 
             _threads.insert(&thread->_list_element);
         }
-}
+        /* Test, whether unique_ptrs work */
+        auto unique_thread = std::make_unique<Thread>(env, 255, env.cpu().affinity_space().location_of_index(0));
+        unique_thread->start();
+    }
 };
 
 void Component::construct(Genode::Env &env)
 {
-static Thread_test::Tester tester(env);
-Genode::log("Thread tester constructed.");
+    Genode::Env::exec_static_constructors();
+    static Thread_test::Tester tester(env);
+    Genode::log("Thread tester constructed.");
 }
