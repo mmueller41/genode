@@ -34,11 +34,11 @@ int main(void) {
 
     Genode::log("Let's start some threads");
 
-    std::vector<Posix_playground::Chrono_thread&> thread_objs(4);
+    std::vector<Posix_playground::Chrono_thread*> thread_objs(4);
     std::vector<std::unique_ptr<std::thread>> thread_list(4);
 
     for (int i = 0; i < 4; i++) {
-        Posix_playground::Chrono_thread thread_objs[i] = *new Posix_playground::Chrono_thread(i);
+        Posix_playground::Chrono_thread thread_objs[i] = new Posix_playground::Chrono_thread(i);
         auto thread =  std::make_unique<std::thread>([&]
                                       { thread_objs[i].execute(); });
         thread_list.push_back(thread);
