@@ -72,14 +72,14 @@ public:
             _threads.insert(&thread->_list_element);
         }
         /* Test, whether unique_ptrs work */
-        auto unique_thread = std::make_unique<Thread>(env, 255, env.cpu().affinity_space().location_of_index(0));
+        auto unique_thread = std::make_unique<Test_thread>(env, 255, env.cpu().affinity_space().location_of_index(0));
         unique_thread->start();
     }
 };
 
 void Component::construct(Genode::Env &env)
 {
-    Genode::Env::exec_static_constructors();
+    env.exec_static_constructors();
     static Thread_test::Tester tester(env);
     Genode::log("Thread tester constructed.");
 }
