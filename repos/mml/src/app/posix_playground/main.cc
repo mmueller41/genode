@@ -24,7 +24,7 @@ class Posix_playground::Chrono_thread {
                 auto start = std::chrono::steady_clock::now();
                 std::this_thread::sleep_for(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::milliseconds(_id * 1000)));
                 auto end = std::chrono::steady_clock::now();
-                Genode::log("Thread ", _id, " woke up after ", std::chrono::duration_cast<std::chrono::milliseconds>(end - start));
+                Genode::log("Thread ", _id, " woke up after ", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
             }
         }
 };
