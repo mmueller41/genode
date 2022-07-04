@@ -38,7 +38,7 @@ struct Cpu_burn : Thread
 		while (true) {
 			_block.block();
 
-			while (!_stop) { }
+ 			while (!_stop) { }
 
 			_stop = false;
 		}
