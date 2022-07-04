@@ -32,10 +32,12 @@ class Thread_test::Test_thread : public Thread
         {
             while(true) {
                 Genode::log("Pong from thread ", _id);
-                auto start = std::chrono::steady_clock::now ();
+                auto start = _timer.elapsed_ms();
+                // auto start = std::chrono::steady_clock::now ();
                 _timer.msleep(_id * 1000);
-                auto end = std::chrono::steady_clock::now();
-                Genode::log("Thread ", _id, " woke up afer", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+                auto end = _timer.elapsed_ms();
+                // auto end = std::chrono::steady_clock::now();
+                Genode::log("Thread ", _id, " woke up afer", (end-start), " ms.");
             }
         }
 };
