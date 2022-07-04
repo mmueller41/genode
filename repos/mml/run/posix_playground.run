@@ -1,0 +1,46 @@
+build "core init timer app/posix_playground"
+create_boot_directory
+
+install_config {
+    <config>
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="CAP"/>
+            <service name="RM"/>
+            <service name="SIGNAL"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="1M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+        <start name="posix_playground">
+            <resource name="RAM" quantum="10M"/>
+            <route>
+                <service name="Timer"><child name="timer"/></service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+    </config>
+}
+
+set boot_modules {
+    core init timer vfs.lb.so ld.lib.so libc.lib.so libm.lib.so stdcxx.lib.so posix_playground
+}
+
+build_boot_image $boot_modules
+append qemu_args "-nographic -m 64"
