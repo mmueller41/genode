@@ -1,5 +1,5 @@
-TARGET = thread_test
-SRC_CC = thread_test.cc 
+TARGET = posix_playground
+SRC_CC = main.cc
 LIBS += base posix libm libc stdcxx 
 CXXFLAGS += -Wno-error
 
