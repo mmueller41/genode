@@ -74,8 +74,8 @@ public:
             _threads.insert(&thread->_list_element);
         }
         /* Test, whether unique_ptrs work */
-        auto unique_thread = std::unique_ptr<Test_thread>(new (_heap) Test_thread(env, 255, env.cpu().affinity_space().location_of_index(0)));
-        unique_thread->start();
+        //auto unique_thread = std::unique_ptr<Test_thread>(new (_heap) Test_thread(env, 255, env.cpu().affinity_space().location_of_index(0)));
+        //unique_thread->start();
     }
 };
 
