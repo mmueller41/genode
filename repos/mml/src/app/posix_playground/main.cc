@@ -37,7 +37,7 @@ int main(void) {
     std::vector<Posix_playground::Chrono_thread*> thread_objs(4);
     std::vector<std::thread*> thread_list(4);
 
-    for (std::uint16_t i = 0; i < 4; i++) {
+    for (std::uint16_t i = 1; i < 4; i++) {
         thread_objs[i] = new Posix_playground::Chrono_thread(i);
         auto thread =  new std::thread([&]
                                       { thread_objs[i]->execute(); });
