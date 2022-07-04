@@ -39,7 +39,7 @@ install_config {
 }
 
 set boot_modules {
-    core init timer vfs.lb.so ld.lib.so libc.lib.so libm.lib.so stdcxx.lib.so posix_playground
+    core init timer vfs.lib.so ld.lib.so libc.lib.so libm.lib.so stdcxx.lib.so posix_playground
 }
 
 build_boot_image $boot_modules
