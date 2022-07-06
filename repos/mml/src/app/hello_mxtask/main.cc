@@ -23,7 +23,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. */
 
 #include <base/component.h>
-#include <mxtasking/runtime.h>
+#include <mx/tasking/runtime.h>
 
 class HelloWorldTask : public mx::tasking::TaskInterface
 {
