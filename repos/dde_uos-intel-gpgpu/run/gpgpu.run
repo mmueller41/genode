@@ -49,6 +49,7 @@ append_platform_drv_config
 
 append config {
     <start name="gpgpu">
+		<provides> <service name="gpgpu"/> </provides>
         <resource name="RAM" quantum="32M"/>
     </start>
 </config>}
