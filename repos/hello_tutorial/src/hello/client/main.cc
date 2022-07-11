@@ -53,7 +53,9 @@ struct HelloClient {
 
 		while (true) {
 			int const sum = _hello.add(_a, _b);
-			Genode::log("added ", _a, " + ", _b, " = ", sum);
+			unsigned short id = _hello.id();
+
+			Genode::log(id, ": added ", _a, " + ", _b, " = ", sum);
 			_timer.msleep(_a*1000);
 			_b += 2;
 		}

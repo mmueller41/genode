@@ -37,6 +37,11 @@ struct Hello::Session_client : Genode::Rpc_client<Session>
 	{
 		return call<Rpc_add>(a, b);
 	}
+
+	unsigned short id() override
+	{
+		return call<Rpc_get_id>();
+	}
 };
 
 #endif /* _INCLUDE__HELLO_SESSION_H__CLIENT_H_ */
