@@ -37,6 +37,10 @@ struct Hello::Session_component : Genode::Rpc_object<Session>
 
 	int add(int a, int b) override {
 		return a + b; }
+
+	unsigned short id() override {
+		return _id;
+	}
 };
 
 
