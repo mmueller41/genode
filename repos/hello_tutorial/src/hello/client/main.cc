@@ -37,8 +37,8 @@ struct HelloClient {
 			return;
 		}
 
-		_a = _config.xml().attribute_value("a", 2);
-		_b = _config.xml().attribute_value("b", 5);	
+		_a = _config.xml().attribute_value("a", (int)2);
+		_b = _config.xml().attribute_value("b", (int)5);	
 	}
 
 	Genode::Signal_handler<HelloClient> _config_handler {
@@ -55,7 +55,7 @@ struct HelloClient {
 		Genode::log("hello test completed.");
 	}
 
-	HelloClient(Genode::Env &env, Hello::Connection &conn) : _env(env), _hello(conn)
+	HelloClient(Genode::Env &env, Hello::Connection &conn) : _env(env), _hello(conn), _a(5), _b(2)
 	{}
 };
 
