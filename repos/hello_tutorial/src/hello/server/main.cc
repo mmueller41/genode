@@ -28,7 +28,7 @@ namespace Hello {
 
 struct Hello::Session_component : Genode::Rpc_object<Session>
 {
-	unsigned int _id;
+	unsigned short _id;
 
 	Session_component(unsigned short id) : Genode::Rpc_object<Session>(), _id(id) {}
 	
