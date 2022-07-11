@@ -27,7 +27,14 @@ install_config {
 		<provides> <service name="Hello"/> </provides>
 	</start>
 	<start name="hello_client">
+		<binary name="hello_client"/>
 		<resource name="RAM" quantum="1M"/>
+		<config a="5" b="6"/>
+	</start>
+	<start name="hello_client2">
+		<binary name="hello_client"/>
+		<resource name="RAM" quantum="1M"/>
+		<config a="7" b="8"/>
 	</start>
 </config>}
 
