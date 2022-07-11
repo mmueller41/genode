@@ -24,6 +24,8 @@ struct Hello::Session : Genode::Session
 {
 	static const char *service_name() { return "Hello"; }
 
+	unsigned short _id;
+
 	enum { CAP_QUOTA = 2 };
 
 	virtual void say_hello() = 0;
