@@ -22,7 +22,7 @@ namespace Hello { struct Connection; }
 
 struct Hello::Connection : Genode::Connection<Session>, Session_client
 {
-	Connection(Genode::Env &env, unsigned short id)
+	Connection(Genode::Env &env)
 		: /* create session */
 		  Genode::Connection<Hello::Session>(env, session(env.parent(),
 														  "ram_quota=6K, cap_quota=4")),
