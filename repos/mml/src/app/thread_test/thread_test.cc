@@ -48,7 +48,7 @@ class Thread_test::Tester
 
 private:
     Env &_env;
-    Heap _heap{_env.ram(), _env.rm()};
+    Range_allocator _heap; //{_env.ram(), _env.rm()};
     Thread_list _threads{};
 
 public:
@@ -68,7 +68,7 @@ public:
         for (unsigned i = 1; i < space.total(); i++)
         {
             Affinity::Location location = env.cpu().affinity_space().location_of_index(i);
-            Test_thread *thread = new (_heap) Test_thread(env, (uint16_t)i, location);
+            Test_thread *thread = new (_heap.alloc_aligned(sizeof(Test_thread), 64)) Test_thread(env, (uint16_t)i, location);
             thread->start();
 
             _threads.insert(&thread->_list_element);

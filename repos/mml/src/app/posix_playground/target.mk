@@ -1,5 +1,5 @@
 TARGET = posix_playground
 SRC_CC = main.cc
 LIBS += base posix libm libc stdcxx 
-CXXFLAGS += -Wno-error
+CC_OPT += -Wno-error -Wno-permissive -fpermissive
 

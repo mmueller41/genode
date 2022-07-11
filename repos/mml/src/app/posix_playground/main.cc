@@ -1,9 +1,12 @@
 #include <thread>
-#include <base/component.h>
+#include <libc/component.h>
+#include <base/log.h>
 #include <chrono>
 #include <memory>
 #include <cstdint>
+#include <cstdlib>
 #include <vector>
+#include <unistd.h>
 
 namespace Posix_playground {
     class Chrono_thread;
@@ -19,12 +22,19 @@ class Posix_playground::Chrono_thread {
 
         void execute()
         {
+            std::chrono::time_point<std::chrono::steady_clock> start;
+            std::chrono::time_point<std::chrono::steady_clock> end;
+            
             while (true) {
-                Genode::log("Pong from Thread ", _id);
-                auto start = std::chrono::steady_clock::now();
-                std::this_thread::sleep_for(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::milliseconds(_id * 1000)));
-                auto end = std::chrono::steady_clock::now();
-                Genode::log("Thread ", _id, " woke up after ", std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
+                if (&this->_id == nullptr) {
+                    Genode::log("WTF? this is a nullptr!");
+                    return;
+                } 
+                Genode::log("Pong from Thread ", this->_id);
+                start = std::chrono::steady_clock::now();
+                sleep(this->_id);
+                end = std::chrono::steady_clock::now();
+                Genode::log("Thread ", _id, " woke up after ", std::chrono::duration_cast<std::chrono::seconds>(end - start).count());
             }
         }
 };
@@ -34,16 +44,32 @@ int main(void) {
 
     Genode::log("Let's start some threads");
 
-    std::vector<Posix_playground::Chrono_thread*> thread_objs(4);
+    std::vector<Posix_playground::Chrono_thread*> thread_objs(5);
     std::vector<std::thread*> thread_list(4);
 
-    for (std::uint16_t i = 1; i < 4; i++) {
-        thread_objs[i] = new Posix_playground::Chrono_thread(i);
-        auto thread =  new std::thread([&]
+    Genode::log("Let's use aligned memory for threads objects.");
+
+    for (int i = 0; i < 3; i++) {
+        Posix_playground::Chrono_thread *thread_obj;
+        if(posix_memalign((void**)(&thread_obj), 64, sizeof(Posix_playground::Chrono_thread))) {
+            Genode::error("Could not allocate thread object ", i);
+            continue;
+        }
+        Genode::log("Thread object ", (i+1), " is at address ", (void*)(thread_obj));
+
+        thread_objs[i] = new (thread_obj) Posix_playground::Chrono_thread((std::uint16_t)(i+1));
+        
+        auto thread =  new std::thread([thread_objs, i]
                                       { thread_objs[i]->execute(); });
-        thread_list.push_back(thread);
+        thread_list[i] = thread;
+        //thread->join();
+    }
+
+    for (auto thread : thread_list) {
         thread->join();
     }
     
+    while(true);
+
     return 0;
 }

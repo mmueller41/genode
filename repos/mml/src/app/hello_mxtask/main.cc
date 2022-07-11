@@ -22,31 +22,46 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. */
 
-#include <base/component.h>
-#include <mx/tasking/runtime.h>
+#include <libc/component.h>
+//#include <iostream>
 
+#include <mx/tasking/runtime.h>
+//#include <mx/system/environment.h>
+#include <mx/system/topology.h>
+
+  
 class HelloWorldTask : public mx::tasking::TaskInterface
 {
 public:
     constexpr HelloWorldTask() = default;
     ~HelloWorldTask() override = default;
 
-    mx::tasking::TaskResult execute(const std::uint16_t /*core_id*/, const std::uint16_t /*channel_id*/) override
+    mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override
     {
-        std::cout << "Hello World" << std::endl;
+        //std::cout << "Hello World" << std::endl;
 
+        Genode::log("Hello world");
         // Stop MxTasking runtime after this task.
         return mx::tasking::TaskResult::make_stop();
     }
 };
 
-void Component::construct(Genode::Env &env)
+
+
+void Libc::Component::construct(Libc::Env &env)
 {
     // Define which cores will be used (1 core here).
-    const auto cores = mx::util::core_set::build(1);
 
-    mx::system::Environment::env = env;
-    { // Scope for the MxTasking runtime.
+
+    Genode::log("Starting MxTasking ...");
+    mx::system::Environment::set_env(&env); 
+
+    Libc::with_libc([&] () { // Scope for the MxTasking runtime.
+        //mx::system::Environment::env = &env;
+        Genode::log("Initialized system environment for MxTasking");
+        Genode::log("Running on core ", mx::system::topology::core_id()); 
+        const auto cores = mx::util::core_set::build(1);
+        
 
         // Create a runtime for the given cores.
         mx::tasking::runtime_guard _{cores};
@@ -57,8 +72,15 @@ void Component::construct(Genode::Env &env)
 
         // Annotate the task to run on the first core.
         hello_world_task->annotate(cores.front());
+        Genode::log("Created new task.");
+
+        auto *task2 = mx::tasking::runtime::new_task<HelloWorldTask>(cores.front());
+        task2->annotate(cores.front());
 
         // Schedule the task.
+        Genode::log("Spawning new task.");
         mx::tasking::runtime::spawn(*hello_world_task);
-    }
+        mx::tasking::runtime::spawn(*task2);
+        Genode::log("Task spawned.");
+    });
 }
