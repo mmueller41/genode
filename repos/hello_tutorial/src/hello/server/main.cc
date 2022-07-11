@@ -18,7 +18,7 @@
 #include <root/component.h>
 #include <hello_session/hello_session.h>
 #include <base/rpc_server.h>
-
+#include <timer_session/connection.h>
 namespace Hello {
 	struct Session_component;
 	struct Root_component;
@@ -28,8 +28,12 @@ namespace Hello {
 
 struct Hello::Session_component : Genode::Rpc_object<Session>
 {
+	unsigned int _id;
+
+	Session_component(unsigned short id) : Genode::Rpc_object<Session>(), _id(id) {}
+	
 	void say_hello() override {
-		Genode::log("I am here... Hello."); }
+		Genode::log("I am here... Hello. My id is ", _id, "."); }
 
 	int add(int a, int b) override {
 		return a + b; }
@@ -41,19 +45,21 @@ class Hello::Root_component
 	public Genode::Root_component<Session_component>
 {
 	protected:
+		Timer::Connection &_timer;
 
 		Session_component *_create_session(const char *) override
 		{
 			Genode::log("creating hello session");
-			return new (md_alloc()) Session_component();
+			return new (md_alloc()) Session_component((unsigned short)_timer.elapsed_ms());
 		}
 
 	public:
 
 		Root_component(Genode::Entrypoint &ep,
-		               Genode::Allocator &alloc)
+		               Genode::Allocator &alloc,
+					   Timer::Connection &timer)
 		:
-			Genode::Root_component<Session_component>(ep, alloc)
+			Genode::Root_component<Session_component>(ep, alloc), _timer(timer)
 		{
 			Genode::log("creating root component");
 		}
@@ -63,6 +69,7 @@ class Hello::Root_component
 struct Hello::Main
 {
 	Genode::Env &env;
+	Timer::Connection _timer { env };
 
 	/*
 	 * A sliced heap is used for allocating session objects - thereby we
@@ -70,7 +77,7 @@ struct Hello::Main
 	 */
 	Genode::Sliced_heap sliced_heap { env.ram(), env.rm() };
 
-	Hello::Root_component root { env.ep(), sliced_heap };
+	Hello::Root_component root { env.ep(), sliced_heap, _timer };
 
 	Main(Genode::Env &env) : env(env)
 	{
