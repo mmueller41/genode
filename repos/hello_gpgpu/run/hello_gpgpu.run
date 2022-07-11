@@ -27,7 +27,7 @@ install_config {
 		<provides><service name="gpgpu"/></provides>
 	</start>
 	<start name="hello_gpgpu">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="10M"/>
 	</start>
 </config>}
 
