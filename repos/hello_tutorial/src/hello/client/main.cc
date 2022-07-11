@@ -56,7 +56,10 @@ struct HelloClient {
 	}
 
 	HelloClient(Genode::Env &env, Hello::Connection &conn) : _env(env), _hello(conn), _a(5), _b(2)
-	{}
+	{
+		_config.sigh(_config_handler);
+		_handle_config();
+	}
 };
 
 void
