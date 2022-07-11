@@ -21,8 +21,8 @@ struct HelloClient {
 	Genode::Env &_env;
 	Hello::Connection &_hello;
 
-	int _a;
-	int _b;
+	unsigned short _a;
+	unsigned short _b;
 
 	Genode::Attached_rom_dataspace _config{_env, "config"};
 
@@ -37,8 +37,8 @@ struct HelloClient {
 			return;
 		}
 
-		_a = _config.xml().attribute_value("a", (int)2);
-		_b = _config.xml().attribute_value("b", (int)5);	
+		_a = _config.xml().attribute_value("a", (unsigned short)2);
+		_b = _config.xml().attribute_value("b", (unsigned short)5);	
 	}
 
 	Genode::Signal_handler<HelloClient> _config_handler {
