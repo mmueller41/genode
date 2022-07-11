@@ -16,10 +16,12 @@
 #include <base/log.h>
 #include <base/attached_rom_dataspace.h>
 #include <hello_session/connection.h>
+#include <timer_session/connection.h>
 
 struct HelloClient {
 	Genode::Env &_env;
 	Hello::Connection &_hello;
+	Timer::Connection _timer{_env};
 
 	unsigned short _a;
 	unsigned short _b;
@@ -49,9 +51,12 @@ struct HelloClient {
 	{
 		_hello.say_hello();
 
-		int const sum = _hello.add(_a, _b);
-		Genode::log("added ", _a, " + ", _b, " = ", sum);
-
+		while (true) {
+			int const sum = _hello.add(_a, _b);
+			Genode::log("added ", _a, " + ", _b, " = ", sum);
+			_timer.msleep(_a*1000);
+			_b += 2;
+		}
 		Genode::log("hello test completed.");
 	}
 
