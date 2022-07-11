@@ -107,7 +107,7 @@ static void test_blocking_connect_timeout()
 
 	int s = socket(AF_INET, SOCK_STREAM, 0);
 
-	struct sockaddr_in addr;
+	struct  addr;
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(port_timeout);

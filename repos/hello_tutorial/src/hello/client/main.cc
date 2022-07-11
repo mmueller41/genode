@@ -60,7 +60,7 @@ struct HelloClient {
 		Genode::log("hello test completed.");
 	}
 
-	HelloClient(Genode::Env &env, Hello::Connection &conn) : _env(env), _a(5), _b(2), _hello(conn)
+	HelloClient(Genode::Env &env, Hello::Connection &conn) : _env(env), _hello(conn), _a(5), _b(2)
 	{
 		_config.sigh(_config_handler);
 		_handle_config();
@@ -71,7 +71,7 @@ void
 Component::construct(Genode::Env &env)
 {
 	Timer::Connection timer(env);
-	Hello::Connection hello(env, (unsigned short)timer.elapsed_ms());
+	Hello::Connection hello(env);
 
 	HelloClient client(env, hello);
 	client.run();
