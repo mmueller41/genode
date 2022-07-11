@@ -12,6 +12,7 @@ namespace Posix_playground {
     class Chrono_thread;
 }
 
+/* Thread using std::chrono to measure the time it sleeps */
 class Posix_playground::Chrono_thread {
 
     private:
@@ -20,7 +21,7 @@ class Posix_playground::Chrono_thread {
     public:
         Chrono_thread(std::uint16_t id) : _id(id) { }
 
-        void execute()
+        [[nodiscard]] void execute()
         {
             std::chrono::time_point<std::chrono::steady_clock> start;
             std::chrono::time_point<std::chrono::steady_clock> end;
