@@ -1,3 +1,3 @@
 [submodule "repos/dde_uos-intel-gpgpu/src/uos-intel-gpgpu"]
 	path = repos/dde_uos-intel-gpgpu/src/uos-intel-gpgpu
-	url = git@ess-git.inf.uos.de:software/uos-intel-gpgpu.git
+	url = https://ess.cs.uos.de/git/software/uos-intel-gpgpu.git
