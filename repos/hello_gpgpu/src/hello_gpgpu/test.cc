@@ -232,6 +232,18 @@ void run_gpgpu_test(Genode::Allocator_avl& alloc)
         }
     }
 	Genode::log("Task has finished with ", errors, " errors!");
+
+    // free stuff
+    errcode = clReleaseKernel(clKernel);
+	if(errcode != CL_SUCCESS) Genode::log("Error in releasing kernel");
+    errcode = clReleaseMemObject(clInBuff);
+	if(errcode != CL_SUCCESS) Genode::log("Error in releasing mem obj");
+    errcode = clReleaseMemObject(clOutBuff);
+	if(errcode != CL_SUCCESS) Genode::log("Error in releasing mem obj");
+    errcode = clReleaseCommandQueue(clCommandQue);
+	if(errcode != CL_SUCCESS) Genode::log("Error in releasing command queue");
+    errcode = clReleaseContext(clContext);
+	if(errcode != CL_SUCCESS) Genode::log("Error in releasing context");
   
     // free buffers
    alloc.free(m_in);

@@ -10,6 +10,12 @@
 extern "C" {
 #endif
 
+struct _cl_mem
+{
+    struct buffer_config bc;
+    bool ocl_allocated;
+};
+
 /* Genode */
 static Genode::Allocator_avl* genode_allocator;
 extern CL_API_ENTRY void CL_API_CALL
@@ -246,8 +252,7 @@ clRetainContext(cl_context context)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseContext(cl_context context)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
-    return CL_INVALID_VALUE;
+    return CL_SUCCESS;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
@@ -301,8 +306,7 @@ clRetainCommandQueue(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseCommandQueue(cl_command_queue command_queue)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
-    return CL_INVALID_VALUE;
+    return CL_SUCCESS;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
@@ -324,18 +328,23 @@ clCreateBuffer(cl_context   context,
                void *       host_ptr,
                cl_int *     errcode_ret)
 {
+    cl_mem clmem;
+    genode_allocator->alloc(sizeof(struct _cl_mem), (void**)&clmem);
     if(host_ptr == NULL)
     {
         genode_allocator->alloc_aligned(size, &host_ptr, 0x1000);
+        clmem->ocl_allocated = true;
+    }
+    else
+    {
+        clmem->ocl_allocated = false;
     }
 
-    struct buffer_config* bc;
-    genode_allocator->alloc(sizeof(struct buffer_config), (void**)&bc);
-    bc->buffer = host_ptr;
-    bc->buffer_size = size;
+    clmem->bc.buffer = host_ptr;
+    clmem->bc.buffer_size = size;
 
     *errcode_ret = CL_SUCCESS;
-    return (cl_mem)bc;
+    return clmem;
 }
 
 #ifdef CL_VERSION_1_1
@@ -424,9 +433,11 @@ clRetainMemObject(cl_mem memobj)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseMemObject(cl_mem memobj)
 {
-    struct buffer_config* bc = (struct buffer_config*)memobj;
-    genode_allocator->free(bc->buffer);
-    genode_allocator->free(bc);
+    if(memobj->ocl_allocated && !memobj->bc.non_pointer_type)
+    {
+        genode_allocator->free(memobj->bc.buffer);
+    }
+    genode_allocator->free(memobj);
     return CL_SUCCESS;
 }
 
@@ -583,13 +594,8 @@ clCreateProgramWithBinary(cl_context                     context,
         return NULL;
     }
 
-    struct kernel_config* kc;
-    genode_allocator->alloc(sizeof(struct kernel_config), (void**)&kc);
-
-    kc->binary = (uint8_t*)binaries[0];
-
     *errcode_ret = CL_SUCCESS;
-    return (cl_program)kc;
+    return (cl_program)binaries[0];
 }
 
 #ifdef CL_VERSION_1_2
@@ -631,9 +637,7 @@ clRetainProgram(cl_program program)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseProgram(cl_program program)
 {
-    struct kernel_config* kc = (struct kernel_config*)program;
-    genode_allocator->free(kc->buffConfigs);
-    genode_allocator->free(kc);
+
     return CL_SUCCESS;
 }
 
@@ -749,7 +753,10 @@ clCreateKernel(cl_program      program,
                const char *    kernel_name,
                cl_int *        errcode_ret)
 {
-    struct kernel_config* kc = (struct kernel_config*)program;
+    // create kernel and set binary
+    struct kernel_config* kc;
+    genode_allocator->alloc(sizeof(struct kernel_config), (void**)&kc);
+    kc->binary = (uint8_t*)program;
 
     // preallocated 32 buff configs;
     genode_allocator->alloc(32 * sizeof(struct buffer_config), (void**)&kc->buffConfigs);
@@ -793,8 +800,10 @@ clRetainKernel(cl_kernel    kernel)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseKernel(cl_kernel   kernel)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
-    return CL_INVALID_VALUE;
+    struct kernel_config* kc = (struct kernel_config*)kernel;
+    genode_allocator->free(kc->buffConfigs);
+    genode_allocator->free(kc);
+    return CL_SUCCESS;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
@@ -810,8 +819,8 @@ clSetKernelArg(cl_kernel    kernel,
 
     if(arg_size == sizeof(cl_mem))
     {
-        struct buffer_config** bc = (struct buffer_config**)arg_value;
-        kc->buffConfigs[arg_index] = **bc;
+        cl_mem* clmem = (cl_mem*)arg_value;
+        kc->buffConfigs[arg_index] = (*clmem)->bc;
     }
     else
     {
@@ -994,8 +1003,7 @@ clGetEventProfilingInfo(cl_event            event,
 CL_API_ENTRY cl_int CL_API_CALL
 clFlush(cl_command_queue command_queue)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
-    return CL_INVALID_VALUE;
+    return CL_SUCCESS;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
@@ -1022,8 +1030,7 @@ clEnqueueReadBuffer(cl_command_queue    command_queue,
         return CL_INVALID_VALUE;
     }
 
-    struct buffer_config* bc = (struct buffer_config*)buffer;
-    uint8_t* src = (uint8_t*)bc->buffer;
+    uint8_t* src = (uint8_t*)buffer->bc.buffer;
     uint8_t* dst = (uint8_t*)ptr;
     for(size_t i = 0; i < size; i++)
     {
@@ -1073,9 +1080,8 @@ clEnqueueWriteBuffer(cl_command_queue   command_queue,
         return CL_INVALID_VALUE;
     }
 
-    struct buffer_config* bc = (struct buffer_config*)buffer;
     uint8_t* src = (uint8_t*)ptr;
-    uint8_t* dst = (uint8_t*)bc->buffer;
+    uint8_t* dst = (uint8_t*)buffer->bc.buffer;
     for(size_t i = 0; i < size; i++)
     {
         dst[i] = src[i];
