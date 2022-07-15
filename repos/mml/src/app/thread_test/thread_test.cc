@@ -48,7 +48,7 @@ class Thread_test::Tester
 
 private:
     Env &_env;
-    Heap _heap; //{_env.ram(), _env.rm()};
+    Heap _heap {_env.ram(), _env.rm()};
     Thread_list _threads{};
 
 public:
