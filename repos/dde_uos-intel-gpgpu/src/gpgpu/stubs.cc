@@ -47,12 +47,12 @@ extern "C" uint32_t calculatePCIConfigHeaderAddress(uint8_t bus, uint8_t device,
 
 extern "C" uint32_t readPCIConfigSpace(uint32_t addr)
 {
-    return _global_gpgpu_genode->readPCI(addr);
+    return _global_gpgpu_genode->readPCI((uint8_t)addr);
 }
 
 extern "C" void writePCIConfigSpace(uint32_t address, uint32_t value)
 {
-    _global_gpgpu_genode->writePCI(address, value);
+    _global_gpgpu_genode->writePCI((uint8_t)address, value);
 }
 
 // address model

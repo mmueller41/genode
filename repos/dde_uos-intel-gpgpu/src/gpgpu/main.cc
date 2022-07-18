@@ -33,6 +33,10 @@ void Component::construct(Genode::Env& e)
     {
         Genode::error("mem alignment failed: ", addr);
     }
+    if(virt_to_phys(test) == nullptr)
+    {
+        Genode::error("mem phys addr NULL");
+    }
     for(int i = 0; i < 0x1000; i++)
     {
         test[i] = 0x42;

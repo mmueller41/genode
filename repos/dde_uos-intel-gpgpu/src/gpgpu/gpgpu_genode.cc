@@ -20,9 +20,22 @@ gpgpu_genode::gpgpu_genode(Env& e) : env(e), heap{ e.ram(), e.rm() }, alloc(&hea
     const unsigned long size = 0x1000 * 0x1000;
 
     // allocate chunk of ram
-    ram_cap = e.ram().alloc(size);
+    //ram_cap = e.ram().alloc(size);
+    size_t donate = size;
+    ram_cap =
+        retry<Out_of_ram>(
+            [&] () {
+                return retry<Out_of_caps>(
+                    [&] () { return pci.alloc_dma_buffer(size, UNCACHED); },
+                    [&] () { pci.upgrade_caps(2); });
+            },
+            [&] () {
+                pci.upgrade_ram(donate);
+                donate = donate * 2 > size ? 4096 : donate * 2;
+            });
     mapped_base = e.rm().attach(ram_cap);
-    base = Dataspace_client(ram_cap).phys_addr();
+    base = pci.dma_addr(ram_cap);
+    //base = Dataspace_client(ram_cap).phys_addr();
 
     // use this ram for allocator
     alloc.add_range(mapped_base, size);
@@ -37,9 +50,15 @@ gpgpu_genode::~gpgpu_genode()
 
 void* gpgpu_genode::aligned_alloc(uint32_t alignment, uint32_t size)
 {
-    void* ptr;
-    alloc.alloc_aligned(size, &ptr, alignment);
-    return ptr;
+    return alloc.alloc_aligned(size, alignment).convert<void *>(
+
+		[&] (void *ptr) { return ptr; },
+
+		[&] (Genode::Range_allocator::Alloc_error) -> void * {
+            Genode::error("[GPU] Error in driver allocation!");
+            return nullptr; 
+        }
+    );
 }
 
 void gpgpu_genode::free(void* addr)
@@ -78,13 +97,13 @@ void gpgpu_genode::createPCIConnection(uint8_t bus, uint8_t device, uint8_t func
     }
 }
 
-uint32_t gpgpu_genode::readPCI(uint32_t addr)
+uint32_t gpgpu_genode::readPCI(uint8_t addr)
 {
     Platform::Device_client client(dev);
     return client.config_read(addr, Platform::Device::ACCESS_32BIT);
 }
 
-void gpgpu_genode::writePCI(uint32_t addr, uint32_t val)
+void gpgpu_genode::writePCI(uint8_t addr, uint32_t val)
 {
     Platform::Device_client client(dev);
     pci.with_upgrade([&] () {

@@ -11,8 +11,8 @@ using namespace Genode;
 #include <dataspace/client.h>
 
 // pci
-#include <platform_session/connection.h>
-#include <platform_device/client.h>
+#include <legacy/x86/platform_session/connection.h>
+#include <legacy/x86/platform_device/client.h>
 #include <io_mem_session/connection.h>
 #include <io_port_session/connection.h>
 
@@ -107,7 +107,7 @@ public:
      * @param addr the address to read from
      * @return uint32_t the value
      */
-    uint32_t readPCI(uint32_t addr);
+    uint32_t readPCI(uint8_t addr);
 
     /**
      * @brief write to pci config space (some register are protected by genode!)
@@ -115,7 +115,7 @@ public:
      * @param addr the address to write to
      * @param val the value to write
      */
-    void writePCI(uint32_t addr, uint32_t val);
+    void writePCI(uint8_t addr, uint32_t val);
 
     /**
      * @brief Get the Virt Bar Addr object
