@@ -42,8 +42,8 @@ append config {
         <start name="posix_playground">
             <resource name="RAM" quantum="10M"/>
             <config>
-                <vfs> <dir name="dev"> <log/> </dir> </vfs>
-                <libc stdout="/dev/log"/>
+                <vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
             </config>
             <route>
                 <service name="Timer"><child name="timer"/></service>
