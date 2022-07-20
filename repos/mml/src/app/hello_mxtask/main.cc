@@ -67,7 +67,7 @@ void Libc::Component::construct(Libc::Env &env)
         mx::tasking::runtime_guard _{cores};
 
         // Create and profile and write it to stdout
-        mx::tasking::runtime::profile(std::cout);
+        mx::tasking::runtime::profile("/dev/log");
 
         // Create an instance of the HelloWorldTask with the current core as first
         // parameter. The core is required for memory allocation.
