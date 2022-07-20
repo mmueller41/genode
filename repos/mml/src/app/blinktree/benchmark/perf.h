@@ -1,8 +1,8 @@
 #pragma once
 #include <algorithm>
-//#include <asm/unistd.h>
+#include <asm/unistd.h>
 #include <cstring>
-//#include <linux/perf_event.h> // TODO: Find Genode equivalent
+#include <linux/perf_event.h> // TODO: Find Genode equivalent
 #include <string>
 #include <sys/ioctl.h>
 #include <unistd.h>
