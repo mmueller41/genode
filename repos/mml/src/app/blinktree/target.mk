@@ -3,7 +3,7 @@ TARGET = blinktree
 SRC_MXBENCH = benchmark/workload_set.cpp
 SRC_MXBENCH += benchmark/workload.cpp
 SRC_MXBENCH += benchmark/cores.cpp
-SRC_MXBENCH += benchmark/perf.cpp
+#SRC_MXBENCH += benchmark/perf.cpp
 SRC_MXBENCH += benchmark/string_util.cpp
 # source files for blinktree benchmark
 SRC_BTREE += blinktree_benchmark/main.cpp
