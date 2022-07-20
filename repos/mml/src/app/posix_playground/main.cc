@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <vector>
 #include <unistd.h>
+#include <iostream>
 
 namespace Posix_playground {
     class Chrono_thread;
@@ -21,7 +22,7 @@ class Posix_playground::Chrono_thread {
     public:
         Chrono_thread(std::uint16_t id) : _id(id) { }
 
-        [[nodiscard]] void execute()
+        void execute()
         {
             std::chrono::time_point<std::chrono::steady_clock> start;
             std::chrono::time_point<std::chrono::steady_clock> end;
@@ -42,6 +43,8 @@ class Posix_playground::Chrono_thread {
 
 int main(void) {
     Genode::log("Starting POSIX stdcxx playground");
+
+    std::cout << "Testing stdout" << std::endl;
 
     Genode::log("Let's start some threads");
 
