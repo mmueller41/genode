@@ -1,0 +1,73 @@
+set build_components {
+    core init timer app/blinktree
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+build $build_components
+
+create_boot_directory
+
+
+set config {
+    <config>
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="RM"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="1M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+}
+
+append_platform_drv_config
+
+append config {
+        <start name="blinktree">
+            <resource name="RAM" quantum="8000M"/>
+            <route>
+                <service name="Timer"> <child name="timer"/> </service>
+                <any-service> <parent/> <any-child/> </any-service>
+            </route>
+            <config>
+                <vfs>
+                    <dir name="dev"> 
+                        <log/> 
+                        <inline name="rtc">2022-07-20 14:30</inline> 
+                    </dir>
+                    <dir name="workloads">
+                        <rom name="fill_randint_workloada"/>
+                        <rom name="mixed_randint_workloada"/>
+                    </dir>
+                </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+        </start>
+    </config>
+}
+
+install_config $config
+
+set boot_modules { 
+    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so blinktree fill_randint_workloada mixed_randint_workloada
+}
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+append qemu_args "-nographic -m 64"
