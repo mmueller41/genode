@@ -184,6 +184,8 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
+    char *args[] = {"blinktree", "1:4", "-o /dev/log"};
+
     Libc::with_libc([&]()
-                    { main(3, {"blinktree", "1:4", "-o /dev/log"}); });
+                    { main(3, args); });
 }
