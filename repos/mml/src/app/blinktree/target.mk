@@ -1,3 +1,5 @@
+INC_DIR=$(REP_DIR)/src/app/blinktree
+
 TARGET = blinktree
 # soure file for benchmark framework
 SRC_MXBENCH = benchmark/workload_set.cpp
@@ -11,5 +13,5 @@ SRC_BTREE += blinktree_benchmark/benchmark.cpp
 
 SRC_CC = ${SRC_MXBENCH} ${SRC_BTREE}
 LIBS += base libc stdcxx mxtasking     
-CC_OPT += -Wno-error -fno-aligned-new -I.
+CC_OPT += -Wno-error -fno-aligned-new -I$(INC_DIR)
 CC_CXX_WARN_STRICT =
