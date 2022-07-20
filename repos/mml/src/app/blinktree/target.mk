@@ -11,5 +11,5 @@ SRC_BTREE += blinktree_benchmark/benchmark.cpp
 
 SRC_CC = ${SRC_MXBENCH} ${SRC_BTREE}
 LIBS += base libc stdcxx mxtasking     
-CC_OPT += -Wno-error -fno-aligned-new
+CC_OPT += -Wno-error -fno-aligned-new -I.
 CC_CXX_WARN_STRICT =
