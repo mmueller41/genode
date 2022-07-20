@@ -19,7 +19,7 @@ Benchmark::Benchmark(benchmark::Cores &&cores, const std::uint16_t iterations, s
       _result_file_name(std::move(result_file_name)), _statistic_file_name(std::move(statistic_file_name)),
       _tree_file_name(std::move(tree_file_name)), _profile(profile)
 {
-#ifdef 0
+#ifdef PERF_SUPPORT
     if (use_performance_counter)
     {
         this->_chronometer.add(benchmark::Perf::CYCLES);
@@ -71,7 +71,7 @@ void Benchmark::start()
     {
         mx::tasking::runtime::profile(this->profile_file_name());
     }
-#ifdef 0
+#ifdef PERF_SUPPORT
     this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
                              this->_current_iteration + 1, this->_cores.current());
 #endif
@@ -131,7 +131,7 @@ void Benchmark::requests_finished()
             {
                 std::ofstream statistic_file_stream(this->_statistic_file_name, std::ofstream::app);
                 nlohmann::json statistic_json;
-#ifdef 0
+#ifdef PERF_SUPPORT
                 statistic_json["iteration"] = result.iteration();
                 statistic_json["cores"] = result.core_count();
                 statistic_json["phase"] = result.phase();
@@ -147,7 +147,7 @@ void Benchmark::requests_finished()
                 {
                     const auto core_id = std::int32_t{this->_cores.current()[i]};
                     const auto core_id_string = std::to_string(core_id);
-#ifdef 0
+#ifdef PERF_SUPPORT
                     statistic_json["scheduled"][core_id_string] =
                         result.scheduled_tasks(core_id) / double(result.operation_count());
                     statistic_json["scheduled-on-core"][core_id_string] =
