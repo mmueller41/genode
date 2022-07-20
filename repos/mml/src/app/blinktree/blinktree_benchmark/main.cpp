@@ -2,7 +2,7 @@
 #include <argparse.hpp>
 #include <benchmark/cores.h>
 #include <mx/system/environment.h>
-#include <mx/system/thread.h>
+//#include <mx/system/thread.h>
 #include <mx/tasking/runtime.h>
 #include <mx/util/core_set.h>
 #include <tuple>
@@ -29,7 +29,6 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(int count_argument
  */
 int main(int count_arguments, char **arguments)
 {
-    int count_arguments = 
     if (mx::system::Environment::is_numa_balancing_enabled())
     {
         std::cout << "[Warn] NUMA balancing may be enabled, set '/proc/sys/kernel/numa_balancing' to '0'" << std::endl;

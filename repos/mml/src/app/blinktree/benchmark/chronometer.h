@@ -61,10 +61,10 @@ public:
           _scheduled_tasks_on_core(std::move(scheduled_tasks_on_core)),
           _scheduled_tasks_off_core(std::move(scheduled_tasks_off_core)), _worker_fills(std::move(worker_fills))
     {
-        for (auto &c : counter)
+        /*for (auto &c : counter)
         {
             _performance_counter.emplace_back(std::make_pair(c.name(), c.read()));
-        }
+        }*/
     }
 
     ~InterimResult() = default;
@@ -192,7 +192,7 @@ public:
                 _current_iteration,
                 _core_set.size(),
                 milliseconds,
-                _perf.counter(),
+                //_perf.counter(),
                 statistic_map(mx::tasking::profiling::Statistic::Executed),
                 statistic_map(mx::tasking::profiling::Statistic::ExecutedReader),
                 statistic_map(mx::tasking::profiling::Statistic::ExecutedWriter),
