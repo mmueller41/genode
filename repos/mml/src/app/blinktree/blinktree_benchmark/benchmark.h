@@ -4,7 +4,7 @@
 #include "request_scheduler.h"
 #include <array>
 #include <atomic>
-#include <benchmark/chronometer.h>
+//#include <benchmark/chronometer.h>
 #include <benchmark/cores.h>
 #include <benchmark/workload.h>
 #include <cstdint>
@@ -93,7 +93,7 @@ private:
     alignas(64) std::vector<RequestSchedulerTask *> _request_scheduler;
 
     // Chronometer for starting/stopping time and performance counter.
-    alignas(64) benchmark::Chronometer<std::uint16_t> _chronometer;
+    //alignas(64) benchmark::Chronometer<std::uint16_t> _chronometer;
 
     /**
      * @return Name of the file to write profiling results to.

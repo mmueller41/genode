@@ -19,6 +19,7 @@ Benchmark::Benchmark(benchmark::Cores &&cores, const std::uint16_t iterations, s
       _result_file_name(std::move(result_file_name)), _statistic_file_name(std::move(statistic_file_name)),
       _tree_file_name(std::move(tree_file_name)), _profile(profile)
 {
+#ifdef 0
     if (use_performance_counter)
     {
         this->_chronometer.add(benchmark::Perf::CYCLES);
@@ -27,7 +28,7 @@ Benchmark::Benchmark(benchmark::Cores &&cores, const std::uint16_t iterations, s
         this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_NTA);
         this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_WRITE);
     }
-
+#endif
     std::cout << "core configuration: \n" << this->_cores.dump(2) << std::endl;
 
     this->_workload.build(fill_workload_file, mixed_workload_file);
@@ -70,8 +71,10 @@ void Benchmark::start()
     {
         mx::tasking::runtime::profile(this->profile_file_name());
     }
+#ifdef 0
     this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
                              this->_current_iteration + 1, this->_cores.current());
+#endif
 }
 
 const mx::util::core_set &Benchmark::core_set()
@@ -110,15 +113,15 @@ void Benchmark::requests_finished()
     if (open_requests == 0U) // All request schedulers are done.
     {
         // Stop and print time (and performance counter).
-        const auto result = this->_chronometer.stop(this->_workload.size());
+        //const auto result = this->_chronometer.stop(this->_workload.size());
         mx::tasking::runtime::stop();
-        std::cout << result << std::endl;
+        //std::cout << result << std::endl;
 
         // Dump results to file.
         if (this->_result_file_name.empty() == false)
         {
             std::ofstream result_file_stream(this->_result_file_name, std::ofstream::app);
-            result_file_stream << result.to_json().dump() << std::endl;
+            //result_file_stream << result.to_json().dump() << std::endl;
         }
 
         // Dump statistics to file.
@@ -128,9 +131,11 @@ void Benchmark::requests_finished()
             {
                 std::ofstream statistic_file_stream(this->_statistic_file_name, std::ofstream::app);
                 nlohmann::json statistic_json;
+#ifdef 0
                 statistic_json["iteration"] = result.iteration();
                 statistic_json["cores"] = result.core_count();
                 statistic_json["phase"] = result.phase();
+#endif
                 statistic_json["scheduled"] = nlohmann::json();
                 statistic_json["scheduled-on-channel"] = nlohmann::json();
                 statistic_json["scheduled-off-channel"] = nlohmann::json();
@@ -142,6 +147,7 @@ void Benchmark::requests_finished()
                 {
                     const auto core_id = std::int32_t{this->_cores.current()[i]};
                     const auto core_id_string = std::to_string(core_id);
+#ifdef 0
                     statistic_json["scheduled"][core_id_string] =
                         result.scheduled_tasks(core_id) / double(result.operation_count());
                     statistic_json["scheduled-on-core"][core_id_string] =
@@ -156,6 +162,7 @@ void Benchmark::requests_finished()
                         result.executed_writer_tasks(core_id) / double(result.operation_count());
                     statistic_json["fill"][core_id_string] =
                         result.worker_fills(core_id) / double(result.operation_count());
+#endif
                 }
 
                 statistic_file_stream << statistic_json.dump(2) << std::endl;

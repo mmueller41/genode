@@ -48,7 +48,7 @@ template <typename P> class InterimResult
 public:
     InterimResult(const std::uint64_t operation_count, const P &phase, const std::uint16_t iteration,
                   const std::uint16_t core_count, const std::chrono::milliseconds time,
-                  /*std::vector<PerfCounter> &counter,*/ std::unordered_map<std::uint16_t, std::uint64_t> executed_tasks,
+                  std::vector<PerfCounter> &counter, std::unordered_map<std::uint16_t, std::uint64_t> executed_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> executed_reader_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> executed_writer_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> scheduled_tasks,
