@@ -28,45 +28,40 @@ class Posix_playground::Chrono_thread {
             std::chrono::time_point<std::chrono::steady_clock> end;
             
             while (true) {
-                if (&this->_id == nullptr) {
-                    Genode::log("WTF? this is a nullptr!");
-                    return;
-                } 
-                Genode::log("Pong from Thread ", this->_id);
+                std::cout << "Pong from Thread " << this->_id << std::endl;
                 start = std::chrono::steady_clock::now();
+                
                 sleep(this->_id);
+                
                 end = std::chrono::steady_clock::now();
-                Genode::log("Thread ", _id, " woke up after ", std::chrono::duration_cast<std::chrono::seconds>(end - start).count());
+                std::cout << "Thread " << _id << " woke up after " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << std::endl;
             }
         }
 };
 
 int main(void) {
-    Genode::log("Starting POSIX stdcxx playground");
+    std::cout << "Starting POSIX stdcxx playground" << std::endl;
 
-    std::cout << "Testing stdout" << std::endl;
-
-    Genode::log("Let's start some threads");
+    std::cout << "Let's start some threads" << std::endl;
 
     std::vector<Posix_playground::Chrono_thread*> thread_objs(5);
     std::vector<std::thread*> thread_list(4);
 
-    Genode::log("Let's use aligned memory for threads objects.");
+    std::cout << "Let's use aligned memory for threads objects." << std::endl;
 
     for (int i = 0; i < 3; i++) {
         Posix_playground::Chrono_thread *thread_obj;
         if(posix_memalign((void**)(&thread_obj), 64, sizeof(Posix_playground::Chrono_thread))) {
-            Genode::error("Could not allocate thread object ", i);
+            std::cerr << "Could not allocate thread object " << i << std::endl;
             continue;
         }
-        Genode::log("Thread object ", (i+1), " is at address ", (void*)(thread_obj));
+        std::cout << "Thread object " << (i + 1) << " is at address " << (void *)(thread_obj) << std::endl;
 
         thread_objs[i] = new (thread_obj) Posix_playground::Chrono_thread((std::uint16_t)(i+1));
         
         auto thread =  new std::thread([thread_objs, i]
                                       { thread_objs[i]->execute(); });
         thread_list[i] = thread;
-        //thread->join();
     }
 
     for (auto thread : thread_list) {
