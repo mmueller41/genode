@@ -49,12 +49,22 @@ append config {
             </route>
             <config>
                 <target name="hello_mxtask"/>
+                <config>
+                    <vfs> <dir name="dev"> 
+                        <log/> 
+                        <inline name="rtc">2022-07-20 14:30</inline> 
+					    <terminal raw="yes"/>
+                     </dir> 
+				    <dir name="pipe"> <pipe/> </dir> </vfs>
+                    <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
+                </config>
+                </target>
                 <vfs> <dir name="dev"> 
                     <log/> 
                     <inline name="rtc">2022-07-20 14:30</inline> 
-					<terminal raw="yes"/>
-                </dir> 
-				<dir name="pipe"> <pipe/> </dir> </vfs>
+                    <terminal raw="yes"/>
+                    </dir> 
+                <dir name="pipe"> <pipe/> </dir> </vfs>
                 <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
             </config>
         </start>
