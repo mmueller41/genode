@@ -180,12 +180,14 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, in
 }
 
 void Libc::Component::construct(Libc::Env &env) {
-    std::cout << "Starting B-link tree benchmark" << std::endl;
 
     mx::system::Environment::set_env(&env);
 
-    char *args[] = {"blinktree", "1:4", "-o /dev/log"};
+    char *args[] = {"blinktree_benchmark", "1:4", "-o /dev/log"};
 
     Libc::with_libc([&]()
-                    { bt_main(env, 3, args); });
+                    { 
+                        std::cout << "Starting B-link tree benchmark" << std::endl;
+                        bt_main(env, 3, args); 
+                    });
 }
