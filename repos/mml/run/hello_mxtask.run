@@ -99,7 +99,7 @@ proc binary_name_gdbserver_platform_lib_so { } {
 }
 
 set boot_modules { 
-    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so pc_uart_drv vfs_pipe.lib.so gdb_monitor gdbserver_platform.lib.so hello_mxtask
+    core init timer vfs.lib.so libm.lib.so libc.lib.so stdcxx.lib.so pc_uart_drv vfs_pipe.lib.so gdb_monitor gdbserver_platform.lib.so ld.lib.so hello_mxtask
 }
 
 append_platform_drv_boot_modules
