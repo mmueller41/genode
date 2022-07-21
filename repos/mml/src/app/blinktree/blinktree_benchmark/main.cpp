@@ -183,11 +183,11 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
-    char *args[] = {"blinktree_benchmark", "-o /dev/log", "1:4"};
+    char *args[] = {"blinktree_benchmark", "1:4"};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree benchmark" << std::endl;
-                        bt_main(env, 3, args); 
+                        bt_main(env, 2, args); 
                     });
 }
