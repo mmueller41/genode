@@ -13,6 +13,7 @@
 #include <mx/util/core_set.h>
 #include <string>
 #include <vector>
+#include <libc/component.h>
 
 namespace application::blinktree_benchmark {
 /**
@@ -21,7 +22,7 @@ namespace application::blinktree_benchmark {
 class Benchmark final : public Listener
 {
 public:
-    Benchmark(benchmark::Cores &&, std::uint16_t iterations, std::string &&fill_workload_file,
+    Benchmark(Libc::Env &env, benchmark::Cores &&, std::uint16_t iterations, std::string &&fill_workload_file,
               std::string &&mixed_workload_file, bool use_performance_counter,
               mx::synchronization::isolation_level node_isolation_level,
               mx::synchronization::protocol preferred_synchronization_method, bool print_tree_statistics,

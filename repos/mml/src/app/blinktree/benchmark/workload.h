@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstdint>
 #include <utility>
+#include <libc/component.h>
 
 namespace benchmark {
 class Workload
@@ -13,7 +14,7 @@ class Workload
     friend std::ostream &operator<<(std::ostream &stream, const Workload &workload);
 
 public:
-    Workload() noexcept = default;
+    Workload(Libc::Env &env) : _workload_set(env)  {}
     ~Workload() noexcept = default;
 
     [[maybe_unused]] void build(const std::string &fill_workload_file, const std::string &mixed_workload_file)

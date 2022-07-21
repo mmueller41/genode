@@ -7,7 +7,7 @@
 
 using namespace application::blinktree_benchmark;
 
-Benchmark::Benchmark(benchmark::Cores &&cores, const std::uint16_t iterations, std::string &&fill_workload_file,
+Benchmark::Benchmark(Libc::Env &env, benchmark::Cores &&cores, const std::uint16_t iterations, std::string &&fill_workload_file,
                      std::string &&mixed_workload_file, const bool use_performance_counter,
                      const mx::synchronization::isolation_level node_isolation_level,
                      const mx::synchronization::protocol preferred_synchronization_method,
@@ -17,7 +17,7 @@ Benchmark::Benchmark(benchmark::Cores &&cores, const std::uint16_t iterations, s
       _preferred_synchronization_method(preferred_synchronization_method),
       _print_tree_statistics(print_tree_statistics), _check_tree(check_tree),
       _result_file_name(std::move(result_file_name)), _statistic_file_name(std::move(statistic_file_name)),
-      _tree_file_name(std::move(tree_file_name)), _profile(profile)
+      _tree_file_name(std::move(tree_file_name)), _profile(profile), _workload(env)
 {
 #ifdef PERF_SUPPORT
     if (use_performance_counter)

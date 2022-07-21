@@ -27,7 +27,7 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(int count_argument
  *
  * @return Return code of the application.
  */
-int main(int count_arguments, char **arguments)
+int bt_main(Libc::Env &env, int count_arguments, char **arguments)
 {
     if (mx::system::Environment::is_numa_balancing_enabled())
     {
@@ -53,7 +53,7 @@ int main(int count_arguments, char **arguments)
     return 0;
 }
 
-std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(int count_arguments, char **arguments)
+std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, int count_arguments, char **arguments)
 {
     // Set up arguments.
     argparse::ArgumentParser argument_parser("blinktree_benchmark");
@@ -169,7 +169,7 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(int count_argument
 
     // Create the benchmark.
     auto *benchmark =
-        new Benchmark(std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
+        new Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
                       std::move(workload_files[1]), argument_parser.get<bool>("-p"), isolation_level,
                       preferred_synchronization_method, argument_parser.get<bool>("--print-stats"),
                       argument_parser.get<bool>("--disable-check") == false, argument_parser.get<std::string>("-o"),
@@ -187,5 +187,5 @@ void Libc::Component::construct(Libc::Env &env) {
     char *args[] = {"blinktree", "1:4", "-o /dev/log"};
 
     Libc::with_libc([&]()
-                    { main(3, args); });
+                    { bt_main(env, 3, args); });
 }
