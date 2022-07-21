@@ -10,7 +10,7 @@ lappend build_components "lib/gdbserver_platform-$::env(KERNEL)"
 build $build_components
 
 create_boot_directory
-
+import_from_depot [depot_user]/src/vfs_pipe
 
 set config {
     <config>
@@ -49,8 +49,13 @@ append config {
             </route>
             <config>
                 <target name="hello_mxtask"/>
-                <vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
-                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+                <vfs> <dir name="dev"> 
+                    <log/> 
+                    <inline name="rtc">2022-07-20 14:30</inline> 
+					<terminal raw="yes"/>
+                </dir> 
+				<dir name="pipe"> <pipe/> </dir> </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
             </config>
         </start>
         <start name="pc_uart_drv">
