@@ -168,8 +168,9 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, in
     }
 
     // Create the benchmark.
+    Genode::Heap _heap{env.ram(), env.rm()};
     auto *benchmark =
-        new Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
+        new (_heap) Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
                       std::move(workload_files[1]), argument_parser.get<bool>("-p"), isolation_level,
                       preferred_synchronization_method, argument_parser.get<bool>("--print-stats"),
                       argument_parser.get<bool>("--disable-check") == false, argument_parser.get<std::string>("-o"),
