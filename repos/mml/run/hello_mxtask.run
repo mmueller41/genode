@@ -10,7 +10,11 @@ lappend build_components "lib/gdbserver_platform-$::env(KERNEL)"
 build $build_components
 
 create_boot_directory
-import_from_depot [depot_user]/src/vfs_pipe
+import_from_depot [depot_user]/src/[base_src] \
+                  [depot_user]/pkg/[drivers_interactive_pkg] \
+                  [depot_user]/src/demo \
+                  [depot_user]/src/init \
+                  [depot_user]/src/vfs_pipe
 
 set config {
     <config>
@@ -41,6 +45,26 @@ set config {
 append_platform_drv_config
 
 append config {
+        <start name="pc_uart_drv">
+            <resource name="RAM" quantum="1M"/>
+            <provides>
+			    <service name="Uart"/>
+             <service name="Terminal"/> </provides>
+            <config>
+                <policy label_prefix="gdb_monitor" uart="1"/>
+            </config>
+	<start name="drivers" caps="1500" managing_system="yes">
+		<resource name="RAM" quantum="64M"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer">   <child name="timer"/> </service>
+			<service name="Capture"> <child name="gdb_monitor"/> </service>
+			<service name="Event">   <child name="gdb_monitor"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+        </start>
         <start name="gdb_monitor">
             <resource name="RAM" quantum="8000M"/>
             <route>
@@ -66,13 +90,6 @@ append config {
                     </dir> 
                 <dir name="pipe"> <pipe/> </dir> </vfs>
                 <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
-            </config>
-        </start>
-        <start name="pc_uart_drv">
-            <resource name="RAM" quantum="1M"/>
-            <provides> <service name="Terminal"/> </provides>
-            <config>
-                <policy label_prefix="gdb_monitor" uart="1"/>
             </config>
         </start>
     </config>
