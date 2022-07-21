@@ -48,7 +48,7 @@ append config {
                 <any-service> <parent/> <any-child/> </any-service>
             </route>
             <config>
-                <target name="hello_mxtask"/>
+                <target name="hello_mxtask">
                 <config>
                     <vfs> <dir name="dev"> 
                         <log/> 
