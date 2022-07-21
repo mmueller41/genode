@@ -12,7 +12,6 @@ build $build_components
 create_boot_directory
 import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/pkg/[drivers_interactive_pkg] \
-                  [depot_user]/src/demo \
                   [depot_user]/src/init \
                   [depot_user]/src/vfs_pipe
 
