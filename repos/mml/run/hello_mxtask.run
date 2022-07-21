@@ -1,9 +1,12 @@
 set build_components {
     core init timer app/hello_mxtask
+	drivers/uart
+	app/gdb_monitor
 }
 
 source ${genode_dir}/repos/base/run/platform_drv.inc 
 append_platform_drv_build_components
+lappend build_components "lib/gdbserver_platform-$::env(KERNEL)"
 build $build_components
 
 create_boot_directory
@@ -38,15 +41,23 @@ set config {
 append_platform_drv_config
 
 append config {
-        <start name="hello_mxtask">
+        <start name="gdb_monitor">
             <resource name="RAM" quantum="8000M"/>
             <route>
                 <service name="Timer"> <child name="timer"/> </service>
                 <any-service> <parent/> <any-child/> </any-service>
             </route>
             <config>
+                <target name="hello_mxtask"/>
                 <vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
                 <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+        </start>
+        <start name="pc_uart_drv">
+            <resource name="RAM" quantum="1M"/>
+            <provides> <service name="Terminal"/> </provides>
+            <config>
+                <policy label_prefix="gdb_monitor" uart="1"/>
             </config>
         </start>
     </config>
@@ -54,7 +65,11 @@ append config {
 
 install_config $config
 
+proc binary_name_gdbserver_platform_lib_so { } {
+
 set boot_modules { 
+	pc_uart_drv
+	gdb_monitor gdbserver_platform.lib.so
     core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so hello_mxtask
 }
 
