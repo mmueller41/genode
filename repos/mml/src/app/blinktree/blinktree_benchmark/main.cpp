@@ -17,7 +17,7 @@ using namespace application::blinktree_benchmark;
  *
  * @return Instance of the benchmark and parameters for tasking runtime.
  */
-std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(int count_arguments, char **arguments);
+std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env& env, int count_arguments, char **arguments);
 
 /**
  * Starts the benchmark.
@@ -34,7 +34,7 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
         std::cout << "[Warn] NUMA balancing may be enabled, set '/proc/sys/kernel/numa_balancing' to '0'" << std::endl;
     }
 
-    auto [benchmark, prefetch_distance, use_system_allocator] = create_benchmark(count_arguments, arguments);
+    auto [benchmark, prefetch_distance, use_system_allocator] = create_benchmark(env, count_arguments, arguments);
     if (benchmark == nullptr)
     {
         return 1;
