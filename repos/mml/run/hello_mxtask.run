@@ -52,6 +52,7 @@ append config {
             <config>
                 <policy label_prefix="gdb_monitor" uart="1"/>
             </config>
+        </start>
 	<start name="drivers" caps="1500" managing_system="yes">
 		<resource name="RAM" quantum="64M"/>
 		<binary name="init"/>
@@ -63,7 +64,6 @@ append config {
 			<any-service> <parent/> </any-service>
 		</route>
 	</start>
-        </start>
         <start name="gdb_monitor">
             <resource name="RAM" quantum="8000M"/>
             <route>
