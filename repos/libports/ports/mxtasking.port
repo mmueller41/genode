@@ -3,7 +3,7 @@ DOWNLOADS := mxtasking.git
 VERSION := git
 
 URL(mxtasking) := https://github.com/mmueller41/mxtasking.git
-REV(mxtasking) := e734ffd0d824634818fe30b356632501b7956595 
+REV(mxtasking) := e0b2605dfe9a1a3f7142ae5b52ad6582ff5bbcfc 
 DIR(mxtasking) := src/lib/mxtasking
 
 DIRS += include/mx/memory
