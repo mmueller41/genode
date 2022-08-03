@@ -2,7 +2,6 @@
 #include "cl.h"
 #include <base/log.h>
 #include <base/allocator_avl.h>
-#define GENODE
 #include <gpgpu/gpgpu.h>
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -155,21 +154,21 @@ clCreateSubDevices(cl_device_id                         in_device,
                    cl_device_id *                       out_devices,
                    cl_uint *                            num_devices_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainDevice(cl_device_id device)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseDevice(cl_device_id device)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -182,7 +181,7 @@ clSetDefaultDeviceCommandQueue(cl_context           context,
                                cl_device_id         device,
                                cl_command_queue     command_queue)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -191,7 +190,7 @@ clGetDeviceAndHostTimer(cl_device_id    device,
                         cl_ulong*       device_timestamp,
                         cl_ulong*       host_timestamp)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -199,7 +198,7 @@ CL_API_ENTRY cl_int CL_API_CALL
 clGetHostTimer(cl_device_id device,
                cl_ulong *   host_timestamp)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -219,12 +218,12 @@ clCreateContext(const cl_context_properties * properties,
 {
     if(num_devices != 1 || *devices != 0)
     {
-        *errcode_ret = CL_INVALID_VALUE;
+        *errcode_ret |= CL_INVALID_VALUE;
         return NULL;
     }
 
     // TODO: RPC: gpgpu_init();
-    *errcode_ret = CL_SUCCESS;
+    *errcode_ret |= CL_SUCCESS;
     return NULL;
 }
 
@@ -238,14 +237,14 @@ clCreateContextFromType(const cl_context_properties * properties,
                         void *              user_data,
                         cl_int *            errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainContext(cl_context context)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -262,7 +261,7 @@ clGetContextInfo(cl_context         context,
                  void *             param_value,
                  size_t *           param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -274,7 +273,7 @@ clSetContextDestructorCallback(cl_context         context,
                                                               void* user_data),
                                void*              user_data)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -290,7 +289,7 @@ clCreateCommandQueueWithProperties(cl_context               context,
                                    const cl_queue_properties *    properties,
                                    cl_int *                 errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -299,7 +298,7 @@ clCreateCommandQueueWithProperties(cl_context               context,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainCommandQueue(cl_command_queue command_queue)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -316,7 +315,7 @@ clGetCommandQueueInfo(cl_command_queue      command_queue,
                       void *                param_value,
                       size_t *              param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -328,11 +327,17 @@ clCreateBuffer(cl_context   context,
                void *       host_ptr,
                cl_int *     errcode_ret)
 {
-    cl_mem clmem;
-    genode_allocator->alloc(sizeof(struct _cl_mem), (void**)&clmem);
+    cl_mem clmem = (cl_mem)genode_allocator->alloc(sizeof(struct _cl_mem));
     if(host_ptr == NULL)
     {
-        genode_allocator->alloc_aligned(size, &host_ptr, 0x1000);
+        host_ptr = genode_allocator->alloc_aligned(size, 0x1000).convert<void *>(
+            [&] (void *ptr) { return ptr; },
+
+            [&] (Genode::Range_allocator::Alloc_error) -> void * {
+                Genode::error("[OCL] Error clCreateBuffer allocation!");
+                return nullptr; 
+            }
+        );
         clmem->ocl_allocated = true;
     }
     else
@@ -341,9 +346,9 @@ clCreateBuffer(cl_context   context,
     }
 
     clmem->bc.buffer = host_ptr;
-    clmem->bc.buffer_size = size;
+    clmem->bc.buffer_size = (uint32_t)size;
 
-    *errcode_ret = CL_SUCCESS;
+    *errcode_ret |= CL_SUCCESS;
     return clmem;
 }
 
@@ -356,7 +361,7 @@ clCreateSubBuffer(cl_mem                   buffer,
                   const void *             buffer_create_info,
                   cl_int *                 errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -372,7 +377,7 @@ clCreateImage(cl_context              context,
               void *                  host_ptr,
               cl_int *                errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -388,7 +393,7 @@ clCreatePipe(cl_context                 context,
              const cl_pipe_properties * properties,
              cl_int *                   errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -404,7 +409,7 @@ clCreateBufferWithProperties(cl_context                context,
                              void *                    host_ptr,
                              cl_int *                  errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -417,7 +422,7 @@ clCreateImageWithProperties(cl_context                context,
                             void *                    host_ptr,
                             cl_int *                  errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -426,7 +431,7 @@ clCreateImageWithProperties(cl_context                context,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainMemObject(cl_mem memobj)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -449,7 +454,7 @@ clGetSupportedImageFormats(cl_context           context,
                            cl_image_format *    image_formats,
                            cl_uint *            num_image_formats)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -460,7 +465,7 @@ clGetMemObjectInfo(cl_mem           memobj,
                    void *           param_value,
                    size_t *         param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -471,7 +476,7 @@ clGetImageInfo(cl_mem           image,
                void *           param_value,
                size_t *         param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -484,7 +489,7 @@ clGetPipeInfo(cl_mem           pipe,
               void *           param_value,
               size_t *         param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -498,7 +503,7 @@ clSetMemObjectDestructorCallback(cl_mem memobj,
                                                                  void * user_data),
                                  void * user_data)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -514,7 +519,7 @@ clSVMAlloc(cl_context       context,
            size_t           size,
            cl_uint          alignment)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -522,7 +527,7 @@ CL_API_ENTRY void CL_API_CALL
 clSVMFree(cl_context        context,
           void *            svm_pointer)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
 }
 
 #endif
@@ -536,7 +541,7 @@ clCreateSamplerWithProperties(cl_context                     context,
                               const cl_sampler_properties *  sampler_properties,
                               cl_int *                       errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -545,14 +550,14 @@ clCreateSamplerWithProperties(cl_context                     context,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainSampler(cl_sampler sampler)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseSampler(cl_sampler sampler)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -563,7 +568,7 @@ clGetSamplerInfo(cl_sampler         sampler,
                  void *             param_value,
                  size_t *           param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -575,7 +580,7 @@ clCreateProgramWithSource(cl_context        context,
                           const size_t *    lengths,
                           cl_int *          errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -590,11 +595,11 @@ clCreateProgramWithBinary(cl_context                     context,
 {
     if(*device_list != 0x0)
     {
-        *errcode_ret = CL_INVALID_VALUE;
+        *errcode_ret |= CL_INVALID_VALUE;
         return NULL;
     }
 
-    *errcode_ret = CL_SUCCESS;
+    *errcode_ret |= CL_SUCCESS;
     return (cl_program)binaries[0];
 }
 
@@ -607,7 +612,7 @@ clCreateProgramWithBuiltInKernels(cl_context            context,
                                   const char *          kernel_names,
                                   cl_int *              errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -621,7 +626,7 @@ clCreateProgramWithIL(cl_context    context,
                      size_t         length,
                      cl_int*        errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -630,7 +635,7 @@ clCreateProgramWithIL(cl_context    context,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainProgram(cl_program program)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -667,7 +672,7 @@ clCompileProgram(cl_program           program,
                                                   void * user_data),
                  void *               user_data)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -683,7 +688,7 @@ clLinkProgram(cl_context           context,
               void *               user_data,
               cl_int *             errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -697,7 +702,7 @@ clSetProgramReleaseCallback(cl_program          program,
                                                             void * user_data),
                             void *              user_data)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -707,7 +712,7 @@ clSetProgramSpecializationConstant(cl_program  program,
                                    size_t      spec_size,
                                    const void* spec_value)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -718,7 +723,7 @@ clSetProgramSpecializationConstant(cl_program  program,
 CL_API_ENTRY cl_int CL_API_CALL
 clUnloadPlatformCompiler(cl_platform_id platform)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -731,7 +736,7 @@ clGetProgramInfo(cl_program         program,
                  void *             param_value,
                  size_t *           param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -743,7 +748,7 @@ clGetProgramBuildInfo(cl_program            program,
                       void *                param_value,
                       size_t *              param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -754,17 +759,16 @@ clCreateKernel(cl_program      program,
                cl_int *        errcode_ret)
 {
     // create kernel and set binary
-    struct kernel_config* kc;
-    genode_allocator->alloc(sizeof(struct kernel_config), (void**)&kc);
+    struct kernel_config* kc = (struct kernel_config*)genode_allocator->alloc(sizeof(struct kernel_config));
     kc->binary = (uint8_t*)program;
 
     // preallocated 32 buff configs;
-    genode_allocator->alloc(32 * sizeof(struct buffer_config), (void**)&kc->buffConfigs);
+    kc->buffConfigs = (struct buffer_config*)genode_allocator->alloc(32 * sizeof(struct buffer_config));
 
     // set name
     kc->kernelName = (char*)kernel_name;
     
-    *errcode_ret = CL_SUCCESS;
+    *errcode_ret |= CL_SUCCESS;
     return (cl_kernel)kc;
 }
 
@@ -774,7 +778,7 @@ clCreateKernelsInProgram(cl_program     program,
                          cl_kernel *    kernels,
                          cl_uint *      num_kernels_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -784,7 +788,7 @@ CL_API_ENTRY cl_kernel CL_API_CALL
 clCloneKernel(cl_kernel     source_kernel,
               cl_int*       errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -793,7 +797,7 @@ clCloneKernel(cl_kernel     source_kernel,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainKernel(cl_kernel    kernel)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -826,13 +830,13 @@ clSetKernelArg(cl_kernel    kernel,
     {
         struct buffer_config bc;
         bc.buffer = (void*)arg_value;
-        bc.buffer_size = arg_size;
+        bc.buffer_size = (uint32_t)arg_size;
         bc.non_pointer_type = true;
         kc->buffConfigs[arg_index] = bc;
     }
     
     if(kc->buffCount < (arg_index + 1))
-        kc->buffCount = (arg_index + 1);
+        kc->buffCount = (uint8_t)(arg_index + 1);
 
     return CL_SUCCESS;
 }
@@ -844,7 +848,7 @@ clSetKernelArgSVMPointer(cl_kernel    kernel,
                          cl_uint      arg_index,
                          const void * arg_value)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -854,7 +858,7 @@ clSetKernelExecInfo(cl_kernel            kernel,
                     size_t               param_value_size,
                     const void *         param_value)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -867,7 +871,7 @@ clGetKernelInfo(cl_kernel       kernel,
                 void *          param_value,
                 size_t *        param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -881,7 +885,7 @@ clGetKernelArgInfo(cl_kernel       kernel,
                    void *          param_value,
                    size_t *        param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -895,7 +899,7 @@ clGetKernelWorkGroupInfo(cl_kernel                  kernel,
                          void *                     param_value,
                          size_t *                   param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -911,7 +915,7 @@ clGetKernelSubGroupInfo(cl_kernel                   kernel,
                         void*                       param_value,
                         size_t*                     param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -922,7 +926,7 @@ CL_API_ENTRY cl_int CL_API_CALL
 clWaitForEvents(cl_uint             num_events,
                 const cl_event *    event_list)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -933,7 +937,7 @@ clGetEventInfo(cl_event         event,
                void *           param_value,
                size_t *         param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -943,7 +947,7 @@ CL_API_ENTRY cl_event CL_API_CALL
 clCreateUserEvent(cl_context    context,
                   cl_int *      errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -952,14 +956,14 @@ clCreateUserEvent(cl_context    context,
 CL_API_ENTRY cl_int CL_API_CALL
 clRetainEvent(cl_event event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseEvent(cl_event event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -969,7 +973,7 @@ CL_API_ENTRY cl_int CL_API_CALL
 clSetUserEventStatus(cl_event   event,
                      cl_int     execution_status)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -981,7 +985,7 @@ clSetEventCallback(cl_event    event,
                                                    void *   user_data),
                    void *      user_data)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -995,7 +999,7 @@ clGetEventProfilingInfo(cl_event            event,
                         void *              param_value,
                         size_t *            param_value_size_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1058,7 +1062,7 @@ clEnqueueReadBufferRect(cl_command_queue    command_queue,
                         const cl_event *    event_wait_list,
                         cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1108,7 +1112,7 @@ clEnqueueWriteBufferRect(cl_command_queue    command_queue,
                          const cl_event *    event_wait_list,
                          cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1127,7 +1131,7 @@ clEnqueueFillBuffer(cl_command_queue   command_queue,
                     const cl_event *   event_wait_list,
                     cl_event *         event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1144,7 +1148,7 @@ clEnqueueCopyBuffer(cl_command_queue    command_queue,
                     const cl_event *    event_wait_list,
                     cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1165,7 +1169,7 @@ clEnqueueCopyBufferRect(cl_command_queue    command_queue,
                         const cl_event *    event_wait_list,
                         cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1184,7 +1188,7 @@ clEnqueueReadImage(cl_command_queue     command_queue,
                    const cl_event *     event_wait_list,
                    cl_event *           event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1201,7 +1205,7 @@ clEnqueueWriteImage(cl_command_queue    command_queue,
                     const cl_event *    event_wait_list,
                     cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1217,7 +1221,7 @@ clEnqueueFillImage(cl_command_queue   command_queue,
                    const cl_event *   event_wait_list,
                    cl_event *         event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1234,7 +1238,7 @@ clEnqueueCopyImage(cl_command_queue     command_queue,
                    const cl_event *     event_wait_list,
                    cl_event *           event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1249,7 +1253,7 @@ clEnqueueCopyImageToBuffer(cl_command_queue command_queue,
                            const cl_event * event_wait_list,
                            cl_event *       event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1264,7 +1268,7 @@ clEnqueueCopyBufferToImage(cl_command_queue command_queue,
                            const cl_event * event_wait_list,
                            cl_event *       event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1280,7 +1284,7 @@ clEnqueueMapBuffer(cl_command_queue command_queue,
                    cl_event *       event,
                    cl_int *         errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1298,7 +1302,7 @@ clEnqueueMapImage(cl_command_queue  command_queue,
                   cl_event *        event,
                   cl_int *          errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1310,7 +1314,7 @@ clEnqueueUnmapMemObject(cl_command_queue command_queue,
                         const cl_event * event_wait_list,
                         cl_event *       event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1325,7 +1329,7 @@ clEnqueueMigrateMemObjects(cl_command_queue       command_queue,
                            const cl_event *       event_wait_list,
                            cl_event *             event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1345,10 +1349,10 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     struct kernel_config* kc = (struct kernel_config*)kernel;
     for(cl_uint i = 0; i < work_dim; i++)
     {
-        kc->range[i] = global_work_size[i];
+        kc->range[i] = (uint32_t)global_work_size[i];
         if(local_work_size != NULL)
         {
-            kc->workgroupsize[i] = local_work_size[i];
+            kc->workgroupsize[i] = (uint32_t)local_work_size[i];
         }
     }
     // TODO: RPC: gpgpu_enqueueRun(kc);
@@ -1367,7 +1371,7 @@ clEnqueueNativeKernel(cl_command_queue  command_queue,
                       const cl_event *  event_wait_list,
                       cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1379,7 +1383,7 @@ clEnqueueMarkerWithWaitList(cl_command_queue  command_queue,
                             const cl_event *  event_wait_list,
                             cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1389,7 +1393,7 @@ clEnqueueBarrierWithWaitList(cl_command_queue  command_queue,
                              const cl_event *  event_wait_list,
                              cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1410,7 +1414,7 @@ clEnqueueSVMFree(cl_command_queue  command_queue,
                  const cl_event *  event_wait_list,
                  cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1424,7 +1428,7 @@ clEnqueueSVMMemcpy(cl_command_queue  command_queue,
                    const cl_event *  event_wait_list,
                    cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1438,7 +1442,7 @@ clEnqueueSVMMemFill(cl_command_queue  command_queue,
                     const cl_event *  event_wait_list,
                     cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1452,7 +1456,7 @@ clEnqueueSVMMap(cl_command_queue  command_queue,
                 const cl_event *  event_wait_list,
                 cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1463,7 +1467,7 @@ clEnqueueSVMUnmap(cl_command_queue  command_queue,
                   const cl_event *  event_wait_list,
                   cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1481,7 +1485,7 @@ clEnqueueSVMMigrateMem(cl_command_queue         command_queue,
                        const cl_event *         event_wait_list,
                        cl_event *               event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1500,7 +1504,7 @@ CL_API_ENTRY void * CL_API_CALL
 clGetExtensionFunctionAddressForPlatform(cl_platform_id platform,
                                          const char *   func_name)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1535,7 +1539,7 @@ clCreateImage2D(cl_context              context,
                 void *                  host_ptr,
                 cl_int *                errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1551,7 +1555,7 @@ clCreateImage3D(cl_context              context,
                 void *                  host_ptr,
                 cl_int *                errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1559,7 +1563,7 @@ CL_API_ENTRY CL_API_PREFIX__VERSION_1_1_DEPRECATED cl_int CL_API_CALL
 clEnqueueMarker(cl_command_queue    command_queue,
                 cl_event *          event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1568,7 +1572,7 @@ clEnqueueWaitForEvents(cl_command_queue  command_queue,
                         cl_uint          num_events,
                         const cl_event * event_list)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
@@ -1581,14 +1585,14 @@ clEnqueueBarrier(cl_command_queue command_queue)
 CL_API_ENTRY CL_API_PREFIX__VERSION_1_1_DEPRECATED cl_int CL_API_CALL
 clUnloadCompiler(void)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 
 CL_API_ENTRY CL_API_PREFIX__VERSION_1_1_DEPRECATED void * CL_API_CALL
 clGetExtensionFunctionAddress(const char * func_name)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1601,11 +1605,11 @@ clCreateCommandQueue(cl_context                     context,
 {
     if(device != 0)
     {
-        *errcode_ret = CL_INVALID_VALUE;
+        *errcode_ret |= CL_INVALID_VALUE;
         return NULL;
     }
 
-    *errcode_ret = CL_SUCCESS;
+    *errcode_ret |= CL_SUCCESS;
     return NULL;
 }
 
@@ -1616,7 +1620,7 @@ clCreateSampler(cl_context          context,
                 cl_filter_mode      filter_mode,
                 cl_int *            errcode_ret)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return NULL;
 }
 
@@ -1627,7 +1631,7 @@ clEnqueueTask(cl_command_queue  command_queue,
               const cl_event *  event_wait_list,
               cl_event *        event)
 {
-    Genode::log("[OCL] func ", __func__, " is not implemented!");
+    Genode::error("[OCL] func ", __func__, " is not implemented!");
     return CL_INVALID_VALUE;
 }
 

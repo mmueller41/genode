@@ -264,10 +264,7 @@ typedef double                  cl_double;
 
 #else
 
-// genode stdint
-#include <base/fixed_stdint.h>
-typedef __INTPTR_TYPE__ intptr_t;
-using namespace Genode;
+#include <stdint.h>
 
 /* scalar types  */
 typedef int8_t          cl_char;
