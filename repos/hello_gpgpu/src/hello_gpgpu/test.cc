@@ -143,12 +143,12 @@ void run_gpgpu_test(Genode::Allocator_avl& alloc)
 {
     clInitGenode(alloc);
 	const int num = 0x42;
-    volatile uint32_t* m_out;
     uint32_t* m_in;
+    volatile uint32_t* m_out;
 
     // allocate buffers
-    alloc.alloc(ELEMENTS * sizeof(uint32_t), (void**)&m_in);
-    alloc.alloc(ELEMENTS * sizeof(uint32_t), (void**)&m_out);
+    m_in = (uint32_t*)alloc.alloc(ELEMENTS * sizeof(uint32_t));
+    m_out = (volatile uint32_t*)alloc.alloc(ELEMENTS * sizeof(uint32_t));
 
     for(int i = 0; i < ELEMENTS; i++)
     {
