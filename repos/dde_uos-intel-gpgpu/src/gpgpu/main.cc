@@ -13,10 +13,15 @@
 
 gpgpu_genode* _global_gpgpu_genode;
 
+extern void construct_RPC(Genode::Env &env);
+
 void Component::construct(Genode::Env& e)
 {
     Genode::log("Hello world: UOS Intel GPGPU!");
     Genode::log("Build: ", __TIMESTAMP__);
+
+    construct_RPC(e);
+    return;
 
     // init globals
     static gpgpu_genode gg(e);
