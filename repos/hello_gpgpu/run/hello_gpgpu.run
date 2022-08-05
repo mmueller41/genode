@@ -1,0 +1,56 @@
+#
+# Build
+#
+
+build { core init gpgpu timer hello_gpgpu }
+
+create_boot_directory
+
+#
+# Generate config
+#
+
+install_config {
+<config>
+	<parent-provides>
+		<service name="LOG"/>
+		<service name="PD"/>
+		<service name="CPU"/>
+		<service name="ROM"/>
+		<service name="RAM"/>
+		<service name="CAP"/>
+		<service name="RM"/>
+	</parent-provides>
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+	<default caps="200"/>
+	<start name="gpgpu">
+		<resource name="RAM" quantum="10M"/>
+		<provides><service name="gpgpu"/></provides>
+	</start>
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides><service name="Timer"/></provides>
+		<route>
+			<any-service><parent/><any-child/></any-service>
+		</route>
+	</start>
+	<start name="hello_gpgpu">
+		<resource name="RAM" quantum="1024M"/>
+		<config>
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+</config>}
+
+#
+# Boot image
+#
+
+build_boot_image { core ld.lib.so libc.lib.so vfs.lib.so init gpgpu timer hello_gpgpu }
+
+append qemu_args " -nographic -m 4G"
+
+run_genode_until "hello gpgpu completed.*\n" 15

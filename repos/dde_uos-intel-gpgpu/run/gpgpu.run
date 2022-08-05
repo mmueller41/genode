@@ -1,0 +1,68 @@
+# build config
+set build_components { core init gpgpu timer }
+
+# platform config
+set use_acpica_as_acpi_drv 0
+source ${genode_dir}/repos/base/run/platform_drv.inc
+proc platform_drv_policy {} {
+	global use_acpica_as_acpi_drv
+	set policy ""
+
+	append_if $use_acpica_as_acpi_drv policy {
+			<policy label="acpi_drv -> ">    <pci class="ALL"/> </policy>}
+
+	append policy {
+			<policy label_prefix="gpgpu"> <pci class="ALL"/> </policy>}
+
+	return $policy
+}
+append_platform_drv_build_components
+build $build_components
+
+# boot dir
+create_boot_directory
+
+# other config
+append config {
+    <config>
+        <parent-provides>
+            <service name="ROM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="PD"/>
+            <service name="RM"/>
+            <service name="CPU"/>
+            <service name="LOG"/>
+        </parent-provides>
+        <default-route>
+            <any-service> <parent/> <any-child/> </any-service>
+        </default-route>
+        <default caps="100"/>
+        <start name="timer">
+            <resource name="RAM" quantum="10M"/>
+            <provides><service name="Timer"/></provides>
+    	</start>
+}
+
+append_platform_drv_config
+
+append config {
+    <start name="gpgpu">
+		<provides> <service name="gpgpu"/> </provides>
+        <resource name="RAM" quantum="32M"/>
+    </start>
+</config>}
+
+install_config $config
+
+# boot modules
+set boot_modules {
+	core ld.lib.so init gpgpu timer
+}
+append_platform_drv_boot_modules
+build_boot_image $boot_modules
+
+# qemu stuff
+append qemu_args "-nographic -m 256"
+run_genode_until {This is the UOS Intel GPGPU End!.*\n} 10
