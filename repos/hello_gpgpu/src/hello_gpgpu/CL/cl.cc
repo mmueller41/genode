@@ -1380,6 +1380,8 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     else // or extend queue
     {
         cl_command_queue n = (cl_command_queue)genode_allocator->alloc(sizeof(struct _cl_command_queue));
+        n->next = NULL;
+
         cmd->next = n;
         n->kc = kc;
     }
