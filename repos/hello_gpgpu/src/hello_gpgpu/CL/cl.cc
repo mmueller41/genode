@@ -14,6 +14,11 @@ struct _cl_mem
     struct buffer_config bc;
     bool ocl_allocated;
 };
+struct _cl_command_queue
+{
+    struct kernel_config* kc;
+    struct _cl_command_queue* next;
+};
 
 /* Genode */
 static Genode::Allocator_avl* genode_allocator;
@@ -305,6 +310,13 @@ clRetainCommandQueue(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseCommandQueue(cl_command_queue command_queue)
 {
+    cl_command_queue cmd = command_queue;
+    while(cmd != NULL)
+    {
+        cl_command_queue next = cmd->next;
+        genode_allocator->free(cmd);
+        cmd = next;
+    }
     return CL_SUCCESS;
 }
 
@@ -1355,6 +1367,23 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
             kc->workgroupsize[i] = (uint32_t)local_work_size[i];
         }
     }
+
+    // skip to end of queue
+    cl_command_queue cmd = command_queue;
+    for(;cmd->next != NULL; cmd = cmd->next);
+
+    // enqueue
+    if(cmd->kc == NULL)
+    {
+        cmd->kc = kc;
+    }
+    else // or extend queue
+    {
+        cl_command_queue n = (cl_command_queue)genode_allocator->alloc(sizeof(struct _cl_command_queue));
+        cmd->next = n;
+        n->kc = kc;
+    }
+
     // TODO: RPC: gpgpu_enqueueRun(kc);
     return CL_SUCCESS;
 }
@@ -1610,7 +1639,10 @@ clCreateCommandQueue(cl_context                     context,
     }
 
     *errcode_ret |= CL_SUCCESS;
-    return NULL;
+    cl_command_queue clcmdqueue = (cl_command_queue)genode_allocator->alloc(sizeof(struct _cl_command_queue));
+    clcmdqueue->kc = NULL;
+    clcmdqueue->next = NULL;
+    return clcmdqueue;
 }
 
 CL_API_ENTRY CL_API_PREFIX__VERSION_1_2_DEPRECATED cl_sampler CL_API_CALL
