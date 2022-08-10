@@ -1,6 +1,8 @@
 #pragma once
 
+#ifdef PERF_SUPPORT
 #include "perf.h"
+#endif
 #include "phase.h"
 #include <chrono>
 #include <json.hpp>
@@ -48,7 +50,8 @@ template <typename P> class InterimResult
 public:
     InterimResult(const std::uint64_t operation_count, const P &phase, const std::uint16_t iteration,
                   const std::uint16_t core_count, const std::chrono::milliseconds time,
-                  std::vector<PerfCounter> &counter, std::unordered_map<std::uint16_t, std::uint64_t> executed_tasks,
+                  /*std::vector<PerfCounter> &counter,*/ 
+                  std::unordered_map<std::uint16_t, std::uint64_t> executed_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> executed_reader_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> executed_writer_tasks,
                   std::unordered_map<std::uint16_t, std::uint64_t> scheduled_tasks,
@@ -61,10 +64,12 @@ public:
           _scheduled_tasks_on_core(std::move(scheduled_tasks_on_core)),
           _scheduled_tasks_off_core(std::move(scheduled_tasks_off_core)), _worker_fills(std::move(worker_fills))
     {
-        /*for (auto &c : counter)
+#ifdef PERF_SUPPORT
+        for (auto &c : counter)
         {
             _performance_counter.emplace_back(std::make_pair(c.name(), c.read()));
-        }*/
+        }
+#endif
     }
 
     ~InterimResult() = default;
@@ -175,15 +180,18 @@ public:
         _current_phase = phase;
         _current_iteration = iteration;
         _core_set = core_set;
-
+#ifdef PERF_SUPPORT
         _perf.start();
+#endif
         _start = std::chrono::steady_clock::now();
     }
 
     InterimResult<P> stop(const std::uint64_t count_operations)
     {
         const auto end = std::chrono::steady_clock::now();
+#ifdef PERF_SUPPORT
         _perf.stop();
+#endif
 
         const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(end - _start);
 
@@ -201,14 +209,16 @@ public:
                 statistic_map(mx::tasking::profiling::Statistic::ScheduledOffChannel),
                 statistic_map(mx::tasking::profiling::Statistic::Fill)};
     }
-
+#ifdef PERF_SUPPORT
     void add(PerfCounter &performance_counter) { _perf.add(performance_counter); }
-
+#endif
 private:
     std::uint16_t _current_iteration{0U};
     P _current_phase;
     mx::util::core_set _core_set;
+#ifdef PERF_SUPPORT
     alignas(64) Perf _perf;
+#endif
     alignas(64) std::chrono::steady_clock::time_point _start;
 
     std::unordered_map<std::uint16_t, std::uint64_t> statistic_map(
