@@ -97,9 +97,9 @@ class Fill_thread : public Genode::Thread
             if (fill_file.good()) {
                 parse(fill_file, _workload_set._data_sets[static_cast<std::size_t>(phase::FILL)]);
             } else {
-                _mutex.acquire();
+                //_mutex.acquire();
                 std::cerr << "Could not open workload file '" << _fill_workload_file << "'." << std::endl;
-                _mutex.release();
+                //_mutex.release();
             }
         }
 };
@@ -126,9 +126,9 @@ class Mixed_thread : public Genode::Thread
             if (mixed_file.good()) {
                 _workload_set._mixed_phase_contains_update = parse(mixed_file, _workload_set._data_sets[static_cast<std::size_t>(phase::MIXED)]);
             } else {
-                _mutex.acquire();
+                //_mutex.acquire();
                 std::cerr << "Could not open workload file '" << _mixed_workload_file << "'." << std::endl;
-                _mutex.release();
+                //_mutex.release();
             }
         }
 };
