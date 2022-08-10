@@ -4,6 +4,14 @@
 #include <base/rpc_server.h>
 #include <gpgpu/session.h>
 
+// genode instance
+#include "gpgpu_genode.h"
+extern gpgpu_genode* _global_gpgpu_genode;
+
+#define GENODE // use genodes stdint header
+#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include "gpgpu_genode.h"
+
 namespace gpgpu {
 	struct Session_component;
 	struct Root_component;
@@ -12,9 +20,30 @@ namespace gpgpu {
 
 struct gpgpu::Session_component : Genode::Rpc_object<Session>
 {
-	void say_hello() override
+	addr_t mapped_base = 0;
+
+	int say_hello(int& i) override
 	{
 		Genode::log("Hello from uos-intel-gpgpu!");
+		Genode::log("Here is your number: ", i);
+		i = 64; // change it by ref
+		Genode::log("I changed it into ", i);
+		return 42;
+	}
+
+	void register_vm(Genode::Ram_dataspace_capability& ram_cap) override
+	{
+		Genode::log("Mapped memory from VM");
+		mapped_base = _global_gpgpu_genode->mapMemory(ram_cap);
+	}
+
+	int start_task(unsigned long kconf) override
+	{
+		// test mapped memory
+		int* test = (int*)(mapped_base + kconf);
+		Genode::log("Start task got number: ", *test);
+		static int id = 0;
+		return id++;
 	}
 };
 

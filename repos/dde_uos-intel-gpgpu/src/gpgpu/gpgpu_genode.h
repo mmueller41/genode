@@ -130,6 +130,14 @@ public:
      * 
      */
     void registerInterruptHandler();
+
+    /**
+     * @brief 
+     * 
+     * @param ram_cap 
+     * @return addr_t 
+     */
+    addr_t mapMemory(Genode::Ram_dataspace_capability& ram_cap);
 };
 
 #endif // GPGPU_GENODE_H

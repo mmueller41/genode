@@ -4,7 +4,9 @@
 #include <session/session.h>
 #include <base/rpc.h>
 
-namespace gpgpu { struct Session; }
+namespace gpgpu { 
+	struct Session;
+}
 
 struct gpgpu::Session : Genode::Session
 {
@@ -12,15 +14,19 @@ struct gpgpu::Session : Genode::Session
 
 	enum { CAP_QUOTA = 1 };
 
-	virtual void say_hello() = 0;
+	virtual int say_hello(int& i) = 0;
+	virtual void register_vm(Genode::Ram_dataspace_capability& ram_cap) = 0;
+	virtual int start_task(unsigned long kconf) = 0;
 
 	/*******************
 	 ** RPC interface **
 	 *******************/
 
-	GENODE_RPC(Rpc_say_hello, void, say_hello);
+	GENODE_RPC(Rpc_say_hello, int, say_hello, int&);
+	GENODE_RPC(Rpc_register_vm, void, register_vm, Genode::Ram_dataspace_capability&);
+	GENODE_RPC(Rpc_start_task, int, start_task, unsigned long);
 
-	GENODE_RPC_INTERFACE(Rpc_say_hello);
+	GENODE_RPC_INTERFACE(Rpc_say_hello, Rpc_register_vm, Rpc_start_task);
 };
 
 #endif // GPGPU_SESSION

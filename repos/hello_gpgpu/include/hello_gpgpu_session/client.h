@@ -12,9 +12,19 @@ struct gpgpu::Session_client : Genode::Rpc_client<gpgpu::Session>
 	Session_client(Genode::Capability<gpgpu::Session> cap)
 	: Genode::Rpc_client<gpgpu::Session>(cap) { }
 
-	void say_hello() override
+	int start_task(unsigned long kconf) override
 	{
-		call<Rpc_say_hello>();
+		return call<Rpc_start_task>(kconf);
+	}
+
+	void register_vm(Genode::Ram_dataspace_capability& ram_cap) override
+	{
+		call<Rpc_register_vm>(ram_cap);
+	}
+
+	int say_hello(int& i) override
+	{
+		return call<Rpc_say_hello>(i);
 	}
 };
 

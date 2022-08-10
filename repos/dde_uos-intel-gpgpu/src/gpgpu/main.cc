@@ -19,13 +19,13 @@ void Component::construct(Genode::Env& e)
 {
     Genode::log("Hello world: UOS Intel GPGPU!");
     Genode::log("Build: ", __TIMESTAMP__);
-
-    construct_RPC(e);
-    return;
-
+    
     // init globals
     static gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
+
+    construct_RPC(e);
+    return;
 
 #ifdef TEST
     // test prink

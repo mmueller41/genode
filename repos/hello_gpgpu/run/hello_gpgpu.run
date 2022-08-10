@@ -13,6 +13,8 @@ proc platform_drv_policy {} {
 
 	append policy {
 			<policy label_prefix="gpgpu"> <pci class="ALL"/> </policy>}
+	append policy {
+			<policy label_prefix="hello_gpgpu"> <pci class="ALL"/> </policy>}
 
 	return $policy
 }
