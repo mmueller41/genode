@@ -7,6 +7,7 @@
 #include <mx/util/core_set.h>
 #include <tuple>
 #include <libc/component.h>
+#include <cstring>
 
 using namespace application::blinktree_benchmark;
 
@@ -27,6 +28,7 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env& env, in
  *
  * @return Return code of the application.
  */
+extern "C" void wait_for_continue();
 int bt_main(Libc::Env &env, int count_arguments, char **arguments)
 {
     if (mx::system::Environment::is_numa_balancing_enabled())
@@ -42,11 +44,14 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
 
     mx::util::core_set cores{};
 
+    //cores = benchmark->core_set();
     while ((cores = benchmark->core_set()))
     {
-        mx::tasking::runtime_guard _(use_system_allocator, cores, prefetch_distance);
+        mx::tasking::runtime_guard _(false, cores, prefetch_distance);
         benchmark->start();
+        //wait_for_continue();
     }
+    Genode::log("Benchmark finished.");
 
     delete benchmark;
 
@@ -168,9 +173,9 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, in
     }
 
     // Create the benchmark.
-    Genode::Heap _heap{env.ram(), env.rm()};
+    //Genode::Heap _heap{env.ram(), env.rm()};
     auto *benchmark =
-        new (_heap) Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
+        new  Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
                       std::move(workload_files[1]), argument_parser.get<bool>("-p"), isolation_level,
                       preferred_synchronization_method, argument_parser.get<bool>("--print-stats"),
                       argument_parser.get<bool>("--disable-check") == false, argument_parser.get<std::string>("-o"),
@@ -184,7 +189,12 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
-    char *args[] = {"blinktree_benchmark", "1:4"};
+    std::uint16_t cores = env.cpu().affinity_space().total();
+
+    char cores_arg[10];
+    snprintf(cores_arg, 9, "1:%d", cores);
+
+    char *args[] = {"blinktree_benchmark", cores_arg, "-pd", "3", "--sync4me"};
 
     Libc::with_libc([&]()
                     { 
