@@ -18,6 +18,11 @@ struct _cl_command_queue
     struct kernel_config* kc;
     struct _cl_command_queue* next;
 };
+struct _cl_program
+{
+    uint8_t* binary;
+    size_t size;
+};
 
 /* Genode */
 static cl_genode* g_cl_genode;
@@ -605,8 +610,12 @@ clCreateProgramWithBinary(cl_context                     context,
         return NULL;
     }
 
+    cl_program p = (cl_program)g_cl_genode->alloc(sizeof(_cl_program));
+    p->binary = (uint8_t*)binaries[0];
+    p->size = lengths[0];
+
     *errcode_ret |= CL_SUCCESS;
-    return (cl_program)binaries[0];
+    return p;
 }
 
 #ifdef CL_VERSION_1_2
@@ -648,7 +657,7 @@ clRetainProgram(cl_program program)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseProgram(cl_program program)
 {
-
+    g_cl_genode->free(program);
     return CL_SUCCESS;
 }
 
@@ -764,9 +773,16 @@ clCreateKernel(cl_program      program,
                const char *    kernel_name,
                cl_int *        errcode_ret)
 {
-    // create kernel and set binary
+    // create kernel
     struct kernel_config* kc = (struct kernel_config*)g_cl_genode->alloc(sizeof(struct kernel_config));
-    kc->binary = (uint8_t*)program;
+    
+    // we can not just set the binary, because its not in shared mem => copy it
+    kc->binary = (uint8_t*)g_cl_genode->alloc(program->size);
+    uint8_t* bin = (uint8_t*)program->binary;
+    for(size_t i = 0; i < program->size; i++)
+    {
+        kc->binary[i] = bin[i];
+    }
 
     // preallocated 32 buff configs;
     kc->buffConfigs = (struct buffer_config*)g_cl_genode->alloc(32 * sizeof(struct buffer_config));
@@ -811,6 +827,7 @@ CL_API_ENTRY cl_int CL_API_CALL
 clReleaseKernel(cl_kernel   kernel)
 {
     struct kernel_config* kc = (struct kernel_config*)kernel;
+    g_cl_genode->free(kc->binary);
     g_cl_genode->free(kc->buffConfigs);
     g_cl_genode->free(kc);
     return CL_SUCCESS;
@@ -1019,7 +1036,15 @@ clFlush(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clFinish(cl_command_queue command_queue)
 {
-    // TODO: RPC: gpgpu_wait();
+    // get last kernel
+    cl_command_queue cmd = command_queue;
+    while (cmd->next)
+    {
+        cmd = cmd->next;
+    }
+
+    // wait for it
+    g_cl_genode->wait(cmd->kc);
     return CL_SUCCESS;
 }
 
