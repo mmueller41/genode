@@ -154,14 +154,7 @@ void gpgpu_genode::registerInterruptHandler()
     irq->ack_irq();
 }
 
-addr_t gpgpu_genode::mapMemory(Genode::Ram_dataspace_capability& ram_cap)
+addr_t gpgpu_genode::mapMemory(Genode::Ram_dataspace_capability& ram_cap_vm)
 {
-    addr_t mapped_base_vm = env.rm().attach(ram_cap);
-    addr_t base_vm = pci.dma_addr(ram_cap);
-
-    // TODO: save this in virt compoment to get phys addr or vm
-    (void)mapped_base_vm;
-    (void)base_vm;
-    
-    return mapped_base_vm;
+    return env.rm().attach(ram_cap_vm);
 }

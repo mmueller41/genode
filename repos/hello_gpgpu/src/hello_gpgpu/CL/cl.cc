@@ -1,7 +1,5 @@
 #define CL_TARGET_OPENCL_VERSION 100
 #include "cl.h"
-#include <base/log.h>
-#include <base/allocator_avl.h>
 #include <gpgpu/gpgpu.h>
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -12,6 +10,7 @@ extern "C" {
 struct _cl_mem
 {
     struct buffer_config bc;
+    void* virt_vm; // virt addr that can be used by vm (bc.buffer will by overwritten)
     bool ocl_allocated;
 };
 struct _cl_command_queue
@@ -21,11 +20,13 @@ struct _cl_command_queue
 };
 
 /* Genode */
-static Genode::Allocator_avl* genode_allocator;
+static cl_genode* g_cl_genode;
+
 extern CL_API_ENTRY void CL_API_CALL
-clInitGenode(Genode::Allocator_avl& alloc)
+clInitGenode(cl_genode& clg)
 {
-    genode_allocator = &alloc;
+    // save global object
+    g_cl_genode = &clg;
 }
 
 /* Platform API */
@@ -227,7 +228,6 @@ clCreateContext(const cl_context_properties * properties,
         return NULL;
     }
 
-    // TODO: RPC: gpgpu_init();
     *errcode_ret |= CL_SUCCESS;
     return NULL;
 }
@@ -314,7 +314,7 @@ clReleaseCommandQueue(cl_command_queue command_queue)
     while(cmd != NULL)
     {
         cl_command_queue next = cmd->next;
-        genode_allocator->free(cmd);
+        g_cl_genode->free(cmd);
         cmd = next;
     }
     return CL_SUCCESS;
@@ -339,17 +339,10 @@ clCreateBuffer(cl_context   context,
                void *       host_ptr,
                cl_int *     errcode_ret)
 {
-    cl_mem clmem = (cl_mem)genode_allocator->alloc(sizeof(struct _cl_mem));
+    cl_mem clmem = (cl_mem)g_cl_genode->alloc(sizeof(struct _cl_mem));
     if(host_ptr == NULL)
     {
-        host_ptr = genode_allocator->alloc_aligned(size, 0x1000).convert<void *>(
-            [&] (void *ptr) { return ptr; },
-
-            [&] (Genode::Range_allocator::Alloc_error) -> void * {
-                Genode::error("[OCL] Error clCreateBuffer allocation!");
-                return nullptr; 
-            }
-        );
+        host_ptr = g_cl_genode->aligned_alloc(0x1000, size);
         clmem->ocl_allocated = true;
     }
     else
@@ -357,7 +350,8 @@ clCreateBuffer(cl_context   context,
         clmem->ocl_allocated = false;
     }
 
-    clmem->bc.buffer = host_ptr;
+    clmem->virt_vm = host_ptr;
+    clmem->bc.buffer = (void*)g_cl_genode->virt_to_phys((Genode::addr_t)host_ptr);
     clmem->bc.buffer_size = (uint32_t)size;
 
     *errcode_ret |= CL_SUCCESS;
@@ -452,9 +446,9 @@ clReleaseMemObject(cl_mem memobj)
 {
     if(memobj->ocl_allocated && !memobj->bc.non_pointer_type)
     {
-        genode_allocator->free(memobj->bc.buffer);
+        g_cl_genode->free(memobj->virt_vm);
     }
-    genode_allocator->free(memobj);
+    g_cl_genode->free(memobj);
     return CL_SUCCESS;
 }
 
@@ -771,11 +765,11 @@ clCreateKernel(cl_program      program,
                cl_int *        errcode_ret)
 {
     // create kernel and set binary
-    struct kernel_config* kc = (struct kernel_config*)genode_allocator->alloc(sizeof(struct kernel_config));
+    struct kernel_config* kc = (struct kernel_config*)g_cl_genode->alloc(sizeof(struct kernel_config));
     kc->binary = (uint8_t*)program;
 
     // preallocated 32 buff configs;
-    kc->buffConfigs = (struct buffer_config*)genode_allocator->alloc(32 * sizeof(struct buffer_config));
+    kc->buffConfigs = (struct buffer_config*)g_cl_genode->alloc(32 * sizeof(struct buffer_config));
 
     // set name
     kc->kernelName = (char*)kernel_name;
@@ -817,8 +811,8 @@ CL_API_ENTRY cl_int CL_API_CALL
 clReleaseKernel(cl_kernel   kernel)
 {
     struct kernel_config* kc = (struct kernel_config*)kernel;
-    genode_allocator->free(kc->buffConfigs);
-    genode_allocator->free(kc);
+    g_cl_genode->free(kc->buffConfigs);
+    g_cl_genode->free(kc);
     return CL_SUCCESS;
 }
 
@@ -1046,7 +1040,7 @@ clEnqueueReadBuffer(cl_command_queue    command_queue,
         return CL_INVALID_VALUE;
     }
 
-    uint8_t* src = (uint8_t*)buffer->bc.buffer;
+    uint8_t* src = (uint8_t*)buffer->virt_vm;
     uint8_t* dst = (uint8_t*)ptr;
     for(size_t i = 0; i < size; i++)
     {
@@ -1097,7 +1091,7 @@ clEnqueueWriteBuffer(cl_command_queue   command_queue,
     }
 
     uint8_t* src = (uint8_t*)ptr;
-    uint8_t* dst = (uint8_t*)buffer->bc.buffer;
+    uint8_t* dst = (uint8_t*)buffer->virt_vm;
     for(size_t i = 0; i < size; i++)
     {
         dst[i] = src[i];
@@ -1379,14 +1373,14 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     }
     else // or extend queue
     {
-        cl_command_queue n = (cl_command_queue)genode_allocator->alloc(sizeof(struct _cl_command_queue));
+        cl_command_queue n = (cl_command_queue)g_cl_genode->alloc(sizeof(struct _cl_command_queue));
         n->next = NULL;
 
         cmd->next = n;
         n->kc = kc;
     }
 
-    // TODO: RPC: gpgpu_enqueueRun(kc);
+    g_cl_genode->enqueue_task(kc);
     return CL_SUCCESS;
 }
 
@@ -1641,7 +1635,7 @@ clCreateCommandQueue(cl_context                     context,
     }
 
     *errcode_ret |= CL_SUCCESS;
-    cl_command_queue clcmdqueue = (cl_command_queue)genode_allocator->alloc(sizeof(struct _cl_command_queue));
+    cl_command_queue clcmdqueue = (cl_command_queue)g_cl_genode->alloc(sizeof(struct _cl_command_queue));
     clcmdqueue->kc = NULL;
     clcmdqueue->next = NULL;
     return clcmdqueue;

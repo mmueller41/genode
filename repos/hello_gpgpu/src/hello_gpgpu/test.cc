@@ -141,7 +141,6 @@ static unsigned int test_Gen9core_gen_len = 1568;
 #define ELEMENTS 4096
 void run_gpgpu_test(Genode::Allocator_avl& alloc)
 {
-    clInitGenode(alloc);
 	const int num = 0x42;
     uint32_t* m_in;
     volatile uint32_t* m_out;

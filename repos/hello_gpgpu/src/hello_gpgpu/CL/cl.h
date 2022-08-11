@@ -17,7 +17,7 @@
 #ifndef __OPENCL_CL_H
 #define __OPENCL_CL_H
 
-#include <base/allocator_avl.h>
+#include "cl_genode.h"
 #include "cl_version.h"
 #include "cl_platform.h"
 
@@ -945,7 +945,7 @@ typedef struct _cl_name_version {
 
 /* Genode */
 extern CL_API_ENTRY void CL_API_CALL
-clInitGenode(Genode::Allocator_avl& alloc);
+clInitGenode(cl_genode& clg);
 
 /* Platform API */
 extern CL_API_ENTRY cl_int CL_API_CALL

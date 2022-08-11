@@ -33,15 +33,23 @@ struct gpgpu::Session_component : Genode::Rpc_object<Session>
 
 	void register_vm(Genode::Ram_dataspace_capability& ram_cap) override
 	{
-		Genode::log("Mapped memory from VM");
 		mapped_base = _global_gpgpu_genode->mapMemory(ram_cap);
 	}
 
 	int start_task(unsigned long kconf) override
 	{
-		// test mapped memory
-		int* test = (int*)(mapped_base + kconf);
-		Genode::log("Start task got number: ", *test);
+		// convert offset to driver virt addr
+		struct kernel_config* kc = (struct kernel_config*)(mapped_base + kconf);
+    	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
+		// at this point all IO buffers should have phys addrs and all other have driver virt addrs
+
+		// set maximum frequency
+		//GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+		//gpgpudriver.setMaxFreq();
+
+		// start gpu task
+		//gpgpudriver.enqueueRun(*kc);
+
 		static int id = 0;
 		return id++;
 	}

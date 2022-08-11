@@ -187,9 +187,9 @@ void run_gpgpu_test()
     // config buffers
     kconf.buffCount = 2;
     kconf.buffConfigs = buffconf;
-    kconf.buffConfigs[0].buffer = (uint32_t*)in;
+    kconf.buffConfigs[0].buffer = (uint32_t*)virt_to_phys(in);
     kconf.buffConfigs[0].buffer_size = kconf.range[0] * sizeof(uint32_t);
-    kconf.buffConfigs[1].buffer = (uint32_t*)out;
+    kconf.buffConfigs[1].buffer = (uint32_t*)virt_to_phys(out);
     kconf.buffConfigs[1].buffer_size = kconf.range[0] * sizeof(uint32_t);
 
     for(int i = 0; i < ELEMENTS; i++)

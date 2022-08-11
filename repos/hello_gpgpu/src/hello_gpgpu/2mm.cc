@@ -169,7 +169,7 @@ void cl_initialization()
 	else printf("Error getting device IDs\n");
 
 	errcode = clGetDeviceInfo(device_id,CL_DEVICE_NAME, sizeof(str_temp), str_temp,NULL);
-	if(errcode == CL_SUCCESS) printf("device name is %s\n",str_temp);
+	if(errcode == CL_SUCCESS) printf("device name is %s\n", str_temp);
 	else printf("Error getting device name\n");
 	
 	// Create an OpenCL context
