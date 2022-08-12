@@ -18,6 +18,11 @@ namespace gpgpu {
 	struct Main;
 }
 
+void yeah()
+{
+	Genode::log("yeah");
+}
+
 struct gpgpu::Session_component : Genode::Rpc_object<Session>
 {
 	addr_t mapped_base = 0;
@@ -40,17 +45,23 @@ struct gpgpu::Session_component : Genode::Rpc_object<Session>
 	{
 		// convert offset to driver virt addr
 		struct kernel_config* kc = (struct kernel_config*)(mapped_base + kconf);
+		kc->buffConfigs = (struct buffer_config*)((Genode::addr_t)kc->buffConfigs + mapped_base);
+		kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
     	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
-		// at this point all IO buffers should have phys addrs and all other have driver virt addrs
+		// at this point all IO buffers should have phys addrs and all others have driver virt addrs
+
+		// this is just for testing
+		kc->finish_callback = yeah;
 
 		// set maximum frequency
-		//GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
-		//gpgpudriver.setMaxFreq();
+		GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+		gpgpudriver.setMaxFreq();
 
 		// start gpu task
-		//gpgpudriver.enqueueRun(*kc);
+		gpgpudriver.enqueueRun(*kc);
 
 		static int id = 0;
+		Genode::log("Started GPGPU-Task: ", id);
 		return id++;
 	}
 };

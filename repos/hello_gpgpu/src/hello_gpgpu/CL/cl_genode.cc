@@ -58,8 +58,6 @@ void cl_genode::free(void* addr)
 
 void cl_genode::testRPC()
 {
-	Genode::log("===Test RPC===");
-
 	int i = 42;
 	Genode::log("send number ref with RPC: ", i);
 	int ret = backend_driver.say_hello(i);
@@ -69,6 +67,8 @@ void cl_genode::testRPC()
 int cl_genode::enqueue_task(struct kernel_config* kconf)
 {
     // convert virt vm addr to offset
+    kconf->buffConfigs = (struct buffer_config*)((Genode::addr_t)kconf->buffConfigs - mapped_base);
+    kconf->kernelName = (char*)((Genode::addr_t)kconf->kernelName - mapped_base);
     kconf->binary = (Genode::uint8_t*)((Genode::addr_t)kconf->binary - mapped_base);
 
     // send RPC

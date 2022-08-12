@@ -25,7 +25,6 @@ void Component::construct(Genode::Env& e)
     _global_gpgpu_genode = &gg;
 
     construct_RPC(e);
-    return;
 
 #ifdef TEST
     // test prink

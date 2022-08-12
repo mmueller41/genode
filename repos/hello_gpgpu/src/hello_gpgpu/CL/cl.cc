@@ -787,9 +787,16 @@ clCreateKernel(cl_program      program,
     // preallocated 32 buff configs;
     kc->buffConfigs = (struct buffer_config*)g_cl_genode->alloc(32 * sizeof(struct buffer_config));
 
-    // set name
-    kc->kernelName = (char*)kernel_name;
-    
+    // get name size
+    size_t size = 0;
+    for(; kernel_name[size] != '\0'; size++);
+    size++; // add '\0'
+    kc->kernelName = (char*)g_cl_genode->alloc(size * sizeof(char));
+    for(size_t i = 0; i < size; i++)
+    {
+        kc->kernelName[i] = kernel_name[i];
+    }
+
     *errcode_ret |= CL_SUCCESS;
     return (cl_kernel)kc;
 }
@@ -829,6 +836,7 @@ clReleaseKernel(cl_kernel   kernel)
     struct kernel_config* kc = (struct kernel_config*)kernel;
     g_cl_genode->free(kc->binary);
     g_cl_genode->free(kc->buffConfigs);
+    g_cl_genode->free(kc->kernelName);
     g_cl_genode->free(kc);
     return CL_SUCCESS;
 }
@@ -1036,15 +1044,21 @@ clFlush(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clFinish(cl_command_queue command_queue)
 {
-    // get last kernel
     cl_command_queue cmd = command_queue;
-    while (cmd->next)
+
+    do
     {
+        // wait for it if there is something in the queue
+        if(cmd->kc != NULL)
+        {
+            g_cl_genode->wait(cmd->kc);
+        }
+
+        // get the next one
         cmd = cmd->next;
     }
+    while(cmd != NULL);
 
-    // wait for it
-    g_cl_genode->wait(cmd->kc);
     return CL_SUCCESS;
 }
 

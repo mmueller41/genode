@@ -208,7 +208,6 @@ void cl_load_prog()
     const unsigned char* kernel_bin = __2mm_Gen9core_gen;
 	clProgram = clCreateProgramWithBinary(clGPUContext, 1, &device_id, &kernel_size, &kernel_bin, NULL, &errcode);
 	//clProgram = clCreateProgramWithSource(clGPUContext, 1, (const char **)&source_str, (const size_t *)&source_size, &errcode);
-
 	if(errcode != CL_SUCCESS) printf("Error in creating program\n");
 
 	// Build the program
