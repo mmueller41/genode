@@ -1,4 +1,5 @@
 #include <base/component.h>
+#include "rpc.h"
 
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
@@ -24,7 +25,7 @@ void Component::construct(Genode::Env& e)
     static gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
 
-    construct_RPC(e);
+    static gpgpu::Main main(e);
 
 #ifdef TEST
     // test prink
