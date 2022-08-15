@@ -42,23 +42,12 @@ append config {
 			<any-service> <parent/> <any-child/> </any-service>
 		</default-route>
 		<default caps="200"/>
-		<start name="gpgpu">
-			<resource name="RAM" quantum="10M"/>
-			<provides><service name="gpgpu"/></provides>
-		</start>
 		<start name="timer">
 			<resource name="RAM" quantum="1M"/>
 			<provides><service name="Timer"/></provides>
 			<route>
 				<any-service><parent/><any-child/></any-service>
 			</route>
-		</start>
-		<start name="hello_gpgpu">
-			<resource name="RAM" quantum="1024M"/>
-			<config>
-				<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
-				<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
-			</config>
 		</start>
 }
 
@@ -69,6 +58,13 @@ append config {
 		<provides> <service name="gpgpu"/> </provides>
         <resource name="RAM" quantum="32M"/>
     </start>
+	<start name="hello_gpgpu">
+		<resource name="RAM" quantum="1024M"/>
+		<config>
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
 </config>}
 
 install_config $config
