@@ -203,4 +203,7 @@ void run_gpgpu_test()
 
     // start gpu task
     gpgpudriver.enqueueRun(kconf);
+
+    // wait for its end
+    while(!kconf.finished);
 }

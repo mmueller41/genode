@@ -87,6 +87,8 @@ int cl_genode::enqueue_task(struct kernel_config* kconf)
 
 void cl_genode::wait(struct kernel_config* kconf)
 {
-    // TODO: poll flag here
-    while(true);
+    while(!kconf->finished)
+    {
+        asm("nop");
+    }
 }
