@@ -1,0 +1,53 @@
+#ifndef VGPU_H
+#define VGPU_H
+
+#define GENODE
+#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include "../uos-intel-gpgpu/driver/ppgtt32.h"
+#include <util/list.h>
+#include "kernel.h"
+
+namespace gpgpu {
+
+    class VGpu : public Chain
+    {
+        private:
+            PPGTT32* ppgtt;
+            Genode::List<Kernel> ready_list;
+
+        public:
+            /**
+             * @brief Construct a new VGpu object
+             */
+            VGpu() : ppgtt(nullptr), ready_list() {}
+
+            /**
+             * @brief Add a kernel to the vGPU's ready list 
+             * 
+             * @param kernel - the kernel object to enqueue
+             */
+            void add_kernel(Kernel* kernel) {
+                ready_list.insert(kernel);
+            }
+
+            /**
+             * @brief Dequeue a kernel from the ready list
+             * 
+             * @return First kernel image in ready list 
+             */
+            Kernel* take_kernel() { 
+                Kernel* k = ready_list.first();
+                ready_list.remove(k);
+                return k;
+            }
+
+            /**
+             * @brief Get the ppgtt object
+             * 
+             * @return PPGTT 
+             */
+            PPGTT32* get_ppgtt() { return ppgtt;  }
+    };
+}
+
+#endif // VGPU_H

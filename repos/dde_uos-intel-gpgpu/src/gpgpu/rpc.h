@@ -5,6 +5,7 @@
 #include <root/component.h>
 #include <base/rpc_server.h>
 #include <gpgpu/session.h>
+#include "vgpu.h"
 
 namespace gpgpu {
 	struct Session_component;
@@ -14,7 +15,10 @@ namespace gpgpu {
 
 struct gpgpu::Session_component : Genode::Rpc_object<Session>
 {
-	Genode::addr_t mapped_base = 0;
+	VGpu vgpu;
+	Genode::addr_t mapped_base;
+
+	Session_component() : vgpu(), mapped_base(0) {}
 
 	int say_hello(int& i) override;
 

@@ -19,11 +19,6 @@ namespace gpgpu {
 	struct Main;
 }
 
-void yeah()
-{
-	Genode::log("yeah");
-}
-
 int gpgpu::Session_component::say_hello(int& i)
 {
 	Genode::log("Hello from uos-intel-gpgpu!");
@@ -47,18 +42,21 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
 	// at this point all IO buffers should have phys addrs and all others have driver virt addrs
 
-	// this is just for testing
-	kc->finish_callback = yeah;
-
 	// set maximum frequency
-	//GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
-	//gpgpudriver.setMaxFreq();
+	GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+	gpgpudriver.setMaxFreq();
 
 	// start gpu task
-	//gpgpudriver.enqueueRun(*kc);
+	gpgpudriver.enqueueRun(*kc);
+
+	/*
+	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
+	vgpu.add_kernel(kernel);
+
+	free this somewhere
+	*/
 
 	static int id = 0;
-	Genode::log("Started GPGPU-Task: ", id);
 	return id++;
 }
 
@@ -74,7 +72,6 @@ gpgpu::Root_component::Root_component(Genode::Entrypoint &ep,
 {
 
 }
-
 
 gpgpu::Main::Main(Genode::Env &env) : env(env)
 {

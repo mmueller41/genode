@@ -24,14 +24,13 @@ void Component::construct(Genode::Env& e)
     // init globals
     static gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
-
-    static gpgpu::Main main(e);
-
+    
 #ifdef TEST
     // test prink
     printk("Hello printk: %d", 42);
 
     // test alloc
+    uint8_t* dummy = (uint8_t*)uos_aligned_alloc(0, 42);
     uint8_t* test = (uint8_t*)uos_aligned_alloc(0x1000, 0x1000);
     uint64_t addr = (uint64_t)test;
     if((addr & 0xFFF) != 0)
@@ -54,6 +53,7 @@ void Component::construct(Genode::Env& e)
             break;
         }
     }
+    free(dummy);
     free(test);
     Genode::log("Allocator test finished!");
 
@@ -79,13 +79,19 @@ void Component::construct(Genode::Env& e)
     Genode::log("Interrupt test finished!");
 #else
     // init driver
+    Genode::log("Init GPGPU driver...");
     GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
     gpgpudriver.init(0);
+    Genode::log("Register int handler...");
     _global_gpgpu_genode->registerInterruptHandler();
 
     // run the test and hope the best
+    Genode::log("Run self test...");
     run_gpgpu_test();
 #endif // TEST
+
+    Genode::log("Register RPCs...");
+    static gpgpu::Main main(e);
 
     Genode::log("This is the UOS Intel GPGPU End!");
 }
