@@ -10,7 +10,7 @@ extern "C" {
 struct _cl_mem
 {
     struct buffer_config bc;
-    void* virt_vm; // virt addr that can be used by vm (bc.buffer will by overwritten)
+    void* virt_vm; // virt addr that can be used by vm
     bool ocl_allocated;
 };
 struct _cl_command_queue
@@ -774,7 +774,7 @@ clCreateKernel(cl_program      program,
                cl_int *        errcode_ret)
 {
     // create kernel
-    struct kernel_config* kc = (struct kernel_config*)g_cl_genode->alloc(sizeof(struct kernel_config));
+    struct kernel_config* kc = new(g_cl_genode->getAlloc()) kernel_config();
     
     // we can not just set the binary, because its not in shared mem => copy it
     kc->binary = (uint8_t*)g_cl_genode->alloc(program->size);
@@ -785,7 +785,7 @@ clCreateKernel(cl_program      program,
     }
 
     // preallocated 32 buff configs;
-    kc->buffConfigs = (struct buffer_config*)g_cl_genode->alloc(32 * sizeof(struct buffer_config));
+    kc->buffConfigs = new(g_cl_genode->getAlloc()) buffer_config[32];
 
     // get name size
     size_t size = 0;

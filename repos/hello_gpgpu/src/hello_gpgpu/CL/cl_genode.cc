@@ -35,6 +35,16 @@ cl_genode::~cl_genode()
 
 void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size)
 {
+    if(alignment == 0x1000)
+    {
+        alignment = 12;
+    }
+    else if(alignment != 0x0)
+    {
+        Genode::error("[OCL] Unsupported alignment: ", alignment);
+        return nullptr;
+    }
+
     return allocator.alloc_aligned(size, alignment).convert<void *>(
 
 		[&] (void *ptr) { return ptr; },

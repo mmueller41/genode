@@ -80,6 +80,15 @@ public:
     void free(void* addr);
 
     /**
+     * @brief Get the Alloc object
+     * 
+     * @return Genode::Allocator_avl& 
+     */
+    Genode::Allocator_avl& getAlloc() {
+        return allocator;
+    }
+
+    /**
      * @brief converts a virtual address into a physical address
      * 
      * @param virt the virtual address
