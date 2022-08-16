@@ -835,6 +835,13 @@ clReleaseKernel(cl_kernel   kernel)
 {
     struct kernel_config* kc = (struct kernel_config*)kernel;
     g_cl_genode->free(kc->binary);
+    for(int i = 0; i < kc->buffCount; i++)
+    {
+        if(kc->buffConfigs[i].non_pointer_type)
+        {
+            g_cl_genode->free(kc->buffConfigs[i].buffer);
+        }
+    }
     g_cl_genode->free(kc->buffConfigs);
     g_cl_genode->free(kc->kernelName);
     g_cl_genode->free(kc);
@@ -860,7 +867,11 @@ clSetKernelArg(cl_kernel    kernel,
     else
     {
         struct buffer_config bc;
-        bc.buffer = (void*)arg_value;
+        bc.buffer = g_cl_genode->alloc(arg_size); // alloc and copy for shared memory
+        uint8_t* src = (uint8_t*)arg_value;
+        uint8_t* dst = (uint8_t*)bc.buffer;
+        for(size_t i = 0; i < arg_size; i++)
+            dst[i] = src[i];
         bc.buffer_size = (uint32_t)arg_size;
         bc.non_pointer_type = true;
         kc->buffConfigs[arg_index] = bc;

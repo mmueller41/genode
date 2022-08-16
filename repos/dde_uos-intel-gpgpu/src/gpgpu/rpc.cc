@@ -36,8 +36,15 @@ void gpgpu::Session_component::register_vm(Genode::Ram_dataspace_capability& ram
 int gpgpu::Session_component::start_task(unsigned long kconf)
 {
 	// convert offset to driver virt addr
-	struct kernel_config* kc = (struct kernel_config*)(mapped_base + kconf);
+	struct kernel_config* kc = (struct kernel_config*)(kconf + mapped_base);
 	kc->buffConfigs = (struct buffer_config*)((Genode::addr_t)kc->buffConfigs + mapped_base);
+	for(int i = 0; i < kc->buffCount; i++)
+    {
+        if(kc->buffConfigs[i].non_pointer_type)
+        {
+            kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + mapped_base);
+        }
+    }
 	kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
 	// at this point all IO buffers should have phys addrs and all others have driver virt addrs
