@@ -164,7 +164,29 @@ void gpgpu_genode::registerInterruptHandler()
     irq->ack_irq();
 }
 
-addr_t gpgpu_genode::mapMemory(Genode::Ram_dataspace_capability& ram_cap_vm)
+Genode::Ram_dataspace_capability gpgpu_genode::allocRamCap(Genode::size_t size, Genode::addr_t& mapped_base, Genode::addr_t& base)
 {
-    return env.rm().attach(ram_cap_vm);
+	// get some memory
+    Genode::size_t donate = size;
+    Genode::Ram_dataspace_capability ram_cap =
+        Genode::retry<Genode::Out_of_ram>(
+            [&] () {
+                return Genode::retry<Genode::Out_of_caps>(
+                    [&] () { return pci.alloc_dma_buffer(size, Genode::UNCACHED); },
+                    [&] () { pci.upgrade_caps(2); });
+            },
+            [&] () {
+                pci.upgrade_ram(donate);
+                donate = donate * 2 > size ? 4096 : donate * 2;
+            });
+
+    // get virt and phys base
+    mapped_base = env.rm().attach(ram_cap);
+    base = pci.dma_addr(ram_cap);
+    return ram_cap;
+}
+
+void gpgpu_genode::freeRamCap(Genode::Ram_dataspace_capability& ram_cap)
+{
+    pci.free_dma_buffer(ram_cap);
 }

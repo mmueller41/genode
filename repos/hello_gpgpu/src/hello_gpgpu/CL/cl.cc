@@ -353,10 +353,11 @@ clCreateBuffer(cl_context   context,
     else
     {
         clmem->ocl_allocated = false;
+        Genode::error("[OCL] Memory mapping is currently unsupported!");
     }
 
     clmem->virt_vm = host_ptr;
-    clmem->bc.buffer = (void*)g_cl_genode->virt_to_phys((Genode::addr_t)host_ptr);
+    clmem->bc.buffer = host_ptr;
     clmem->bc.buffer_size = (uint32_t)size;
     clmem->bc.non_pointer_type = false;
 

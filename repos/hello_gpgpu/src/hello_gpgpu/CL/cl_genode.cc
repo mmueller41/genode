@@ -1,36 +1,21 @@
 #include "cl_genode.h"
 
-cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), heap{ env.ram(), env.rm() }, allocator(&heap), ram_cap(), mapped_base(0), base(0), pci(env), backend_driver(env)
+cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), heap{ env.ram(), env.rm() }, allocator(&heap), mapped_base(0), backend_driver(env)
 {
-    // get some memory
-    Genode::size_t donate = size;
-    ram_cap =
-        Genode::retry<Genode::Out_of_ram>(
-            [&] () {
-                return Genode::retry<Genode::Out_of_caps>(
-                    [&] () { return pci.alloc_dma_buffer(size, Genode::UNCACHED); },
-                    [&] () { pci.upgrade_caps(2); });
-            },
-            [&] () {
-                pci.upgrade_ram(donate);
-                donate = donate * 2 > size ? 4096 : donate * 2;
-            });
+    // get shared memory with driver
+    Genode::Ram_dataspace_capability ram_cap;
+    backend_driver.register_vm(size, ram_cap);
 
-    // get virt and phys base
+    // attach it to vm
     mapped_base = env.rm().attach(ram_cap);
-    base = pci.dma_addr(ram_cap);
-
+    
     // use it in allocator
     allocator.add_range(mapped_base, size);
-
-    // map it for backend driver
-    backend_driver.register_vm(ram_cap);
 }
 
 cl_genode::~cl_genode()
 {
-    // release pci dev and free allocator memory
-    env.ram().free(ram_cap);
+
 }
 
 void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size)
@@ -79,10 +64,7 @@ int cl_genode::enqueue_task(struct kernel_config* kconf)
     // convert virt vm addr to offset
     for(int i = 0; i < kconf->buffCount; i++)
     {
-        if(kconf->buffConfigs[i].non_pointer_type)
-        {
-            kconf->buffConfigs[i].buffer = (void*)((Genode::addr_t)kconf->buffConfigs[i].buffer - mapped_base);
-        }
+        kconf->buffConfigs[i].buffer = (void*)((Genode::addr_t)kconf->buffConfigs[i].buffer - mapped_base);
     }
     kconf->buffConfigs = (struct buffer_config*)((Genode::addr_t)kconf->buffConfigs - mapped_base);
     kconf->kernelName = (char*)((Genode::addr_t)kconf->kernelName - mapped_base);

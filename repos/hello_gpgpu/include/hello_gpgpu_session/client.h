@@ -17,9 +17,9 @@ struct gpgpu::Session_client : Genode::Rpc_client<gpgpu::Session>
 		return call<Rpc_start_task>(kconf);
 	}
 
-	void register_vm(Genode::Ram_dataspace_capability& ram_cap) override
+	void register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override
 	{
-		call<Rpc_register_vm>(ram_cap);
+		call<Rpc_register_vm>(size, ram_cap);
 	}
 
 	int say_hello(int& i) override

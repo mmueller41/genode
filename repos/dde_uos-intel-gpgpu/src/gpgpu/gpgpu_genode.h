@@ -134,10 +134,19 @@ public:
     /**
      * @brief 
      * 
-     * @param ram_cap 
-     * @return addr_t 
+     * @param size 
+     * @param mapped_base 
+     * @param base 
+     * @return Genode::Ram_dataspace_capability& 
      */
-    addr_t mapMemory(Genode::Ram_dataspace_capability& ram_cap);
+    Genode::Ram_dataspace_capability allocRamCap(Genode::size_t size, Genode::addr_t& mapped_base, Genode::addr_t& base);
+
+    /**
+     * @brief 
+     * 
+     * @param ram_cap 
+     */
+    void freeRamCap(Genode::Ram_dataspace_capability& ram_cap);
 };
 
 #endif // GPGPU_GENODE_H

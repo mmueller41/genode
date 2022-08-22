@@ -16,13 +16,17 @@ namespace gpgpu {
 struct gpgpu::Session_component : Genode::Rpc_object<Session>
 {
 	VGpu vgpu;
+	Genode::Ram_dataspace_capability ram_cap;
 	Genode::addr_t mapped_base;
+	Genode::addr_t base;
 
-	Session_component() : vgpu(), mapped_base(0) {}
+	Session_component() : vgpu(), ram_cap(), mapped_base(0), base(0) {}
+
+	~Session_component();
 
 	int say_hello(int& i) override;
 
-	void register_vm(Genode::Ram_dataspace_capability& ram_cap) override;
+	void register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override;
 
 	int start_task(unsigned long kconf) override;
 };

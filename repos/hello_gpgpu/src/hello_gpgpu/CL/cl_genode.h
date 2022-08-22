@@ -27,12 +27,7 @@ private:
     // allocator
     Genode::Heap heap;
     Genode::Allocator_avl allocator;
-    Genode::Ram_dataspace_capability ram_cap;
     Genode::addr_t mapped_base;
-    Genode::addr_t base;
-
-    // pci
-	Platform::Connection pci;
 
     // rpc
     gpgpu::Connection backend_driver;
@@ -86,17 +81,6 @@ public:
      */
     Genode::Allocator_avl& getAlloc() {
         return allocator;
-    }
-
-    /**
-     * @brief converts a virtual address into a physical address
-     * 
-     * @param virt the virtual address
-     * @return addr_t the physical address
-     */
-    Genode::addr_t virt_to_phys(Genode::addr_t virt) const
-    {
-		return virt - mapped_base + base;
     }
 
     /**

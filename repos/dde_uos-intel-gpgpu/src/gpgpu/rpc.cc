@@ -28,9 +28,10 @@ int gpgpu::Session_component::say_hello(int& i)
 	return 42;
 }
 
-void gpgpu::Session_component::register_vm(Genode::Ram_dataspace_capability& ram_cap)
+void gpgpu::Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {
-	mapped_base = _global_gpgpu_genode->mapMemory(ram_cap);
+	ram_cap = _global_gpgpu_genode->allocRamCap(size, mapped_base, base);
+	ram_cap_vm = ram_cap;
 }
 
 int gpgpu::Session_component::start_task(unsigned long kconf)
@@ -40,21 +41,25 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	kc->buffConfigs = (struct buffer_config*)((Genode::addr_t)kc->buffConfigs + mapped_base);
 	for(int i = 0; i < kc->buffCount; i++)
     {
-        if(kc->buffConfigs[i].non_pointer_type)
+        if(kc->buffConfigs[i].non_pointer_type) // for non pointer set virt addr
         {
-            kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + mapped_base);
+			kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + mapped_base);
         }
+		else // for pointer set phys addr
+		{
+			kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + base);
+		}
     }
 	kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
-	// at this point all IO buffers should have phys addrs and all others have driver virt addrs
 
 	// set maximum frequency
-	GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
-	gpgpudriver.setMaxFreq();
+	//GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+	//gpgpudriver.setMaxFreq();
 
 	// start gpu task
-	gpgpudriver.enqueueRun(*kc);
+	//gpgpudriver.enqueueRun(*kc);
+	kc->finished = true;
 
 	/*
 	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
@@ -64,7 +69,19 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	*/
 
 	static int id = 0;
+	Genode::log("Kernel ", id);
+	for(int i = 0; i < kc->buffCount; i++)
+	{
+		Genode::log("\tBuffer ", i);
+		Genode::log("\t\taddr: ", (void*)kc->buffConfigs[i].buffer);
+		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
+	}
 	return id++;
+}
+
+gpgpu::Session_component::~Session_component()
+{
+	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 
 gpgpu::Session_component* gpgpu::Root_component::_create_session(const char *)
