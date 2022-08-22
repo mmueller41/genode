@@ -1,0 +1,154 @@
+set build_components {
+    core init timer app/hello_mxtask
+	drivers/uart
+	app/gdb_monitor
+    lib/vfs/pipe
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+lappend build_components "lib/gdbserver_platform-$::env(KERNEL)"
+build $build_components
+
+create_boot_directory
+
+set config {
+    <config>
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="RM"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="1M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+}
+
+append_platform_drv_config
+
+append config {
+        <start name="pc_uart_drv">
+            <resource name="RAM" quantum="1M"/>
+            <provides>
+			    <service name="Uart"/>
+             <service name="Terminal"/> </provides>
+            <config>
+                <policy label_prefix="gdb_monitor" uart="1"/>
+            </config>
+        </start>
+	<start name="drivers" caps="1500" managing_system="yes">
+		<resource name="RAM" quantum="64M"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer">   <child name="timer"/> </service>
+			<service name="Capture"> <child name="gdb_monitor"/> </service>
+			<service name="Event">   <child name="gdb_monitor"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+        <start name="gdb_monitor">
+            <resource name="RAM" quantum="8000M"/>
+            <route>
+                <service name="Timer"> <child name="timer"/> </service>
+                <any-service> <parent/> <any-child/> </any-service>
+            </route>
+            <config>
+                <target name="hello_mxtask">
+                <config>
+                    <vfs> <dir name="dev"> 
+                        <log/> 
+                        <inline name="rtc">2022-07-20 14:30</inline> 
+					    <terminal raw="yes"/>
+                     </dir> 
+				    <dir name="pipe"> <pipe/> </dir> </vfs>
+                    <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
+                </config>
+                </target>
+			    <preserve name="RAM" quantum="5M"/>
+                <vfs> <dir name="dev"> 
+                    <log/> 
+                    <inline name="rtc">2022-07-20 14:30</inline> 
+                    <terminal raw="yes"/>
+                    </dir> 
+                <dir name="pipe"> <pipe/> </dir> </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc" pipe="pipe"/>
+            </config>
+        </start>
+    </config>
+}
+
+install_config $config
+
+proc binary_name_gdbserver_platform_lib_so { } {
+	return "gdbserver_platform-$::env(KERNEL).lib.so"
+}
+
+set boot_modules { 
+    core init timer vfs.lib.so libm.lib.so libc.lib.so stdcxx.lib.so pc_uart_drv vfs_pipe.lib.so gdb_monitor gdbserver_platform.lib.so ld.lib.so hello_mxtask
+}
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+#
+# Execute test case
+#
+#
+set local_port 5555
+
+# qemu config
+append qemu_args " -display none -m 8000M "
+
+# connect comport 0 to stdio
+append qemu_args " -serial stdio "
+
+# connect comport 1 with TCP port $local_port
+append qemu_args " -serial chardev:uart "
+append qemu_args " -chardev socket,id=uart,port=$local_port,host=localhost,server,nowait,ipv4 "
+
+run_genode_until {.*Remote debugging using /dev/terminal.*} 30
+
+puts "GDB monitor is up, starting GDB in a new terminal"
+
+source ${genode_dir}/repos/ports/run/gdb_monitor.inc
+
+# GDB loads symbols from 'debug/ld.lib.so'
+if { [have_spec nova] } {
+	exec ln -sf ld-nova.lib.so debug/ld.lib.so
+}
+if { [have_spec foc] } {
+	exec ln -sf ld-foc.lib.so debug/ld.lib.so
+}
+
+set gdb_target_binary "test-gdb_monitor"
+
+# sequence of GDB commands to execute at startup
+set gdb_cmds ""
+append gdb_cmds "-ex \"target remote localhost:$local_port\" "
+
+append gdb_cmds [gdb_initial_breakpoint_cmds $gdb_target_binary]
+
+# ask the user for confirmations again
+append gdb_cmds {-ex "set interactive-mode auto" }
+
+puts "command: [gdb] debug/ld.lib.so $gdb_cmds"
+
+exec [terminal] -e "bash -lc \'[gdb] debug/ld.lib.so $gdb_cmds\'" &
+
+interact -i [output_spawn_id]
+

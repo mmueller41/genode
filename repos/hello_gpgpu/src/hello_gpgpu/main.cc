@@ -7,9 +7,11 @@
 #include "CL/cl.h"
 #include "test.h"
 
-extern int main(int argc, char *argv[]);
+// bench includes 
+#include "benchmark/benchmark_extern.h"
 
-void testvm_construct(Genode::Env& env)
+
+void testvm_construct(Genode::Env &env)
 {
 	// wait for gpgpu construction
 	Libc::with_libc([&] {
@@ -39,7 +41,17 @@ void testvm_construct(Genode::Env& env)
 	// run 2mm
 	Genode::log("===Run 2mm===");
 	Libc::with_libc([&] {
-		main(0, 0);
+		ns_2mm::main(0,0);
+		ns_3mm::main(0, 0);
+		ns_atax::main(0,0);
+		ns_bicg::main(0,0);
+		ns_doitgen::main(0,0);
+		ns_gemm::main(0,0);
+		ns_gemver::main(0,0);
+		ns_gesummv::main(0,0);
+		ns_mvt::main(0,0);
+		ns_syr2k::main(0,0);
+		ns_syrk::main(0,0);
 	});
 
 	Genode::log("===End===");

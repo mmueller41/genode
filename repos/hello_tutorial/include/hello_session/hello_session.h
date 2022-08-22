@@ -28,7 +28,7 @@ struct Hello::Session : Genode::Session
 
 	virtual void say_hello() = 0;
 	virtual int add(int a, int b) = 0;
-
+	virtual unsigned short id() = 0;
 
 	/*******************
 	 ** RPC interface **
@@ -36,8 +36,9 @@ struct Hello::Session : Genode::Session
 
 	GENODE_RPC(Rpc_say_hello, void, say_hello);
 	GENODE_RPC(Rpc_add, int, add, int, int);
+	GENODE_RPC(Rpc_get_id, unsigned short, id);
 
-	GENODE_RPC_INTERFACE(Rpc_say_hello, Rpc_add);
+	GENODE_RPC_INTERFACE(Rpc_say_hello, Rpc_add, Rpc_get_id);
 };
 
 #endif /* _INCLUDE__HELLO_SESSION__HELLO_SESSION_H_ */

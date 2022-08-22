@@ -1,4 +1,4 @@
-build 'core init app/thread_test'
+build "core init timer app/thread_test"
 create_boot_directory
 
 install_config {
@@ -8,15 +8,36 @@ install_config {
             <service name="PD"/>
             <service name="CPU"/>
             <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="CAP"/>
+            <service name="RM"/>
+            <service name="SIGNAL"/>
         </parent-provides>
         <default-route>
-            <any-service><parent/></any-service>
+            <any-service><parent/><any-child/></any-service>
         </default-route>
         <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="1M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
         <start name="thread_test">
             <resource name="RAM" quantum="10M"/>
+            <route>
+                <service name="Timer"> <child name="timer"/> </service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
         </start>
     </config>
 }
-build_boot_image "core ld lib.so init thread_test"
+set boot_modules { 
+    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so thread_test
+}
+build_boot_image $boot_modules
 append qemu_args "-nographic -m 64"

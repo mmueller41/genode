@@ -11,13 +11,11 @@ struct ThreadTest::Main
 {
     Genode::Env &_env;
 
-    Main(Genode::Env &env) : _env(env) {}
-
     void execute() 
     {
         while(true) {
             std::cout << "Hello world" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::this_thread::sleep_for(std::chrone::seconds(1));
         }
     }
 };
@@ -25,6 +23,6 @@ struct ThreadTest::Main
 void Component::construct(Genode::Env &env)
 {
     static ThreadTest::Main main(env);
-    std::thread([&]
-                { main.execute(); });
+    std::thread([main]
+                { main->execute(); });
 }
