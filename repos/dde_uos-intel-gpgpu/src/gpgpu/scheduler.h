@@ -41,6 +41,26 @@ namespace gpgpu {
              *          a kernel has finished its execution. 
              */
             void handle_gpu_event();
+
+            /**
+             * @brief 
+             * 
+             * @param vgpu 
+             */
+            void add_vgpu(VGpu* vgpu)
+            {
+                _run_list.insert(vgpu);
+            }
+
+            /**
+             * @brief 
+             * 
+             * @param vgpu 
+             */
+            void remove_vgpu(VGpu* vgpu)
+            {
+                _run_list.remove(vgpu);
+            }
     };
 }
 

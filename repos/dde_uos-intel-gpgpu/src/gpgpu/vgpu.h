@@ -32,6 +32,17 @@ namespace gpgpu {
             }
 
             /**
+             * @brief 
+             * 
+             * @return true 
+             * @return false 
+             */
+            bool has_kernel() const
+            {
+                return ready_list.first() == nullptr;
+            }
+
+            /**
              * @brief Dequeue a kernel from the ready list
              * 
              * @return First kernel image in ready list 

@@ -32,6 +32,7 @@ void gpgpu::Session_component::register_vm(Genode::size_t size, Genode::Ram_data
 {
 	ram_cap = _global_gpgpu_genode->allocRamCap(size, mapped_base, base);
 	ram_cap_vm = ram_cap;
+	// TODO: register vgpu to scheduler
 }
 
 int gpgpu::Session_component::start_task(unsigned long kconf)
@@ -65,7 +66,8 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
 	vgpu.add_kernel(kernel);
 
-	free this somewhere
+	TODO: free this somewhere
+	TODO: start scheduler if its idling
 	*/
 
 	static int id = 0;

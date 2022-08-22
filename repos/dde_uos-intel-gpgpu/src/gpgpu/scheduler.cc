@@ -4,7 +4,8 @@
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
 
-void gpgpu::Scheduler::schedule_next() {
+void gpgpu::Scheduler::schedule_next()
+{
     VGpu *next;
     if ((next = static_cast<VGpu*>(_run_list.first()))) {
         this->dispatch(*next);
@@ -17,7 +18,12 @@ void gpgpu::Scheduler::schedule_next() {
         _curr_vgpu = nullptr; 
 }
 
-void gpgpu::Scheduler::handle_gpu_event() {
+void gpgpu::Scheduler::handle_gpu_event()
+{
+    // reduce frequency
+    GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+    gpgpudriver.setMinFreq();
+
     /* Switch to next vGPU in the run list */
     schedule_next();
 
@@ -29,10 +35,12 @@ void gpgpu::Scheduler::handle_gpu_event() {
     Kernel *next = _curr_vgpu->take_kernel();
 
     if (!next) /* If there is no kernel for the vGPU left */
-        schedule_next(); /* pick the next vGPU, maybe it has got some kernels for us. */
+    {
+        // TODO: search for kernels in vgpu list
+        return;
+    }
     
     // set frequency
-    GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
     gpgpudriver.setMaxFreq();
 
     // run gpgpu task
