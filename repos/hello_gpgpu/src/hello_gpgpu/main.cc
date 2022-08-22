@@ -39,19 +39,30 @@ void testvm_construct(Genode::Env &env)
 	run_gpgpu_test(alloc);
 
 	// run 2mm
-	Genode::log("===Run 2mm===");
+	Genode::log("===Run PolyBench===");
 	Libc::with_libc([&] {
-		ns_2mm::main(0,0);
+		Genode::log("===Run 2mm===");
+		ns_2mm::main(0, 0);
+		/*Genode::log("===Run 3mm===");
 		ns_3mm::main(0, 0);
-		ns_atax::main(0,0);
-		ns_bicg::main(0,0);
-		ns_doitgen::main(0,0);
-		ns_gemm::main(0,0);
-		ns_gemver::main(0,0);
-		ns_gesummv::main(0,0);
-		ns_mvt::main(0,0);
-		ns_syr2k::main(0,0);
-		ns_syrk::main(0,0);
+		Genode::log("===Run atax===");
+		ns_atax::main(0, 0);
+		Genode::log("===Run bicg===");
+		ns_bicg::main(0, 0);
+		Genode::log("===Run doitgen===");
+		ns_doitgen::main(0, 0);
+		Genode::log("===Run gemm===");
+		ns_gemm::main(0, 0);
+		Genode::log("===Run gemver===");
+		ns_gemver::main(0, 0);
+		Genode::log("===Run gesummv===");
+		ns_gesummv::main(0, 0); // has some differences in results
+		Genode::log("===Run mvt===");
+		ns_mvt::main(0, 0);
+		Genode::log("===Run syr2k===");
+		ns_syr2k::main(0, 0); // crashes with READ PF somewhere in parseGEN
+		Genode::log("===Run syrk===");
+		ns_syrk::main(0, 0);*/
 	});
 
 	Genode::log("===End===");
