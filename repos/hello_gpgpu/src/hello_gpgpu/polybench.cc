@@ -29,6 +29,7 @@
 # define POLYBENCH_CACHE_SIZE_KB 32770
 #endif
 
+#define POLYBENCH_TIME 1
 
 int polybench_papi_counters_threadid = POLYBENCH_THREAD_MONITOR;
 double polybench_program_total_flops = 0;

@@ -1,5 +1,5 @@
 /**
- * 2mm.h: This file is part of the PolyBench/GPU 1.0 test suite.
+ * atax.h: This file is part of the PolyBench/GPU 1.0 test suite.
  *
  *
  * Contact: Scott Grauer-Gray <sgrauerg@gmail.com>
@@ -8,57 +8,45 @@
  * Web address: http://www.cse.ohio-state.edu/~pouchet/software/polybench/GPU
  */
 
-#ifndef TWOMM_H
-# define TWOMM_H
+#ifndef ATAX_H
+# define ATAX_H
 
 /* Default to STANDARD_DATASET. */
 # if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET)
-#  define SMALL_DATASET
+#  define MINI_DATASET
 # endif
 
 /* Do not define anything if the user manually defines the size. */
-# if !defined(NI) && !defined(NJ) && !defined(NK) && !defined(NL)
+# if !defined(NX) && !defined(NY)
 /* Define the possible dataset sizes. */
 #  ifdef MINI_DATASET
-# define NI 256
-# define NJ 256
-# define NK 256
-# define NL 256
+#define NX 1024
+#define NY 1024
 #  endif
 
 #  ifdef SMALL_DATASET
-# define NI 512
-# define NJ 512
-# define NK 512
-# define NL 512
+#define NX 2048
+#define NY 2048
 #  endif
 
 #  ifdef STANDARD_DATASET /* Default if unspecified. */
-# define NI 1024
-# define NJ 1024
-# define NK 1024
-# define NL 1024
+#define NX 4096
+#define NY 4096
 #  endif
 
 #  ifdef LARGE_DATASET
-# define NI 2048
-# define NJ 2048
-# define NK 2048
-# define NL 2048
+#define NX 8192
+#define NY 8192
 #  endif
 
 #  ifdef EXTRALARGE_DATASET
-# define NI 4096
-# define NJ 4096
-# define NK 4096
-# define NL 4096
+#define NX 16384
+#define NY 16384
 #  endif
 # endif /* !N */
 
-# define _PB_NI POLYBENCH_LOOP_BOUND(NI,ni)
-# define _PB_NJ POLYBENCH_LOOP_BOUND(NJ,nj)
-# define _PB_NK POLYBENCH_LOOP_BOUND(NK,nk)
-# define _PB_NL POLYBENCH_LOOP_BOUND(NL,nl)
+# define _PB_NX POLYBENCH_LOOP_BOUND(NX,nx)
+# define _PB_NY POLYBENCH_LOOP_BOUND(NY,ny)
 
 # ifndef DATA_TYPE
 #  define DATA_TYPE float
@@ -70,4 +58,4 @@
 #define DIM_LOCAL_WORK_GROUP_Y 8
 
 
-#endif /* !TWOMM*/
+#endif /* !ATAX*/

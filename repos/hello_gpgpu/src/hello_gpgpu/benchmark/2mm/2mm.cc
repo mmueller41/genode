@@ -19,7 +19,7 @@
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
-#include "CL/cl.h"
+#include "../../CL/cl.h"
 #endif
 
 #define POLYBENCH_TIME 1
@@ -28,8 +28,8 @@
 #define OPENCL_DEVICE_SELECTION CL_DEVICE_TYPE_GPU
 
 #include "2mm.h"
-#include "polybench.h"
-#include "polybenchUtilFuncts.h"
+#include "../../polybench.h"
+#include "../../polybenchUtilFuncts.h"
 
 //define the error threshold for the results "not matching"
 #define PERCENT_DIFF_ERROR_THRESHOLD 1.05
@@ -44,6 +44,10 @@
 #endif
 
 #include "2mm_kernel.h"
+
+namespace ns_2mm {
+
+
 
 char str_temp[1024];
 
@@ -415,4 +419,6 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-#include "polybench.cc"
+}
+
+// #include "../../polybench.cc"

@@ -164,6 +164,7 @@ extern const unsigned int polybench_papi_eventlist[];
 #  define polybench_print_instruments polybench_papi_print();
 # endif
 
+#define POLYBENCH_TIME
 
 /* Timing support. */
 # if defined(POLYBENCH_TIME) || defined(POLYBENCH_GFLOPS)
