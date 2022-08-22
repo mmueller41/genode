@@ -1,7 +1,7 @@
 TARGET = gpgpu
 REQUIRES = x86_64
 
-SRC_CC = main.cc gpgpu_genode.cc stubs.cc test.cc rpc.cc
+SRC_CC = main.cc gpgpu_genode.cc stubs.cc test.cc rpc.cc scheduler.cc
 LIBS   = base
 
 UOS_INTEL_GPGPU = uos-intel-gpgpu-link-cxx.o

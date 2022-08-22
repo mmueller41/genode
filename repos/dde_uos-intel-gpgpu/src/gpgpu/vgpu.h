@@ -9,7 +9,7 @@
 
 namespace gpgpu {
 
-    class VGpu : public Chain
+    class VGpu : public Genode::List<gpgpu::VGpu>::Element
     {
         private:
             PPGTT32* ppgtt;
@@ -27,6 +27,7 @@ namespace gpgpu {
              * @param kernel - the kernel object to enqueue
              */
             void add_kernel(Kernel* kernel) {
+                //kernel->get_config()->gtt = ppgtt;
                 ready_list.insert(kernel);
             }
 
@@ -40,13 +41,6 @@ namespace gpgpu {
                 ready_list.remove(k);
                 return k;
             }
-
-            /**
-             * @brief Get the ppgtt object
-             * 
-             * @return PPGTT 
-             */
-            PPGTT32* get_ppgtt() { return ppgtt;  }
     };
 }
 
