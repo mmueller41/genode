@@ -358,6 +358,7 @@ clCreateBuffer(cl_context   context,
     clmem->virt_vm = host_ptr;
     clmem->bc.buffer = (void*)g_cl_genode->virt_to_phys((Genode::addr_t)host_ptr);
     clmem->bc.buffer_size = (uint32_t)size;
+    clmem->bc.non_pointer_type = false;
 
     *errcode_ret |= CL_SUCCESS;
     return clmem;
@@ -866,15 +867,17 @@ clSetKernelArg(cl_kernel    kernel,
     }
     else
     {
-        struct buffer_config bc;
-        bc.buffer = g_cl_genode->alloc(arg_size); // alloc and copy for shared memory
+        // set buffer config
+        struct buffer_config& bc = kc->buffConfigs[arg_index];
+        bc.buffer = g_cl_genode->alloc(arg_size); // alloc shared mem
+        bc.buffer_size = (uint32_t)arg_size;
+        bc.non_pointer_type = true;
+
+        // copy value to shared mem
         uint8_t* src = (uint8_t*)arg_value;
         uint8_t* dst = (uint8_t*)bc.buffer;
         for(size_t i = 0; i < arg_size; i++)
             dst[i] = src[i];
-        bc.buffer_size = (uint32_t)arg_size;
-        bc.non_pointer_type = true;
-        kc->buffConfigs[arg_index] = bc;
     }
     
     if(kc->buffCount < (arg_index + 1))
