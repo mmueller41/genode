@@ -54,12 +54,12 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
 
 	// set maximum frequency
-	//GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
-	//gpgpudriver.setMaxFreq();
+	GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+	gpgpudriver.setMaxFreq();
 
 	// start gpu task
-	//gpgpudriver.enqueueRun(*kc);
-	kc->finished = true;
+	gpgpudriver.enqueueRun(*kc);
+	//kc->finished = true;
 
 	/*
 	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
