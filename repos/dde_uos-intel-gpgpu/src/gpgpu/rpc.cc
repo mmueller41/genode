@@ -69,13 +69,13 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	*/
 
 	static int id = 0;
-	Genode::log("Kernel ", id);
+	/*Genode::log("Kernel ", id);
 	for(int i = 0; i < kc->buffCount; i++)
 	{
 		Genode::log("\tBuffer ", i);
 		Genode::log("\t\taddr: ", (void*)kc->buffConfigs[i].buffer);
 		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
-	}
+	}*/
 	return id++;
 }
 
