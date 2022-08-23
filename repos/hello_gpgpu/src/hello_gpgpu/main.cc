@@ -50,17 +50,17 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run bicg===");
 		ns_bicg::main(0, 0);
 		Genode::log("===Run doitgen===");
-		ns_doitgen::main(0, 0);
+		ns_doitgen::main(0, 0); //  Number of misses: 31744 + 266 dangling allocations at allocator destruction time?
 		Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
 		Genode::log("===Run gemver===");
 		ns_gemver::main(0, 0);
 		Genode::log("===Run gesummv===");
-		ns_gesummv::main(0, 0); // has some differences in results
+		ns_gesummv::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 1023
 		Genode::log("===Run mvt===");
 		ns_mvt::main(0, 0);
 		Genode::log("===Run syr2k===");
-		ns_syr2k::main(0, 0); // crashes with READ PF somewhere in parseGEN
+		ns_syr2k::main(0, 0);
 		Genode::log("===Run syrk===");
 		ns_syrk::main(0, 0);*/
 	});
