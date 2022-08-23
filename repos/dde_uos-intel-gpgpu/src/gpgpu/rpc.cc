@@ -66,7 +66,6 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
 	vgpu.add_kernel(kernel);
 
-	TODO: free this somewhere
 	TODO: start scheduler if its idling
 	*/
 

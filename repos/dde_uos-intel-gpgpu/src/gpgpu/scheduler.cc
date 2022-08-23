@@ -4,18 +4,29 @@
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
 
+// genode instance
+#include "gpgpu_genode.h"
+extern gpgpu_genode* _global_gpgpu_genode;
+
 void gpgpu::Scheduler::schedule_next()
 {
-    VGpu *next;
-    if ((next = static_cast<VGpu*>(_run_list.first()))) {
-        this->dispatch(*next);
-        _curr_vgpu = next;
+    // TODO: fix endless loop, if all vgpus have no kernel
+    do
+    {
+        VGpu* next;
+        if ((next = static_cast<VGpu*>(_run_list.first()))) {
+            
+            // set vgpu and change to its context
+            this->dispatch(*next);
+            _curr_vgpu = next;
 
-        // move vgpu to end of list
-        _run_list.remove(next);
-        _run_list.insert(next);
-    } else
-        _curr_vgpu = nullptr; 
+            // move vgpu to end of list
+            _run_list.remove(next);
+            _run_list.insert(next);
+        } else
+            _curr_vgpu = nullptr; 
+    }
+    while(_curr_vgpu != nullptr && !_curr_vgpu->has_kernel()); // continue search if we picked a vgpu without kernel
 }
 
 void gpgpu::Scheduler::handle_gpu_event()
@@ -27,22 +38,19 @@ void gpgpu::Scheduler::handle_gpu_event()
     /* Switch to next vGPU in the run list */
     schedule_next();
 
-    /* If no vGPU to schedule, this means that we don't have any clients anymore.
-        * Thus, there are also no kernels anymore to run. */
+    // If no vGPU to schedule, this means that we don't have any clients with kernels anymore.
     if (_curr_vgpu == nullptr) 
         return;
 
     Kernel *next = _curr_vgpu->take_kernel();
 
-    if (!next) /* If there is no kernel for the vGPU left */
-    {
-        // TODO: search for kernels in vgpu list
-        return;
-    }
-    
     // set frequency
     gpgpudriver.setMaxFreq();
 
     // run gpgpu task
     gpgpudriver.enqueueRun(*next->get_config());
+
+    // free kernel object
+    // kernel_config will not be freed, just the Queue object!
+    _global_gpgpu_genode->free(next);
 }
