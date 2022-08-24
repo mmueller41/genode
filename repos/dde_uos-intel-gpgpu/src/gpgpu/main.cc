@@ -14,8 +14,6 @@
 
 gpgpu_genode* _global_gpgpu_genode;
 
-extern void construct_RPC(Genode::Env &env);
-
 void Component::construct(Genode::Env& e)
 {
     Genode::log("Hello world: UOS Intel GPGPU!");
