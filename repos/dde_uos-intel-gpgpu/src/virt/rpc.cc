@@ -9,7 +9,7 @@
 
 // genode instance
 #include "../gpgpu/gpgpu_genode.h"
-extern gpgpu_genode* _global_gpgpu_genode;
+extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
 extern gpgpu_virt::Scheduler* _global_sched;
 
 // driver

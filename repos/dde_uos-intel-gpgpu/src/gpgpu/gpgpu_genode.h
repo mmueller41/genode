@@ -19,6 +19,9 @@ using namespace Genode;
 // interrupts
 #include <irq_session/connection.h>
 
+namespace gpgpu
+{
+
 class gpgpu_genode
 {
 private:
@@ -148,5 +151,7 @@ public:
      */
     void freeRamCap(Genode::Ram_dataspace_capability& ram_cap);
 };
+
+}
 
 #endif // GPGPU_GENODE_H

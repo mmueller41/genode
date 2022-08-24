@@ -9,7 +9,7 @@ using namespace Genode;
 
 // genode instance
 #include "gpgpu_genode.h"
-extern gpgpu_genode* _global_gpgpu_genode;
+extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
 
 // printing (optional)
 extern "C" int printk(const char* str, ...)

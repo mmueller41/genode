@@ -14,7 +14,7 @@
 #include "test.h"
 #endif // TEST
 
-gpgpu_genode* _global_gpgpu_genode;
+gpgpu::gpgpu_genode* _global_gpgpu_genode;
 gpgpu_virt::Scheduler* _global_sched;
 
 void Component::construct(Genode::Env& e)
@@ -23,7 +23,7 @@ void Component::construct(Genode::Env& e)
     Genode::log("Build: ", __TIMESTAMP__);
     
     // init globals
-    static gpgpu_genode gg(e);
+    static gpgpu::gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
     static gpgpu_virt::Scheduler sched;
     _global_sched = &sched;
@@ -90,7 +90,7 @@ void Component::construct(Genode::Env& e)
 
     // run the test and hope the best
     Genode::log("Run self test...");
-    run_gpgpu_test();
+    gpgpu::run_gpgpu_test();
 #endif // TEST
 
     Genode::log("Register RPCs...");

@@ -3,6 +3,9 @@
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 
+namespace gpgpu
+{
+    
 void gpgpu_genode::handleInterrupt()
 {
     // handle the gpu interrupt
@@ -189,4 +192,6 @@ Genode::Ram_dataspace_capability gpgpu_genode::allocRamCap(Genode::size_t size, 
 void gpgpu_genode::freeRamCap(Genode::Ram_dataspace_capability& ram_cap)
 {
     pci.free_dma_buffer(ram_cap);
+}
+
 }

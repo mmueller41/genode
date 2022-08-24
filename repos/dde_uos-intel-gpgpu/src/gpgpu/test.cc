@@ -4,6 +4,9 @@
 
 #define ELEMENTS 4096
 
+namespace gpgpu
+{
+
 uint32_t* in;
 uint32_t* out;
 
@@ -206,4 +209,6 @@ void run_gpgpu_test()
 
     // wait for its end
     while(!kconf.finished);
+}
+
 }
