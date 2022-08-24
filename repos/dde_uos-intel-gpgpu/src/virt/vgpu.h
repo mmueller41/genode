@@ -9,9 +9,9 @@
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
 
-namespace gpgpu {
+namespace gpgpu_virt {
 
-    class VGpu : public Genode::List<gpgpu::VGpu>::Element
+    class VGpu : public Genode::List<VGpu>::Element
     {
         private:
             PPGTT32* ppgtt;

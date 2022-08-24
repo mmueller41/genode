@@ -1,16 +1,17 @@
 #ifndef HELLO_GPGPU_CLIENT_H
 #define HELLO_GPGPU_CLIENT_H
 
-#include <gpgpu/session.h>
+#include <gpgpu_virt/session.h>
 #include <base/rpc_client.h>
 #include <base/log.h>
 
-namespace gpgpu { struct Session_client; }
-
-struct gpgpu::Session_client : Genode::Rpc_client<gpgpu::Session>
+namespace gpgpu_virt
 {
-	Session_client(Genode::Capability<gpgpu::Session> cap)
-	: Genode::Rpc_client<gpgpu::Session>(cap) { }
+
+struct Session_client : Genode::Rpc_client<Session>
+{
+	Session_client(Genode::Capability<Session> cap)
+	: Genode::Rpc_client<Session>(cap) { }
 
 	int start_task(unsigned long kconf) override
 	{
@@ -27,5 +28,7 @@ struct gpgpu::Session_client : Genode::Rpc_client<gpgpu::Session>
 		return call<Rpc_say_hello>(i);
 	}
 };
+
+}
 
 #endif // HELLO_GPGPU_CLIENT_H

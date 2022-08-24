@@ -15,7 +15,7 @@
 #endif // TEST
 
 gpgpu_genode* _global_gpgpu_genode;
-gpgpu::Scheduler* _global_sched;
+gpgpu_virt::Scheduler* _global_sched;
 
 void Component::construct(Genode::Env& e)
 {
@@ -25,7 +25,7 @@ void Component::construct(Genode::Env& e)
     // init globals
     static gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
-    static gpgpu::Scheduler sched;
+    static gpgpu_virt::Scheduler sched;
     _global_sched = &sched;
     
 #ifdef TEST
@@ -94,7 +94,7 @@ void Component::construct(Genode::Env& e)
 #endif // TEST
 
     Genode::log("Register RPCs...");
-    static gpgpu::Main main(e);
+    static gpgpu_virt::Main main(e);
 
     Genode::log("This is the UOS Intel GPGPU End!");
 }

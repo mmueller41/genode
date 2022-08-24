@@ -2,7 +2,7 @@
 #include <base/heap.h>
 #include <root/component.h>
 #include <base/rpc_server.h>
-#include <gpgpu/session.h>
+#include <gpgpu_virt/session.h>
 
 #include "rpc.h"
 #include "scheduler.h"
@@ -10,19 +10,15 @@
 // genode instance
 #include "../gpgpu/gpgpu_genode.h"
 extern gpgpu_genode* _global_gpgpu_genode;
-extern gpgpu::Scheduler* _global_sched;
+extern gpgpu_virt::Scheduler* _global_sched;
 
 // driver
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 
-namespace gpgpu {
-	struct Session_component;
-	struct Root_component;
-	struct Main;
-}
+namespace gpgpu_virt {
 
-int gpgpu::Session_component::say_hello(int& i)
+int Session_component::say_hello(int& i)
 {
 	Genode::log("Hello from uos-intel-gpgpu!");
 	Genode::log("Here is your number: ", i);
@@ -31,14 +27,14 @@ int gpgpu::Session_component::say_hello(int& i)
 	return 42;
 }
 
-void gpgpu::Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
+void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {
 	ram_cap = _global_gpgpu_genode->allocRamCap(size, mapped_base, base);
 	ram_cap_vm = ram_cap;
 	_global_sched->add_vgpu(&vgpu);
 }
 
-int gpgpu::Session_component::start_task(unsigned long kconf)
+int Session_component::start_task(unsigned long kconf)
 {
 	// convert offset to driver virt addr
 	struct kernel_config* kc = (struct kernel_config*)(kconf + mapped_base);
@@ -83,30 +79,32 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 	return id++;
 }
 
-gpgpu::Session_component::~Session_component()
+Session_component::~Session_component()
 {
 	_global_sched->remove_vgpu(&vgpu);
 	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 
-gpgpu::Session_component* gpgpu::Root_component::_create_session(const char *)
+Session_component* Root_component::_create_session(const char *)
 {
-	return new (md_alloc()) gpgpu::Session_component();
+	return new (md_alloc()) Session_component();
 }
 
-gpgpu::Root_component::Root_component(Genode::Entrypoint &ep,
+Root_component::Root_component(Genode::Entrypoint &ep,
 				Genode::Allocator &alloc)
 :
-	Genode::Root_component<gpgpu::Session_component>(ep, alloc)
+	Genode::Root_component<Session_component>(ep, alloc)
 {
 
 }
 
-gpgpu::Main::Main(Genode::Env &env) : env(env)
+Main::Main(Genode::Env &env) : env(env)
 {
 	/*
 		* Create a RPC object capability for the root interface and
 		* announce the service to our parent.
 		*/
 	env.parent().announce(env.ep().manage(root));
+}
+
 }

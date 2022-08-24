@@ -10,7 +10,10 @@ extern gpgpu_genode* _global_gpgpu_genode;
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
 
-void gpgpu::Scheduler::schedule_next()
+namespace gpgpu_virt
+{
+
+void Scheduler::schedule_next()
 {
     VGpu* first = nullptr;
     do
@@ -46,7 +49,7 @@ void gpgpu::Scheduler::schedule_next()
     while(_curr_vgpu != nullptr && !_curr_vgpu->has_kernel()); // continue search if we picked a vgpu without kernel
 }
 
-void gpgpu::Scheduler::handle_gpu_event()
+void Scheduler::handle_gpu_event()
 {
     // reduce frequency
     GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
@@ -80,4 +83,6 @@ void gpgpu::Scheduler::handle_gpu_event()
     // free kernel object
     // kernel_config will not be freed, just the Queue object!
     _global_gpgpu_genode->free(next);
+}
+
 }

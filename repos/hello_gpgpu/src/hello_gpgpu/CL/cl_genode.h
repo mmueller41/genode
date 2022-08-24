@@ -13,7 +13,7 @@
 #include <legacy/x86/platform_session/connection.h>
 
 // rpc
-#include <hello_gpgpu_session/connection.h>
+#include <gpgpu_virt/connection.h>
 
 // driver
 #include <gpgpu/gpgpu.h>
@@ -30,7 +30,7 @@ private:
     Genode::addr_t mapped_base;
 
     // rpc
-    gpgpu::Connection backend_driver;
+    gpgpu_virt::Connection backend_driver;
 
     // do not allow copies
     cl_genode(const cl_genode& copy) = delete;

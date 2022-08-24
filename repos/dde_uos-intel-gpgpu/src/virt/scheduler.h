@@ -4,7 +4,7 @@
 #include <util/list.h>
 #include "vgpu.h"
 
-namespace gpgpu {
+namespace gpgpu_virt {
 
     class Scheduler
     {

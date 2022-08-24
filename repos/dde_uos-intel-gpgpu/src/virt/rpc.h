@@ -4,16 +4,13 @@
 #include <base/heap.h>
 #include <root/component.h>
 #include <base/rpc_server.h>
-#include <gpgpu/session.h>
+#include <gpgpu_virt/session.h>
 #include "vgpu.h"
 
-namespace gpgpu {
-	struct Session_component;
-	struct Root_component;
-	struct Main;
-}
+namespace gpgpu_virt
+{
 
-struct gpgpu::Session_component : Genode::Rpc_object<Session>
+struct Session_component : Genode::Rpc_object<Session>
 {
 	VGpu vgpu;
 	Genode::Ram_dataspace_capability ram_cap;
@@ -31,7 +28,7 @@ struct gpgpu::Session_component : Genode::Rpc_object<Session>
 	int start_task(unsigned long kconf) override;
 };
 
-class gpgpu::Root_component
+class Root_component
 :
 	public Genode::Root_component<Session_component>
 {
@@ -45,7 +42,7 @@ class gpgpu::Root_component
 };
 
 
-struct gpgpu::Main
+struct Main
 {
 	Genode::Env &env;
 
@@ -55,9 +52,11 @@ struct gpgpu::Main
 	 */
 	Genode::Sliced_heap sliced_heap { env.ram(), env.rm() };
 
-	gpgpu::Root_component root { env.ep(), sliced_heap };
+	Root_component root { env.ep(), sliced_heap };
 
 	Main(Genode::Env &env);
 };
+
+}
 
 #endif // RPC_H

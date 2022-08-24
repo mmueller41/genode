@@ -4,11 +4,9 @@
 #include <session/session.h>
 #include <base/rpc.h>
 
-namespace gpgpu { 
-	struct Session;
-}
+namespace gpgpu_virt { 
 
-struct gpgpu::Session : Genode::Session
+struct Session : Genode::Session
 {
 	static const char *service_name() { return "gpgpu"; }
 
@@ -28,5 +26,7 @@ struct gpgpu::Session : Genode::Session
 
 	GENODE_RPC_INTERFACE(Rpc_say_hello, Rpc_register_vm, Rpc_start_task);
 };
+
+}
 
 #endif // GPGPU_SESSION

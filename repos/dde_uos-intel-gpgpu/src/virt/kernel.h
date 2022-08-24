@@ -1,20 +1,19 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
+#include <util/list.h>
+
 #define GENODE
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include <base/fixed_stdint.h>
-#include <util/list.h>
 
-namespace gpgpu {
-
-typedef Genode::uint8_t Kernel_image;
+namespace gpgpu_virt {
 
     /**
      * @class This class represents a kernel 
      * 
      */
-    class Kernel : public Genode::List<gpgpu::Kernel>::Element
+    class Kernel : public Genode::List<Kernel>::Element
     {
         private:
             struct kernel_config* kconf;
