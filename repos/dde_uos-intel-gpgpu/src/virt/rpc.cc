@@ -3,11 +3,14 @@
 #include <root/component.h>
 #include <base/rpc_server.h>
 #include <gpgpu/session.h>
+
 #include "rpc.h"
+#include "scheduler.h"
 
 // genode instance
 #include "../gpgpu/gpgpu_genode.h"
 extern gpgpu_genode* _global_gpgpu_genode;
+extern gpgpu::Scheduler* _global_sched;
 
 // driver
 #define GENODE // use genodes stdint header
@@ -32,8 +35,7 @@ void gpgpu::Session_component::register_vm(Genode::size_t size, Genode::Ram_data
 {
 	ram_cap = _global_gpgpu_genode->allocRamCap(size, mapped_base, base);
 	ram_cap_vm = ram_cap;
-	// TODO: register vgpu to scheduler
-	// sched.add_vgpu(vgpu);
+	_global_sched->add_vgpu(&vgpu);
 }
 
 int gpgpu::Session_component::start_task(unsigned long kconf)
@@ -61,17 +63,14 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 
 	// start gpu task
 	gpgpudriver.enqueueRun(*kc);
-	//kc->finished = true;
 
-	/*
-	Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
+	/*Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
 	vgpu.add_kernel(kernel);
 
-	if(sched.is_idle())
+	if(_global_sched->is_idle())
 	{
-		sched.handle_gpu_event();
-	}
-	*/
+		_global_sched->handle_gpu_event();
+	}*/
 
 	static int id = 0;
 	/*Genode::log("Kernel ", id);
@@ -86,7 +85,7 @@ int gpgpu::Session_component::start_task(unsigned long kconf)
 
 gpgpu::Session_component::~Session_component()
 {
-	// sched.remove_vgpu(vgpu);
+	_global_sched->remove_vgpu(&vgpu);
 	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 
