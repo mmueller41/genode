@@ -10,12 +10,12 @@ extern gpgpu_genode* _global_gpgpu_genode;
 
 void gpgpu::Scheduler::schedule_next()
 {
-    // TODO: fix endless loop, if all vgpus have no kernel
+    VGpu* first = nullptr;
     do
     {
         VGpu* next;
-        if ((next = static_cast<VGpu*>(_run_list.first()))) {
-            
+        if ((next = static_cast<VGpu*>(_run_list.first())))
+        {
             // set vgpu and change to its context
             this->dispatch(*next);
             _curr_vgpu = next;
@@ -23,8 +23,23 @@ void gpgpu::Scheduler::schedule_next()
             // move vgpu to end of list
             _run_list.remove(next);
             _run_list.insert(next);
-        } else
+
+            // complete iteration?
+            if(first == next)
+            {
+                return;
+            }
+
+            // remember start of our search
+            if(first == nullptr)
+            {
+                first = next;
+            }
+        }
+        else
+        {
             _curr_vgpu = nullptr; 
+        }
     }
     while(_curr_vgpu != nullptr && !_curr_vgpu->has_kernel()); // continue search if we picked a vgpu without kernel
 }
@@ -38,11 +53,21 @@ void gpgpu::Scheduler::handle_gpu_event()
     /* Switch to next vGPU in the run list */
     schedule_next();
 
-    // If no vGPU to schedule, this means that we don't have any clients with kernels anymore.
-    if (_curr_vgpu == nullptr) 
+    // If no vGPU to schedule, this means that we don't have any clients with anymore.
+    if(_curr_vgpu == nullptr)
+    {
+        idle = true;
         return;
+    } 
 
-    Kernel *next = _curr_vgpu->take_kernel();
+    Kernel* next = _curr_vgpu->take_kernel();
+    if(next == nullptr)
+    {
+        idle = true;
+        return;
+    }
+
+    idle = false;
 
     // set frequency
     gpgpudriver.setMaxFreq();

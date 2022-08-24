@@ -11,10 +11,11 @@ namespace gpgpu {
         private:
             VGpu* _curr_vgpu;
             Genode::List<VGpu> _run_list;
+            bool idle;
 
         public:
 
-           Scheduler() : _curr_vgpu(nullptr), _run_list() { }
+           Scheduler() : _curr_vgpu(nullptr), _run_list(), idle(true) { }
 
             /**
              * @brief Select next vGPU from run list
@@ -60,6 +61,17 @@ namespace gpgpu {
             void remove_vgpu(VGpu* vgpu)
             {
                 _run_list.remove(vgpu);
+            }
+
+            /**
+             * @brief 
+             * 
+             * @return true 
+             * @return false 
+             */
+            bool is_idle() const
+            {
+                return idle;
             }
     };
 }
