@@ -1,5 +1,5 @@
 #include <base/component.h>
-#include "rpc.h"
+#include "../virt/rpc.h"
 
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"

@@ -1,12 +1,14 @@
 #include "scheduler.h"
 #include "kernel.h"
+
+// genode instance
+#include "../gpgpu/gpgpu_genode.h"
+extern gpgpu_genode* _global_gpgpu_genode;
+
+// driver
 #define GENODE
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
-
-// genode instance
-#include "gpgpu_genode.h"
-extern gpgpu_genode* _global_gpgpu_genode;
 
 void gpgpu::Scheduler::schedule_next()
 {

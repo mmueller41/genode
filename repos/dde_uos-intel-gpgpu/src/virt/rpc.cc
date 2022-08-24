@@ -6,12 +6,12 @@
 #include "rpc.h"
 
 // genode instance
-#include "gpgpu_genode.h"
+#include "../gpgpu/gpgpu_genode.h"
 extern gpgpu_genode* _global_gpgpu_genode;
 
+// driver
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
-#include "gpgpu_genode.h"
 
 namespace gpgpu {
 	struct Session_component;

@@ -1,11 +1,13 @@
 #ifndef VGPU_H
 #define VGPU_H
 
+#include <util/list.h>
+#include "kernel.h"
+
+// driver
 #define GENODE
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 #include "../uos-intel-gpgpu/driver/ppgtt32.h"
-#include <util/list.h>
-#include "kernel.h"
 
 namespace gpgpu {
 
