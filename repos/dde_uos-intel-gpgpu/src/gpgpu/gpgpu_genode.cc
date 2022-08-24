@@ -3,6 +3,9 @@
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 
+#include "../virt/scheduler.h"
+extern gpgpu_virt::Scheduler* _global_sched;
+
 namespace gpgpu
 {
     
@@ -11,7 +14,8 @@ void gpgpu_genode::handleInterrupt()
     // handle the gpu interrupt
     GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
     gpgpudriver.handleInterrupt();
-    gpgpudriver.runNext();
+    gpgpudriver.runNext(); // drivers integrated fifo scheduler does nothing... still required to clean up finished task
+    _global_sched->handle_gpu_event(); // message our sched to choose the next kernel
 
     // ack the irq
     irq->ack_irq();

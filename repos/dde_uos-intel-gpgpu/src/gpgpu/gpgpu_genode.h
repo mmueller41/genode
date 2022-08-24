@@ -78,6 +78,15 @@ public:
     void* aligned_alloc(uint32_t alignment, uint32_t size);
 
     /**
+     * @brief Get the Alloc object
+     * 
+     * @return Genode::Allocator_avl& 
+     */
+    Genode::Allocator_avl& getAlloc() {
+        return alloc;
+    }
+
+    /**
      * @brief free memory
      * 
      * @param addr the address of the memory to be freed

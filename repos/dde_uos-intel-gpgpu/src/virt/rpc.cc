@@ -53,20 +53,15 @@ int Session_component::start_task(unsigned long kconf)
 	kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
 
-	// set maximum frequency
-	GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
-	gpgpudriver.setMaxFreq();
-
-	// start gpu task
-	gpgpudriver.enqueueRun(*kc);
-
-	/*Kernel* kernel = (Kernel*)_global_gpgpu_genode->aligned_alloc(0, sizeof(Kernel));
+	// add kernel
+	Kernel* kernel = new(_global_gpgpu_genode->getAlloc()) Kernel(kc);
 	vgpu.add_kernel(kernel);
 
+	// trigger sched if its idle
 	if(_global_sched->is_idle())
 	{
 		_global_sched->handle_gpu_event();
-	}*/
+	}
 
 	static int id = 0;
 	/*Genode::log("Kernel ", id);
