@@ -21,8 +21,7 @@ void Scheduler::schedule_next()
         VGpu* next;
         if ((next = static_cast<VGpu*>(_run_list.first())))
         {
-            // set vgpu and change to its context
-            this->dispatch(*next);
+            // set vgpu
             _curr_vgpu = next;
 
             // move vgpu to end of list
@@ -73,6 +72,9 @@ void Scheduler::handle_gpu_event()
     }
 
     idle = false;
+
+    // switch context
+    dispatch(*_curr_vgpu);
 
     // set frequency
     gpgpudriver.setMaxFreq();
