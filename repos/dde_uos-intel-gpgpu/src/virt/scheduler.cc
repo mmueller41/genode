@@ -62,7 +62,7 @@ void Scheduler::handle_gpu_event()
     {
         idle = true;
         return;
-    } 
+    }
 
     Kernel* next = _curr_vgpu->take_kernel();
     if(next == nullptr)
