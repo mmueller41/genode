@@ -34,17 +34,31 @@ void testvm_construct(Genode::Env &env)
 	// run 2mm
 	Libc::with_libc([&] {
     	clInitGenode(alloc);
-		ns_2mm::main(0,0);
-		ns_3mm::main(0, 0);
-		ns_atax::main(0,0);
-		ns_bicg::main(0,0);
-		ns_doitgen::main(0,0);
-		ns_gemm::main(0,0);
-		ns_gemver::main(0,0);
-		ns_gesummv::main(0,0);
-		ns_mvt::main(0,0);
-		ns_syr2k::main(0,0);
-		ns_syrk::main(0,0);
+
+		//ns_2mm::main(0,0);
+		// ns_3mm::main(0, 0);
+		// ns_atax::main(0,0);
+		// ns_bicg::main(0,0);
+		// ns_doitgen::main(0,0);
+		// ns_gemm::main(0,0);
+		// ns_gemver::main(0,0);
+		// ns_gesummv::main(0,0);
+		// ns_mvt::main(0,0);
+		// ns_syr2k::main(0,0);
+		// ns_syrk::main(0,0);
+
+		// ns_correlation::main(0,0);	// sqrt bug
+		// ns_covariance::main(0,0);
+
+		// ns_adi::main(0,0);
+		// ns_convolution_2d::main(0,0);
+		// ns_convolution_3d::main(0,0);
+		// ns_fdtd_2d::main(0,0);
+		// ns_jacobi_1d_imper::main(0,0);
+		// ns_jacobi_2d_imper::main(0,0);	
+		// ns_gramschmidt::main(0,0);	// sqrt bug
+		ns_lu::main(0,0);
+
 	});
 
 	Genode::log("hello gpgpu completed");
