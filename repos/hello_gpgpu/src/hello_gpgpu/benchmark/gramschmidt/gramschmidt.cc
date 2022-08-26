@@ -14,6 +14,7 @@
 #include <sys/time.h>
 #include <math.h>
 
+#define CL_TARGET_OPENCL_VERSION 100
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else

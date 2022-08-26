@@ -24,6 +24,7 @@
 //define the error threshold for the results "not matching"
 #define PERCENT_DIFF_ERROR_THRESHOLD 0.05
 
+#define CL_TARGET_OPENCL_VERSION 100
 #ifdef __APPLE__
 #include <OpenCL/opencl.h>
 #else
