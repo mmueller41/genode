@@ -24,6 +24,6 @@ SRC_CC = main.cc \
 		benchmark/gramschmidt/gramschmidt.cc \
 		benchmark/lu/lu.cc \
 
-LIBS   = base libc
+LIBS   = base libc libm
 
 CC_CXX_WARN_STRICT =

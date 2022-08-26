@@ -64,7 +64,10 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run syrk===");
 		ns_syrk::main(0, 0);
 
-		ns_correlation::main(0,0);	// sqrt bug
+		ns_gramschmidt::main(0,0);
+		ns_lu::main(0,0);
+
+		ns_correlation::main(0,0);
 		ns_covariance::main(0,0);
 
 		ns_adi::main(0,0);
@@ -72,9 +75,7 @@ void testvm_construct(Genode::Env &env)
 		ns_convolution_3d::main(0,0);
 		ns_fdtd_2d::main(0,0);
 		ns_jacobi_1d_imper::main(0,0);
-		ns_jacobi_2d_imper::main(0,0);	
-		ns_gramschmidt::main(0,0);	// sqrt bug
-		ns_lu::main(0,0);*/
+		ns_jacobi_2d_imper::main(0,0);*/
 	});
 
 	Genode::log("===End===");

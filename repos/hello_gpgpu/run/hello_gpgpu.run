@@ -71,7 +71,7 @@ install_config $config
 
 # boot modules
 set boot_modules {
-	core ld.lib.so libc.lib.so vfs.lib.so init gpgpu timer hello_gpgpu
+	core ld.lib.so libc.lib.so vfs.lib.so libm.lib.so init gpgpu timer hello_gpgpu
 }
 append_platform_drv_boot_modules
 build_boot_image $boot_modules
