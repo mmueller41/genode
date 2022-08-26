@@ -64,18 +64,28 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run syrk===");
 		ns_syrk::main(0, 0);
 
-		ns_gramschmidt::main(0,0);
-		ns_lu::main(0,0);
+		Genode::log("===Run gramschmidt===");
+		ns_gramschmidt::main(0, 0);
+		Genode::log("===Run lu===");
+		ns_lu::main(0, 0);
 
-		ns_correlation::main(0,0);
-		ns_covariance::main(0,0);
+		Genode::log("===Run lu===");
+		ns_correlation::main(0, 0);
+		Genode::log("===Run covariance===");
+		ns_covariance::main(0, 0);
 
-		ns_adi::main(0,0);
-		ns_convolution_2d::main(0,0);
-		ns_convolution_3d::main(0,0);
-		ns_fdtd_2d::main(0,0);
-		ns_jacobi_1d_imper::main(0,0);
-		ns_jacobi_2d_imper::main(0,0);*/
+		Genode::log("===Run adi===");
+		ns_adi::main(0, 0);
+		Genode::log("===Run convolution_2d===");
+		ns_convolution_2d::main(0, 0);
+		Genode::log("===Run convolution_3d===");
+		ns_convolution_3d::main(0, 0);
+		Genode::log("===Run fdtd_2d===");
+		ns_fdtd_2d::main(0, 0);
+		Genode::log("===Run jacobi_1d_imper===");
+		ns_jacobi_1d_imper::main(0, 0);
+		Genode::log("===Run jacobi_2d_imper===");
+		ns_jacobi_2d_imper::main(0, 0);*/
 	});
 
 	Genode::log("===End===");
