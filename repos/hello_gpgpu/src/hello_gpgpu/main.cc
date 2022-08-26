@@ -69,7 +69,7 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run lu===");
 		ns_lu::main(0, 0);
 
-		Genode::log("===Run lu===");
+		Genode::log("===Run correlation===");
 		ns_correlation::main(0, 0);
 		Genode::log("===Run covariance===");
 		ns_covariance::main(0, 0);
