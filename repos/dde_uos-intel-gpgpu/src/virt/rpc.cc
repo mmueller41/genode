@@ -29,8 +29,12 @@ int Session_component::say_hello(int& i)
 
 void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {
+	// create shared mem
 	ram_cap = _global_gpgpu_genode->allocRamCap(size, mapped_base, base);
 	ram_cap_vm = ram_cap;
+
+	// create vgpu context and add it to scheduler
+	vgpu.allocContext();
 	_global_sched->add_vgpu(&vgpu);
 }
 
@@ -77,6 +81,7 @@ int Session_component::start_task(unsigned long kconf)
 Session_component::~Session_component()
 {
 	_global_sched->remove_vgpu(&vgpu);
+	vgpu.freeContext();
 	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 

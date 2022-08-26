@@ -14,14 +14,17 @@ namespace gpgpu_virt {
     class VGpu : public Genode::List<VGpu>::Element
     {
         private:
-            PPGTT32* ppgtt;
+            // context of vgpu
+            context* ctx;
+
+            /// list of gpgpu tasks for this vpgu
             Genode::List<Kernel> ready_list;
 
         public:
             /**
              * @brief Construct a new VGpu object
              */
-            VGpu() : ppgtt(nullptr), ready_list() {}
+            VGpu() : ctx(nullptr), ready_list() {}
 
             /**
              * @brief Add a kernel to the vGPU's ready list 
@@ -29,8 +32,26 @@ namespace gpgpu_virt {
              * @param kernel - the kernel object to enqueue
              */
             void add_kernel(Kernel* kernel) {
-                //kernel->get_config()->gtt = ppgtt;
+                kernel->get_config()->ctx = ctx; // set context
                 ready_list.insert(kernel);
+            }
+
+            /**
+             * @brief 
+             * 
+             */
+            void allocContext()
+            {
+                ctx = GPGPU_Driver::getInstance().createContext();
+            }
+
+            /**
+             * @brief 
+             * 
+             */
+            void freeContext()
+            {
+                GPGPU_Driver::getInstance().freeContext(ctx);
             }
 
             /**
