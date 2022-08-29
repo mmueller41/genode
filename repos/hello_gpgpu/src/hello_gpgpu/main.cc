@@ -48,10 +48,10 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run atax===");
 		ns_atax::main(0, 0);
 		Genode::log("===Run bicg===");
-		ns_bicg::main(0, 0);
-		Genode::log("===Run doitgen===");
-		ns_doitgen::main(0, 0); //  Number of misses: 31744 + 266 dangling allocations at allocator destruction time?
-		Genode::log("===Run gemm===");
+		ns_bicg::main(0, 0);*/
+		//Genode::log("===Run doitgen==="); // this one is broken and destroys other benchmarks!
+		//ns_doitgen::main(0, 0); //  Number of misses: 31744 + 266 dangling allocations at allocator destruction time?
+		/*Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
 		Genode::log("===Run gemver===");
 		ns_gemver::main(0, 0);
