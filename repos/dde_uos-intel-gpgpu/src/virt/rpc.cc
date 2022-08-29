@@ -69,10 +69,23 @@ int Session_component::start_task(unsigned long kconf)
 
 	static int id = 0;
 	/*Genode::log("Kernel ", id);
+	for(int i = 0; i < 3; i++)
+	{
+		Genode::log("\t\trange: ", (int)kc->range[i]);
+		Genode::log("\t\twgs: ", (int)kc->workgroupsize[i]);
+	}
 	for(int i = 0; i < kc->buffCount; i++)
 	{
 		Genode::log("\tBuffer ", i);
-		Genode::log("\t\taddr: ", (void*)kc->buffConfigs[i].buffer);
+		if(kc->buffConfigs[i].non_pointer_type)
+		{
+			Genode::log("\t\tvaddr: ", (void*)kc->buffConfigs[i].buffer);
+		}
+		else
+		{
+			Genode::log("\t\tvaddr: ", (void*)((Genode::addr_t)kc->buffConfigs[i].buffer - base + mapped_base));
+			Genode::log("\t\tpaddr: ", (void*)kc->buffConfigs[i].buffer);
+		}
 		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
 	}*/
 	return id++;
