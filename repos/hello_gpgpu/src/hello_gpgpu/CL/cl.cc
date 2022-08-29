@@ -1434,6 +1434,9 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         n->kc = kc;
     }
 
+    // reset finished flag in case the user enqueue the same kernel object multiple times
+    kc->finished = false;
+
     g_cl_genode->enqueue_task(kc);
     return CL_SUCCESS;
 }
