@@ -44,17 +44,17 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run 2mm===");
 		ns_2mm::main(0, 0);
 		/*Genode::log("===Run 3mm===");
-		ns_3mm::main(0, 0);
+		ns_3mm::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 10.05 Percent: 16256
 		Genode::log("===Run atax===");
 		ns_atax::main(0, 0);
 		Genode::log("===Run bicg===");
-		ns_bicg::main(0, 0);*/
-		//Genode::log("===Run doitgen==="); // this one is broken and destroys other benchmarks!
-		//ns_doitgen::main(0, 0); //  Number of misses: 31744 + 266 dangling allocations at allocator destruction time?
-		/*Genode::log("===Run gemm===");
+		ns_bicg::main(0, 0);
+		Genode::log("===Run doitgen===");
+		ns_doitgen::main(0, 0); //  Number of misses: 31744
+		Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
 		Genode::log("===Run gemver===");
-		ns_gemver::main(0, 0);
+		ns_gemver::main(0, 0); // Number of misses: 1023
 		Genode::log("===Run gesummv===");
 		ns_gesummv::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 1023
 		Genode::log("===Run mvt===");
@@ -67,7 +67,7 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run gramschmidt===");
 		ns_gramschmidt::main(0, 0);
 		Genode::log("===Run lu===");
-		ns_lu::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 127
+		ns_lu::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 127 + sometimes PF
 
 		Genode::log("===Run correlation===");
 		ns_correlation::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 1.05 Percent: 4188163
