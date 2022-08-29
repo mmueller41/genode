@@ -32,7 +32,7 @@ namespace gpgpu_virt {
              * @param kernel - the kernel object to enqueue
              */
             void add_kernel(Kernel* kernel) {
-                //kernel->get_config()->ctx = ctx; // set context
+                kernel->get_config()->ctx = ctx; // set context
                 ready_list.insert(kernel);
             }
 
