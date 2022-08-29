@@ -868,8 +868,15 @@ clSetKernelArg(cl_kernel    kernel,
     }
     else
     {
-        // set buffer config
         struct buffer_config& bc = kc->buffConfigs[arg_index];
+        
+        // if we overwrite an old config, free the old one
+        if(bc.buffer != nullptr)
+        {
+            g_cl_genode->free(bc.buffer);
+        }
+
+        // set buffer config
         bc.buffer = g_cl_genode->alloc(arg_size); // alloc shared mem
         bc.buffer_size = (uint32_t)arg_size;
         bc.non_pointer_type = true;
