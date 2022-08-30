@@ -319,6 +319,7 @@ clReleaseCommandQueue(cl_command_queue command_queue)
     while(cmd != NULL)
     {
         cl_command_queue next = cmd->next;
+        g_cl_genode->free(cmd->kc);
         g_cl_genode->free(cmd);
         cmd = next;
     }
@@ -1423,6 +1424,10 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         }
     }
 
+    // create shallow copy (TODO: do we need a deep copy?)
+    kernel_config* kcopy = new(g_cl_genode->getAlloc()) kernel_config();
+    *kcopy = *kc;
+
     // skip to end of queue
     cl_command_queue cmd = command_queue;
     for(;cmd->next != NULL; cmd = cmd->next);
@@ -1430,21 +1435,18 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     // enqueue
     if(cmd->kc == NULL)
     {
-        cmd->kc = kc;
+        cmd->kc = kcopy;
     }
     else // or extend queue
     {
         cl_command_queue n = (cl_command_queue)g_cl_genode->alloc(sizeof(struct _cl_command_queue));
         n->next = NULL;
+        n->kc = kcopy;
 
         cmd->next = n;
-        n->kc = kc;
     }
 
-    // reset finished flag in case the user enqueue the same kernel object multiple times
-    kc->finished = false;
-
-    g_cl_genode->enqueue_task(kc);
+    g_cl_genode->enqueue_task(kcopy);
     return CL_SUCCESS;
 }
 
