@@ -64,8 +64,8 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run syrk===");
 		ns_syrk::main(0, 0);
 
-		Genode::log("===Run gramschmidt===");
-		ns_gramschmidt::main(0, 0); // CPU and GPU produce nan output (official linux version also has nan output)
+		//Genode::log("===Run gramschmidt===");
+		//ns_gramschmidt::main(0, 0); // this one is broken (div by 0 and unsolvable input instance) (official Linux version is broken too!)
 		Genode::log("===Run lu===");
 		ns_lu::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 127
 
