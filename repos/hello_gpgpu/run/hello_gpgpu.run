@@ -78,4 +78,4 @@ build_boot_image $boot_modules
 
 # qemu stuff
 append qemu_args " -nographic -m 4G"
-run_genode_until "hello gpgpu completed.*\n" 15
+run_genode_until "hello gpgpu completed.*\n" 600

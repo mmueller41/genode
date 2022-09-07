@@ -13,7 +13,7 @@
 
 /* Default to STANDARD_DATASET. */
 # if !defined(MINI_DATASET) && !defined(SMALL_DATASET) && !defined(LARGE_DATASET) && !defined(EXTRALARGE_DATASET)
-#  define MINI_DATASET
+#  define STANDARD_DATASET
 # endif
 
 /* Do not define anything if the user manually defines the size. */
