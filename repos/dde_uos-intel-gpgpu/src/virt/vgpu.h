@@ -2,6 +2,7 @@
 #define VGPU_H
 
 #include <util/list.h>
+#include <util/fifo.h>
 #include "kernel.h"
 
 // driver
@@ -18,7 +19,7 @@ namespace gpgpu_virt {
             context* ctx;
 
             /// list of gpgpu tasks for this vpgu
-            Genode::List<Kernel> ready_list;
+            Genode::Fifo<Kernel> ready_list;
 
         public:
             /**
@@ -33,7 +34,8 @@ namespace gpgpu_virt {
              */
             void add_kernel(Kernel* kernel) {
                 kernel->get_config()->ctx = ctx; // set context
-                ready_list.insert(kernel);
+                ready_list.enqueue(*kernel);
+
             }
 
             /**
@@ -62,7 +64,7 @@ namespace gpgpu_virt {
              */
             bool has_kernel() const
             {
-                return ready_list.first() == nullptr;
+                return ready_list.empty() == false;
             }
 
             /**
@@ -71,9 +73,11 @@ namespace gpgpu_virt {
              * @return First kernel image in ready list 
              */
             Kernel* take_kernel() { 
-                Kernel* k = ready_list.first();
-                ready_list.remove(k);
-                return k;
+                Kernel* ret = nullptr;
+                ready_list.dequeue([&ret](Kernel& k){
+                    ret = &k;
+                });
+                return ret;
             }
     };
 }

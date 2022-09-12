@@ -1,7 +1,7 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-#include <util/list.h>
+#include <util/fifo.h>
 
 #define GENODE
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
@@ -13,7 +13,7 @@ namespace gpgpu_virt {
      * @class This class represents a kernel 
      * 
      */
-    class Kernel : public Genode::List<Kernel>::Element
+    class Kernel : public Genode::Fifo<Kernel>::Element
     {
         private:
             struct kernel_config* kconf;
