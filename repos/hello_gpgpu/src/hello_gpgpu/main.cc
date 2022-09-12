@@ -44,17 +44,17 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run 2mm===");
 		ns_2mm::main(0, 0);
 		Genode::log("===Run 3mm===");
-		ns_3mm::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 10.05 Percent: 16256
+		ns_3mm::main(0, 0);
 		Genode::log("===Run atax===");
 		ns_atax::main(0, 0);
 		Genode::log("===Run bicg===");
 		ns_bicg::main(0, 0);
 		Genode::log("===Run doitgen===");
-		ns_doitgen::main(0, 0); //  Number of misses: 31744
+		ns_doitgen::main(0, 0); //  Number of misses: 2080768 + GPU kernel1 takes very long
 		Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
 		Genode::log("===Run gemver===");
-		ns_gemver::main(0, 0); // Number of misses: 1023
+		ns_gemver::main(0, 0);
 		Genode::log("===Run gesummv===");
 		ns_gesummv::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 1023
 		Genode::log("===Run mvt===");
