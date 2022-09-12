@@ -1,7 +1,6 @@
 #ifndef VGPU_H
 #define VGPU_H
 
-#include <util/list.h>
 #include <util/fifo.h>
 #include "kernel.h"
 
@@ -12,7 +11,7 @@
 
 namespace gpgpu_virt {
 
-    class VGpu : public Genode::List<VGpu>::Element
+    class VGpu : public Genode::Fifo<VGpu>::Element
     {
         private:
             // context of vgpu

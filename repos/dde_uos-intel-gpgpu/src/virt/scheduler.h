@@ -1,7 +1,7 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include <util/list.h>
+#include <util/fifo.h>
 #include "vgpu.h"
 
 namespace gpgpu_virt {
@@ -10,7 +10,7 @@ namespace gpgpu_virt {
     {
         private:
             VGpu* _curr_vgpu;
-            Genode::List<VGpu> _run_list;
+            Genode::Fifo<VGpu> _run_list;
             bool idle;
 
         public:
@@ -50,7 +50,7 @@ namespace gpgpu_virt {
              */
             void add_vgpu(VGpu* vgpu)
             {
-                _run_list.insert(vgpu);
+                _run_list.enqueue(*vgpu);
             }
 
             /**
@@ -60,7 +60,7 @@ namespace gpgpu_virt {
              */
             void remove_vgpu(VGpu* vgpu)
             {
-                _run_list.remove(vgpu);
+                _run_list.remove(*vgpu);
             }
 
             /**

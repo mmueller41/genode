@@ -18,15 +18,17 @@ void Scheduler::schedule_next()
     VGpu* first = nullptr;
     do
     {
-        VGpu* next;
-        if ((next = static_cast<VGpu*>(_run_list.first())))
+        VGpu* next = nullptr;
+        _run_list.dequeue([&next](VGpu& vgpu){
+            next = &vgpu;
+        });
+        if(next != nullptr)
         {
             // set vgpu
             _curr_vgpu = next;
 
-            // move vgpu to end of list
-            _run_list.remove(next);
-            _run_list.insert(next);
+            // add vgpu back to end of list
+            _run_list.enqueue(*next);
 
             // complete iteration?
             if(first == next)
