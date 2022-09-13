@@ -80,6 +80,7 @@ int Session_component::start_task(unsigned long kconf)
 		if(kc->buffConfigs[i].non_pointer_type)
 		{
 			Genode::log("\t\tvaddr: ", (void*)kc->buffConfigs[i].buffer);
+			Genode::log("\t\tval: ", *((uint32_t*)(kc->buffConfigs[i].buffer)));
 		}
 		else
 		{
