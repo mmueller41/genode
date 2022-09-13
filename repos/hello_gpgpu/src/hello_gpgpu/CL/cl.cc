@@ -872,6 +872,7 @@ clSetKernelArg(cl_kernel    kernel,
         struct buffer_config& bc = kc->buffConfigs[arg_index];
         
         // if we overwrite an old config, free the old one
+        // TODO: reuse the buffer, because kernel parameters have fixed size
         if(bc.buffer != nullptr)
         {
             g_cl_genode->free(bc.buffer);
