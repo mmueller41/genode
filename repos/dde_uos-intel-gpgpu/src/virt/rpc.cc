@@ -81,11 +81,15 @@ int Session_component::start_task(unsigned long kconf)
 		{
 			Genode::log("\t\tvaddr: ", (void*)kc->buffConfigs[i].buffer);
 			Genode::log("\t\tval: ", *((uint32_t*)(kc->buffConfigs[i].buffer)));
+			Genode::log("\t\tgpuaddr: ", (uint32_t)kc->buffConfigs[i].ga);
+			Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);
 		}
 		else
 		{
 			Genode::log("\t\tvaddr: ", (void*)((Genode::addr_t)kc->buffConfigs[i].buffer - base + mapped_base));
 			Genode::log("\t\tpaddr: ", (void*)kc->buffConfigs[i].buffer);
+			Genode::log("\t\tgpuaddr: ", (uint32_t)kc->buffConfigs[i].ga);
+			Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);
 		}
 		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
 	}*/
