@@ -50,6 +50,7 @@ namespace Genode {
 
 			/* map of virtual cpu ids in Genode to kernel cpu ids */
 			uint8_t map_cpu_ids[MAX_SUPPORTED_CPUS];
+			uint8_t cpu_numa_map[MAX_SUPPORTED_CPUS];
 
 			addr_t _map_pages(addr_t phys_page, addr_t pages,
 			                  bool guard_page = false);
@@ -118,6 +119,10 @@ namespace Genode {
 			 */
 			unsigned pager_index(Affinity::Location location) const;
 			unsigned kernel_cpu_id(Affinity::Location location) const;
+
+			unsigned domain_of_cpu(unsigned kernel_cpu_id) const {
+				return cpu_numa_map[kernel_cpu_id];
+			}
 
 			Affinity::Location sanitize(Affinity::Location location) {
 				return Affinity::Location(location.xpos() % _cpus.width(),

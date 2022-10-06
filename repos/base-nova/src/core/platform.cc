@@ -370,7 +370,7 @@ Platform::Platform()
 		      " vs ", sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]));
 		nova_die();
 	}
-	if (!hip.remap_cpu_ids(map_cpu_ids, (unsigned)boot_cpu())) {
+	if (!hip.remap_cpu_ids(map_cpu_ids, cpu_numa_map, (unsigned)boot_cpu())) {
 		error("re-ording cpu_id failed");
 		nova_die();
 	}
@@ -404,6 +404,8 @@ Platform::Platform()
 	/* initialize core allocators */
 	size_t const num_mem_desc = (hip.hip_length - hip.mem_desc_offset)
 	                            / hip.mem_desc_size;
+
+	log("HIP is ", hip.hip_length, " bytes long.");
 
 	addr_t mem_desc_base = ((addr_t)&hip + hip.mem_desc_offset);
 
@@ -477,6 +479,7 @@ Platform::Platform()
 	bool efi_boot = false;
 	size_t kernel_memory = 0;
 
+	log("Found ", num_mem_desc, " memory entries in HIP");
 	/*
 	 * All "available" ram must be added to our physical allocator before all
 	 * non "available" regions that overlaps with ram get removed.
@@ -497,7 +500,7 @@ Platform::Platform()
 			uint64_t const base = mem_desc->addr;
 			uint64_t const size = mem_desc->size;
 			log("detected physical memory: ", Hex(base, Hex::PREFIX, Hex::PAD),
-			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD));
+			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD), " - node: ", mem_desc->domain, " type: ", static_cast<uint8_t>(mem_desc->type));
 		}
 
 		if (!mem_desc->size) continue;
@@ -798,7 +801,7 @@ Platform::Platform()
 				                          cpu->core, ":", cpu->thread);
 
 			log(" remap (", location.xpos(), "x", location.ypos(),") -> ",
-			    kernel_cpu_id, " - ", text, ") ",
+			    kernel_cpu_id, " - ", text, " node: ", cpu->numa_id, ") ",
 			    boot_cpu() == kernel_cpu_id ? "boot cpu" : "");
 		});
 	}
