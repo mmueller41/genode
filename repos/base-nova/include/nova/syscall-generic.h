@@ -108,6 +108,7 @@ namespace Nova {
 			uint64_t const size;
 			Type     const type;
 			uint32_t const aux;
+			uint32_t const domain;
 		};
 
 		uint32_t const signature;   /* magic value 0x41564f4e */
@@ -143,6 +144,7 @@ namespace Nova {
 			uint8_t platform:3;
 			uint8_t reserved:1;
 			uint32_t patch;
+			uint8_t numa_id;
 		} __attribute__((packed));
 
 		unsigned cpu_max() const {
@@ -175,7 +177,7 @@ namespace Nova {
 		/**
 		 * Map kernel cpu ids to virtual cpu ids.
 		 */
-		bool remap_cpu_ids(uint8_t *map_cpus, unsigned const boot_cpu) const {
+		bool remap_cpu_ids(uint8_t *map_cpus, uint8_t *cpu_numa_map, unsigned const boot_cpu) const {
 			unsigned const num_cpus = cpus();
 			unsigned cpu_i = 0;
 
@@ -205,6 +207,7 @@ namespace Nova {
 								continue;
 
 							map_cpus[cpu_i++] = (uint8_t)i;
+							cpu_numa_map[cpu_i++] = c->numa_id;
 							if (cpu_i >= num_cpus)
 								return true;
 						}
