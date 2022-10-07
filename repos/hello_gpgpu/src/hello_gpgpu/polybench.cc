@@ -399,5 +399,8 @@ void* polybench_alloc_data(unsigned long long int n, int elt_size)
   val *= elt_size;
   void* ret = xmalloc (val);
 
+  // unlike Linux, Genode does not ensure that allocated memory is zeroed
+  memset(ret, 0, val);
+
   return ret;
 }
