@@ -56,7 +56,7 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run gemver===");
 		ns_gemver::main(0, 0);
 		Genode::log("===Run gesummv===");
-		ns_gesummv::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 1023
+		ns_gesummv::main(0, 0);
 		Genode::log("===Run mvt===");
 		ns_mvt::main(0, 0);
 		Genode::log("===Run syr2k===");
