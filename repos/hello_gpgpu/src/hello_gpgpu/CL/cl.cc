@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 
+#define CL_MAX_KERNEL_ARGS 32
 struct _cl_mem
 {
     struct buffer_config bc;
@@ -319,6 +320,14 @@ clReleaseCommandQueue(cl_command_queue command_queue)
     while(cmd != NULL)
     {
         cl_command_queue next = cmd->next;
+        for(int i = 0; i < cmd->kc->buffCount; i++)
+        {
+            if(cmd->kc->buffConfigs[i].non_pointer_type)
+            {
+                g_cl_genode->free(cmd->kc->buffConfigs[i].buffer);
+            }
+        }
+        g_cl_genode->free(cmd->kc->buffConfigs);
         g_cl_genode->free(cmd->kc);
         g_cl_genode->free(cmd);
         cmd = next;
@@ -788,7 +797,7 @@ clCreateKernel(cl_program      program,
     }
 
     // preallocated 32 buff configs;
-    kc->buffConfigs = new(g_cl_genode->getAlloc()) buffer_config[32];
+    kc->buffConfigs = new(g_cl_genode->getAlloc()) buffer_config[CL_MAX_KERNEL_ARGS];
 
     // get name size
     size_t size = 0;
@@ -871,13 +880,6 @@ clSetKernelArg(cl_kernel    kernel,
     {
         struct buffer_config& bc = kc->buffConfigs[arg_index];
         
-        // if we overwrite an old config, free the old one
-        // TODO: reuse the buffer, because kernel parameters have fixed size
-        if(bc.buffer != nullptr)
-        {
-            g_cl_genode->free(bc.buffer);
-        }
-
         // set buffer config
         bc.buffer = g_cl_genode->alloc(arg_size); // alloc shared mem
         bc.buffer_size = (uint32_t)arg_size;
@@ -1425,9 +1427,16 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         }
     }
 
-    // create shallow copy (TODO: do we need a deep copy?)
+    // create copy of kernel (vm and driver should not modify the same kernel)
     kernel_config* kcopy = new(g_cl_genode->getAlloc()) kernel_config();
     *kcopy = *kc;
+
+    // also copy buff configs
+    kcopy->buffConfigs = new(g_cl_genode->getAlloc()) buffer_config[CL_MAX_KERNEL_ARGS];
+    for(int i = 0; i < kc->buffCount; i++)
+    {
+        kcopy->buffConfigs[i] = kc->buffConfigs[i];
+    }
 
     // skip to end of queue
     cl_command_queue cmd = command_queue;
