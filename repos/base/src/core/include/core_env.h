@@ -18,6 +18,7 @@
 /* Genode includes */
 #include <base/env.h>
 #include <deprecated/env.h>
+#include <topo_session/capability.h>
 
 /* base-internal includes */
 #include <base/internal/globals.h>
@@ -98,6 +99,8 @@ class Genode::Core_env : public Env_deprecated, Noncopyable
 		Pd_session             *pd_session()      override { return &_pd_session; }
 		Cpu_session            *cpu_session()     override { ASSERT_NEVER_CALLED; }
 		Cpu_session_capability  cpu_session_cap() override { ASSERT_NEVER_CALLED; }
+		Topo_session *topo_session() override { ASSERT_NEVER_CALLED; }
+		Topo_session_capability topo_session_cap() override { ASSERT_NEVER_CALLED; }
 		Pd_session_capability   pd_session_cap()  override { return _pd_session.cap(); }
 };
 

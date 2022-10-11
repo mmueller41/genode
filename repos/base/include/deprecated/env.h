@@ -22,6 +22,8 @@
 #include <region_map/region_map.h>
 #include <cpu_session/cpu_session.h>
 #include <cpu_session/capability.h>
+#include <topo_session/topo_session.h>
+#include <topo_session/capability.h>
 #include <pd_session/capability.h>
 #include <base/allocator.h>
 #include <base/snprintf.h>
@@ -87,6 +89,9 @@ struct Genode::Env_deprecated : Interface
 	 */
 	virtual Pd_session *pd_session() = 0;
 	virtual Pd_session_capability pd_session_cap() = 0;
+
+	virtual Topo_session *topo_session() = 0;
+	virtual Topo_session_capability topo_session_cap() = 0;
 };
 
 #endif /* _INCLUDE__DEPRECATED__ENV_H_ */

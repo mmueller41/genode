@@ -26,6 +26,7 @@
 #include <cpu_session/connection.h>
 #include <log_session/connection.h>
 #include <rom_session/connection.h>
+#include <topo_session/connection.h>
 #include <parent/capability.h>
 
 namespace Genode {
@@ -609,6 +610,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Env_connection<Cpu_connection> _cpu    { *this, Env::cpu(),    _policy.name() };
 		Env_connection<Log_connection> _log    { *this, Env::log(),    _policy.name() };
 		Env_connection<Rom_connection> _binary { *this, Env::binary(), _policy.binary_name() };
+		Env_connection<Topo_connection> _topo  { *this, Env::topo(),    _policy.name() };
 
 		Constructible<Env_connection<Rom_connection> > _linker { };
 
@@ -761,6 +763,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Ram_allocator       &ram()       { return _pd.session(); }
 		Ram_allocator const &ram() const { return _pd.session(); }
 		Cpu_session         &cpu()       { return _cpu.session(); }
+		Topo_session        &topo() 	 { return _topo.session(); }
 		Pd_session          &pd()        { return _pd.session(); }
 		Pd_session    const &pd()  const { return _pd.session(); }
 

@@ -22,6 +22,7 @@
 
 /* base-internal includes */
 #include <base/internal/globals.h>
+#include <topo_session/capability.h>
 
 /*
  * XXX remove this pointer once 'Env_deprecated' is removed
@@ -78,6 +79,7 @@ namespace {
 		Genode::Region_map  &rm()     override { return *Genode::env_deprecated()->rm_session(); }
 		Genode::Pd_session  &pd()     override { return *Genode::env_deprecated()->pd_session(); }
 		Genode::Entrypoint  &ep()     override { return _ep; }
+		Genode::Topo_session &topo() override { return *Genode::env_deprecated()->topo_session(); }
 
 		Genode::Cpu_session_capability cpu_session_cap() override
 		{
@@ -92,6 +94,11 @@ namespace {
 		Genode::Id_space<Parent::Client> &id_space() override
 		{
 			return Genode::env_session_id_space();
+		}
+
+		Genode::Topo_session_capability topo_session_cap() override 
+		{
+			return Genode::env_deprecated()->topo_session_cap();
 		}
 
 		void _block_for_session()
