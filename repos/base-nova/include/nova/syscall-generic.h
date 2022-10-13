@@ -195,19 +195,19 @@ namespace Nova {
 				for (uint8_t core = 0; core < 255; core++) {
 					for (uint8_t thread = 0; thread < 255; thread++) {
 						for (unsigned i = 0; i < cpu_max(); i++) {
-							if (i == boot_cpu || !is_cpu_enabled(i))
+							if (i == boot_cpu || !is_cpu_enabled(i)) 
 								continue;
 
 							Cpu_desc const * const c = cpu_desc_of_cpu(i);
-							if (!c)
+							if (!c) 
 								continue;
 
 							if (!(c->package == package && c->core == core &&
 							      c->thread == thread))
 								continue;
 
+							cpu_numa_map[cpu_i] = c->numa_id;
 							map_cpus[cpu_i++] = (uint8_t)i;
-							cpu_numa_map[cpu_i++] = c->numa_id;
 							if (cpu_i >= num_cpus)
 								return true;
 						}
