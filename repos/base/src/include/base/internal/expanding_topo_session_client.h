@@ -32,7 +32,7 @@ struct Genode::Expanding_topo_session_client : Upgradeable_client<Genode::Topo_s
             (parent, static_cap_cast<Genode::Topo_session_client::Rpc_interface>(cap), id)
     { }
 
-    Node *node_affinity_of(Affinity::Location &loc) override 
+    Topology::Numa_region node_affinity_of(Affinity::Location const &loc) override 
     {
         return retry<Out_of_ram>(
             [&]()

@@ -32,7 +32,7 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
         Genode::Affinity &_affinity;
         Sliced_heap _md_alloc;
         
-        Node ***_node_affinities;
+        Topology::Numa_region _node_affinities[64][64];
         unsigned _node_count;
 
     public:
@@ -45,17 +45,19 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
                                Affinity &affinity
                                );
 
-    /**
-     * @brief Topology session interface
-     */
 
-    Node *node_affinity_of(Affinity::Location &loc) override 
-    {
-        return _node_affinities[loc.xpos()][loc.ypos()];
+        /**
+         * @brief Topology session interface
+         */
+
+        Topology::Numa_region node_affinity_of(Affinity::Location const &loc) override
+        {
+            return _node_affinities[loc.xpos()][loc.ypos()];
     }
 
     unsigned node_count() override
     {
         return _node_count;
     }
+
 };

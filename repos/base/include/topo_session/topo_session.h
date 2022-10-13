@@ -22,8 +22,12 @@ namespace Genode {
 
     struct Topo_session;
     struct Topo_session_client;
-    struct Node;
 }
+
+namespace Topology
+{
+    struct Numa_region;
+} // namespace EalanOS
 
 struct Genode::Topo_session : Session 
 {
@@ -42,10 +46,10 @@ struct Genode::Topo_session : Session
 
     virtual ~Topo_session() { }
 
-    virtual Node *node_affinity_of(Affinity::Location &) = 0;
+    virtual Topology::Numa_region node_affinity_of(Affinity::Location const &) = 0;
     virtual unsigned node_count() = 0;
 
-    GENODE_RPC(Rpc_node_affinity, Node*, node_affinity_of, Affinity::Location &);
+    GENODE_RPC(Rpc_node_affinity, Topology::Numa_region, node_affinity_of, Affinity::Location const &);
     GENODE_RPC(Rpc_node_count, unsigned, node_count);
 
     GENODE_RPC_INTERFACE(Rpc_node_affinity, Rpc_node_count);

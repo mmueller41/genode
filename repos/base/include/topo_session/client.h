@@ -30,7 +30,7 @@ struct Genode::Topo_session_client : Rpc_client<Topo_session>
     explicit Topo_session_client(Topo_session_capability session)
     : Rpc_client<Topo_session>(session) { }
 
-    Node *node_affinity_of(Affinity::Location &loc) override {
+    Topology::Numa_region node_affinity_of(Affinity::Location const &loc) override {
         return call<Rpc_node_affinity>(loc);
     }
 

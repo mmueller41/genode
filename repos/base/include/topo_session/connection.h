@@ -27,7 +27,7 @@ struct Genode::Topo_connection : Connection<Topo_session>, Topo_session_client
 {
     enum
     {
-        RAM_QUOTA = 8192
+        RAM_QUOTA = 262144
     };
 
     Topo_connection(Env &env, const char *label = "", Affinity const &affinity = Affinity()) 
@@ -36,7 +36,7 @@ struct Genode::Topo_connection : Connection<Topo_session>, Topo_session_client
                                 session(env.parent(), affinity, "ram_quota=%u, cap_quota=%u, label=\"%s\"", RAM_QUOTA, CAP_QUOTA, label)),
     Topo_session_client(cap()) {}
 
-    Node *node_affinity_of(Affinity::Location &loc) override {
+    Topology::Numa_region node_affinity_of(Affinity::Location const &loc) override {
         return Topo_session_client::node_affinity_of(loc);
     }
 
