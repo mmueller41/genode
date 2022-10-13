@@ -25,33 +25,42 @@ Topo_session_component::Topo_session_component(Rpc_entrypoint &session_ep,
                                                Ram_allocator &ram_alloc,
                                                Region_map &local_rm,
                                                Affinity &affinity)
-: 
-    Session_object(session_ep, resources, label, diag),
-    _md_alloc(ram_alloc, local_rm),
-    _affinity(affinity) 
+    : Session_object(session_ep, resources, label, diag),
+      _affinity(affinity),
+      _md_alloc(ram_alloc, local_rm),
+      _node_count(0)
 {
-    const unsigned height = affinity.space().height();
-    unsigned width = affinity.space().width();
-    unsigned curr_node_id = 0; 
-    Node *node_created[] = new (_md_alloc) Node *[64]();
+    Affinity::Location location = affinity.location();
+    const unsigned height = location.height();
+    unsigned width = location.width();
+    unsigned curr_node_id = 0;
+    Topology::Numa_region *node_created = new (_md_alloc) Topology::Numa_region[64]();
 
-    _node_affinities = new (_md_alloc) Node **[width];
-    
-
-    for (unsigned x = 0; x < width; x++) {
-        _node_affinities[x] = new (_md_alloc) Node *[height];
-        for (unsigned y = 0; y < height; y++) {
-            
-            Affinity::Location loc = Affinity::Location(x, y);
+    for (unsigned x = 0; x < width; x++)
+    {
+        for (unsigned y = 0; y < height; y++)
+        {
+            /* Map component's affinity matrix to its position in the affinity space.
+             * In order to get the correct physical CPU id for a coordinate in the affinity matrix of a component,
+             * we need the global coordination for it relative to the whole affinity space.
+             * But, every component's maintains a local view on its affinity matrix starting by (0,0), since
+             * affinity locations can have arbitrary coordinates in the affinity space, we need to transpose the 
+             * component's affinity matrix to the global view of the affinity space. */
+            Affinity::Location loc = location.transpose(x, y); 
             unsigned cpu_id = platform_specific().kernel_cpu_id(loc);
             unsigned native_id = platform_specific().domain_of_cpu(cpu_id);
-            
-            if (!node_created[node_id]) {
-                _node_affinities[x][y] = new (_md_alloc) Node(curr_node_id, native_id);
-                _node_affinities[x][y]->increment_core_count();
+
+            if (node_created[native_id].core_count() == 0)
+            {
+                _node_affinities[x][y] = Topology::Numa_region(curr_node_id, native_id);
+                _node_affinities[x][y].increment_core_count();
+                node_created[native_id] = _node_affinities[x][y];
                 _node_count++;
-            } else {
-                (_node_affinities[x][y] = node_created[native_id])->increment_core_count();
+                curr_node_id++;
+            }
+            else
+            {
+                (_node_affinities[x][y] = node_created[native_id]).increment_core_count();
             }
         }
     }
