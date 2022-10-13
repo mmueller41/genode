@@ -38,6 +38,7 @@
 #include <io_mem_root.h>
 #include <irq_root.h>
 #include <trace/root.h>
+#include <topo_root.h>
 #include <platform_services.h>
 
 using namespace Genode;
@@ -267,6 +268,7 @@ int main()
 	                                platform().irq_alloc(), sliced_heap);
 	static Trace::Root trace_root  (core_ram_alloc, local_rm, ep, sliced_heap,
 	                                Trace::sources(), trace_policies);
+	static Topo_root topo_root(core_ram_alloc, local_rm, ep, sliced_heap);
 
 	static Core_service<Rom_session_component>    rom_service    (services, rom_root);
 	static Core_service<Rm_session_component>     rm_service     (services, rm_root);
@@ -276,6 +278,7 @@ int main()
 	static Core_service<Io_mem_session_component> io_mem_service (services, io_mem_root);
 	static Core_service<Irq_session_component>    irq_service    (services, irq_root);
 	static Core_service<Trace::Session_component> trace_service  (services, trace_root);
+	static Core_service<Topo_session_component> topo_service(services, topo_root);
 
 	/* make platform-specific services known to service pool */
 	platform_add_local_services(ep, sliced_heap, services, Trace::sources());
