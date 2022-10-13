@@ -1,5 +1,6 @@
 #include <base/component.h>
 #include <timer_session/connection.h>
+#include <topo_session/node.h>
 #include <base/heap.h>
 #include <cstdint>
 #include <memory>
@@ -38,6 +39,7 @@ class Thread_test::Test_thread : public Thread
                 auto end = _timer.elapsed_ms();
                 // auto end = std::chrono::steady_clock::now();
                 Genode::log("Thread ", _id, " woke up afer", (end-start), " ms.");
+                Genode::log("My affinities are ", this->affinity().xpos(), "x", this->affinity().ypos(), " node: ", _env.topo().node_affinity_of(this->affinity()).id(), " native region: ", _env.topo().node_affinity_of(this->affinity()).native_id());
             }
         }
 };
@@ -56,6 +58,7 @@ public:
     {
         Affinity::Space space = env.cpu().affinity_space();
 
+        Genode::log("Having ", env.topo().node_count(), " NUMA regions.");
         Genode::log("Size of Affinity space is ", space.total());
         Genode::log("-----------------------------");
         for (unsigned i = 1; i < space.total(); i++)
@@ -72,6 +75,10 @@ public:
             thread->start();
 
             _threads.insert(&thread->_list_element);
+        }
+
+        for (auto thread = _threads.first(); !thread; thread->next()) {
+            thread->object()->join();
         }
         /* Test, whether unique_ptrs work */
         //auto unique_thread = std::unique_ptr<Test_thread>(new (_heap) Test_thread(env, 255, env.cpu().affinity_space().location_of_index(0)));
