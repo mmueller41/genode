@@ -683,7 +683,7 @@ Platform::Platform()
 					  rom_name, " as ROM module"); });
 	};
 
-	export_pages_as_rom_module("platform_info", 37,
+	export_pages_as_rom_module("platform_info", 1 + (MAX_SUPPORTED_CPUS / 32),
 							   [&](char *const ptr, size_t const size)
 							   {
 								   log("Exporting platform info as ROM module");
