@@ -15,6 +15,7 @@
 #include <device_component.h>
 #include <pci.h>
 #include <session_component.h>
+#include <shared_irq.h>
 
 using Driver::Device_component;
 
@@ -27,6 +28,14 @@ void Driver::Device_component::_release_resources()
 	_irq_registry.for_each([&] (Irq & irq) {
 		destroy(_session.heap(), &irq); });
 
+	_io_port_range_registry.for_each([&] (Io_port_range & iop) {
+		destroy(_session.heap(), &iop); });
+
+	_reserved_mem_registry.for_each([&] (Io_mem & iomem) {
+		destroy(_session.heap(), &iomem); });
+
+	if (_pci_config.constructed()) _pci_config.destruct();
+
 	_session.ram_quota_guard().replenish(Ram_quota{_ram_quota});
 	_session.cap_quota_guard().replenish(Cap_quota{_cap_quota});
 }
@@ -38,8 +47,17 @@ Driver::Device::Name Device_component::device() const { return _device; }
 Driver::Session_component & Device_component::session() { return _session; }
 
 
+unsigned Device_component::io_mem_index(Device::Pci_bar bar)
+{
+	unsigned ret = ~0U;
+	_io_mem_registry.for_each([&] (Io_mem & iomem) {
+		if (iomem.bar.number == bar.number) ret = iomem.idx; });
+	return ret;
+}
+
+
 Genode::Io_mem_session_capability
-Device_component::io_mem(unsigned idx, Range &range, Cache cache)
+Device_component::io_mem(unsigned idx, Range &range)
 {
 	Io_mem_session_capability cap;
 
@@ -49,10 +67,10 @@ Device_component::io_mem(unsigned idx, Range &range, Cache cache)
 			return;
 
 		if (!iomem.io_mem.constructed())
-			iomem.io_mem.construct(_session.env(),
+			iomem.io_mem.construct(_env,
 			                       iomem.range.start,
 			                       iomem.range.size,
-			                       cache == WRITE_COMBINED);
+			                       iomem.prefetchable);
 
 		range = iomem.range;
 		range.start &= 0xfff;
@@ -72,21 +90,28 @@ Genode::Irq_session_capability Device_component::irq(unsigned idx)
 		if (irq.idx != idx)
 			return;
 
-		if (!irq.irq.constructed()) {
+		if (!irq.shared && !irq.irq.constructed()) {
 			addr_t pci_cfg_addr = 0;
 			if (irq.type != Device::Irq::LEGACY) {
 				if (_pci_config.constructed()) pci_cfg_addr = _pci_config->addr;
 				else
 					error("MSI(-x) detected for device without pci-config!");
 			}
-			irq.irq.construct(_session.env(), irq.number, irq.mode, irq.polarity,
+			irq.irq.construct(_env, irq.number, irq.mode, irq.polarity,
 			                  pci_cfg_addr);
 			Irq_session::Info info = irq.irq->info();
 			if (info.type == Irq_session::Info::MSI)
-				pci_msi_enable(_session.env(), pci_cfg_addr, info);
+				pci_msi_enable(_env, *this, pci_cfg_addr, info, irq.type);
 		}
 
-		cap = irq.irq->cap();
+		if (irq.shared && !irq.sirq.constructed())
+			_device_model.with_shared_irq(irq.number,
+			                              [&] (Shared_interrupt & sirq) {
+				irq.sirq.construct(sirq, irq.mode, irq.polarity);
+				_env.ep().rpc_ep().manage(&*irq.sirq);
+			});
+
+		cap = irq.shared ? irq.sirq->cap() : irq.irq->cap();
 	});
 
 	return cap;
@@ -103,7 +128,8 @@ Genode::Io_port_session_capability Device_component::io_port_range(unsigned idx)
 			return;
 
 		if (!ipr.io_port_range.constructed())
-			ipr.io_port_range.construct(_session.env(), ipr.addr, ipr.size);
+			ipr.io_port_range.construct(_env, ipr.range.addr,
+			                            ipr.range.size);
 
 		cap = ipr.io_port_range->cap();
 	});
@@ -113,9 +139,16 @@ Genode::Io_port_session_capability Device_component::io_port_range(unsigned idx)
 
 
 Device_component::Device_component(Registry<Device_component> & registry,
+                                   Env                        & env,
                                    Driver::Session_component  & session,
+                                   Driver::Device_model       & model,
                                    Driver::Device             & device)
-: _session(session), _device(device.name()), _reg_elem(registry, *this)
+:
+	_env(env),
+	_session(session),
+	_device_model(model),
+	_device(device.name()),
+	_reg_elem(registry, *this)
 {
 	session.cap_quota_guard().withdraw(Cap_quota{1});
 	_cap_quota += 1;
@@ -136,33 +169,35 @@ Device_component::Device_component(Registry<Device_component> & registry,
 		                         unsigned              nr,
 		                         Device::Irq::Type     type,
 		                         Irq_session::Polarity polarity,
-		                         Irq_session::Trigger  mode)
+		                         Irq_session::Trigger  mode,
+		                         bool                  shared)
 		{
 			session.ram_quota_guard().withdraw(Ram_quota{Irq_session::RAM_QUOTA});
 			_ram_quota += Irq_session::RAM_QUOTA;
 			session.cap_quota_guard().withdraw(Cap_quota{Irq_session::CAP_QUOTA});
 			_cap_quota += Irq_session::CAP_QUOTA;
-			new (session.heap()) Irq(_irq_registry, idx, nr, type, polarity, mode);
+			new (session.heap()) Irq(_irq_registry, idx, nr, type, polarity,
+			                         mode, shared);
 		});
 
-		device.for_each_io_mem([&] (unsigned idx, Range range)
+		device.for_each_io_mem([&] (unsigned idx, Range range,
+		                            Device::Pci_bar bar, bool pf)
 		{
 			session.ram_quota_guard().withdraw(Ram_quota{Io_mem_session::RAM_QUOTA});
 			_ram_quota += Io_mem_session::RAM_QUOTA;
 			session.cap_quota_guard().withdraw(Cap_quota{Io_mem_session::CAP_QUOTA});
 			_cap_quota += Io_mem_session::CAP_QUOTA;
-			new (session.heap()) Io_mem(_io_mem_registry, idx, range);
+			new (session.heap()) Io_mem(_io_mem_registry, bar, idx, range, pf);
 		});
 
-		device.for_each_io_port_range([&] (unsigned idx, uint16_t addr,
-		                                   uint16_t size)
+		device.for_each_io_port_range([&] (unsigned idx, Io_port_range::Range range,
+		                                   Device::Pci_bar)
 		{
 			session.ram_quota_guard().withdraw(Ram_quota{Io_port_session::RAM_QUOTA});
 			_ram_quota += Io_port_session::RAM_QUOTA;
 			session.cap_quota_guard().withdraw(Cap_quota{Io_port_session::CAP_QUOTA});
 			_cap_quota += Io_port_session::CAP_QUOTA;
-			new (session.heap()) Io_port_range(_io_port_range_registry,
-			                                   idx, addr, size);
+			new (session.heap()) Io_port_range(_io_port_range_registry, idx, range);
 		});
 
 		device.for_pci_config([&] (Device::Pci_config const & cfg)
@@ -172,6 +207,20 @@ Device_component::Device_component(Registry<Device_component> & registry,
 			session.cap_quota_guard().withdraw(Cap_quota{Io_mem_session::CAP_QUOTA});
 			_cap_quota += Io_mem_session::CAP_QUOTA;
 			_pci_config.construct(cfg.addr);
+		});
+
+		device.for_each_reserved_memory([&] (unsigned idx, Range range)
+		{
+			session.ram_quota_guard().withdraw(Ram_quota{Io_mem_session::RAM_QUOTA});
+			_ram_quota += Io_mem_session::RAM_QUOTA;
+			session.cap_quota_guard().withdraw(Cap_quota{Io_mem_session::CAP_QUOTA});
+			_cap_quota += Io_mem_session::CAP_QUOTA;
+			Io_mem & iomem = *(new (session.heap())
+				Io_mem(_reserved_mem_registry, {0}, idx, range, false));
+			iomem.io_mem.construct(_env, iomem.range.start,
+			                       iomem.range.size, false);
+			session.device_pd().attach_dma_mem(iomem.io_mem->dataspace(),
+			                                   iomem.range.start);
 		});
 	} catch(...) {
 		_release_resources();

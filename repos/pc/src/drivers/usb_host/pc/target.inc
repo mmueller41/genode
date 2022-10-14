@@ -3,19 +3,17 @@ REQUIRES := x86
 REL_PRG_DIR := $(PRG_DIR)/../..
 
 TARGET  := pc_usb_host_drv
-LIBS    := base pc_lx_emul
+LIBS    := base pc_lx_emul jitterentropy
 
 INC_DIR += $(REL_PRG_DIR)
 SRC_CC  += main.cc
-SRC_CC  += misc.cc
+SRC_CC  += time.cc
 SRC_CC  += lx_emul/shared_dma_buffer.cc
 SRC_C   += dummies.c
 SRC_C   += lx_emul.c
 SRC_C   += $(notdir $(wildcard $(REL_PRG_DIR)/generated_dummies.c))
 SRC_C   += common_dummies.c
-SRC_C   += lx_emul/spec/x86/pci.c
 SRC_C   += lx_emul/usb.c
-SRC_C   += lx_emul/shadow/drivers/char/random.c
 
 SRC_C   += lx_emul/shadow/lib/kobject_uevent.c
 vpath %.c  $(REP_DIR)/src/lib/pc

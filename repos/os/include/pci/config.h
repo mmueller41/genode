@@ -44,16 +44,17 @@ struct Pci::Config : Genode::Mmio
 
 	struct Command : Register<0x4, 16>
 	{
-		struct Io_space_enable         : Bitfield<0,  1> {};
-		struct Memory_space_enable     : Bitfield<1,  1> {};
-		struct Bus_master_enable       : Bitfield<2,  1> {};
-		struct Special_cycle_enable    : Bitfield<3,  1> {};
-		struct Memory_write_invalidate : Bitfield<4,  1> {};
-		struct Vga_palette_snoop       : Bitfield<5,  1> {};
-		struct Parity_error_response   : Bitfield<6,  1> {};
-		struct Idsel                   : Bitfield<7,  1> {};
-		struct Serror_enable           : Bitfield<8,  1> {};
-		struct Interrupt_enable        : Bitfield<10, 1> {};
+		struct Io_space_enable          : Bitfield<0,  1> {};
+		struct Memory_space_enable      : Bitfield<1,  1> {};
+		struct Bus_master_enable        : Bitfield<2,  1> {};
+		struct Special_cycle_enable     : Bitfield<3,  1> {};
+		struct Memory_write_invalidate  : Bitfield<4,  1> {};
+		struct Vga_palette_snoop        : Bitfield<5,  1> {};
+		struct Parity_error_response    : Bitfield<6,  1> {};
+		struct Idsel                    : Bitfield<7,  1> {};
+		struct Serror_enable            : Bitfield<8,  1> {};
+		struct Fast_back_to_back_enable : Bitfield<9,  1> {};
+		struct Interrupt_enable         : Bitfield<10, 1> {};
 	};
 
 	struct Status : Register<0x6, 16>
@@ -64,6 +65,7 @@ struct Pci::Config : Genode::Mmio
 
 	struct Class_code_rev_id : Register<0x8, 32>
 	{
+		struct Revision   : Bitfield<0, 8> {};
 		struct Class_code : Bitfield<8, 24> {};
 	};
 
@@ -94,43 +96,79 @@ struct Pci::Config : Genode::Mmio
 				enum { SIZE_32BIT = 0, SIZE_64BIT = 2 };
 			};
 
+			struct Memory_prefetchable : Bitfield<3,1> {};
+
 			struct Io_base     : Bitfield<2, 30> {};
 			struct Memory_base : Bitfield<7, 25> {};
 		};
 
 		struct Upper_bits : Register<0x4, 32> { };
 
-		Bar_32bit::access_t _conf { 0 };
+		Bar_32bit::access_t _conf_value { 0 };
 
-		Base_address(Genode::addr_t base) : Mmio(base)
+		template <typename REG>
+		typename REG::access_t _get_and_set(typename REG::access_t value)
 		{
-			Bar_32bit::access_t v = read<Bar_32bit>();
-			write<Bar_32bit>(0xffffffff);
-			_conf = read<Bar_32bit>();
-			write<Bar_32bit>(v);
+			write<REG>(0xffffffff);
+			typename REG::access_t ret = read<REG>();
+			write<REG>(value);
+			return ret;
 		}
 
-		bool valid() { return _conf != 0; }
+		Bar_32bit::access_t _conf()
+		{
+			/*
+			 * Initialize _conf_value on demand only to prevent read-write
+			 * operations on BARs of invalid devices at construction time.
+			 */
+			if (!_conf_value)
+				_conf_value = _get_and_set<Bar_32bit>(read<Bar_32bit>());
+			return _conf_value;
+		}
+
+		Base_address(Genode::addr_t base) : Mmio(base) { }
+
+		bool valid() { return _conf() != 0; }
 
 		bool memory() {
-			return !Bar_32bit::Memory_space_indicator::get(_conf); }
+			return !Bar_32bit::Memory_space_indicator::get(_conf()); }
 
 		bool bit64()
 		{
-			return Bar_32bit::Memory_type::get(_conf) ==
+			return Bar_32bit::Memory_type::get(_conf()) ==
 			       Bar_32bit::Memory_type::SIZE_64BIT;
 		}
 
+		bool prefetchable() {
+			return Bar_32bit::Memory_prefetchable::get(_conf()); }
+
 		Genode::size_t size()
 		{
-			return 1 + (memory() ? ~Bar_32bit::Memory_base::masked(_conf)
-			                     : ~Bar_32bit::Io_base::masked(_conf));
+			return 1 + (memory() ? ~Bar_32bit::Memory_base::masked(_conf())
+			                     : ~Bar_32bit::Io_base::masked(_conf()));
 		}
 
 		Genode::uint64_t addr()
 		{
-			return (bit64() ? ((Genode::uint64_t)read<Upper_bits>()<<32) : 0UL)
-			       | Bar_32bit::Memory_base::masked(read<Bar_32bit>());
+			if (memory())
+				return (bit64()
+					? ((Genode::uint64_t)read<Upper_bits>()<<32) : 0UL)
+					| Bar_32bit::Memory_base::masked(read<Bar_32bit>());
+			else
+				return Bar_32bit::Io_base::masked(read<Bar_32bit>());
+		}
+
+		void set(Genode::uint64_t v)
+		{
+			if (!valid() || v == addr())
+				return;
+
+			if (memory()) {
+				if (bit64())
+					_get_and_set<Upper_bits>((Upper_bits::access_t)(v >> 32));
+				_get_and_set<Bar_32bit>(Bar_32bit::Memory_base::masked(v & ~0U));
+			} else
+				_get_and_set<Bar_32bit>(Bar_32bit::Io_base::masked(v & ~0U));
 		}
 	};
 
@@ -184,14 +222,53 @@ struct Pci::Config : Genode::Mmio
 
 	struct Power_management_capability : Pci_capability
 	{
-		struct Capabilities   : Register<0x2, 16> {};
+		struct Capabilities : Register<0x2, 16> {};
+
 		struct Control_status : Register<0x4, 16>
 		{
-			struct Pme_status : Bitfield<15,1> {};
+			struct Power_state : Bitfield<0, 2>
+			{
+				enum { D0, D1, D2, D3 };
+			};
+
+			struct No_soft_reset : Bitfield<3, 1> {};
+			struct Pme_status    : Bitfield<15,1> {};
 		};
-		struct Data           : Register<0x7,  8> {};
+
+		struct Data : Register<0x7, 8> {};
 
 		using Pci_capability::Pci_capability;
+
+		bool power_on(Delayer & delayer)
+		{
+			using Reg = Control_status::Power_state;
+			if (read<Reg>() == Reg::D0)
+				return false;
+
+			write<Reg>(Reg::D0);
+
+			/*
+			 * PCI Express 4.3 - 5.3.1.4. D3 State
+			 *
+			 * "Unless Readiness Notifications mechanisms are used ..."
+			 * "a minimum recovery time following a D3 hot → D0 transition of"
+			 * "at least 10 ms ..."
+			 */
+			delayer.usleep(10'000);
+			return true;
+		}
+
+		void power_off()
+		{
+			using Reg = Control_status::Power_state;
+			if (read<Reg>() != Reg::D3) write<Reg>(Reg::D3);
+		}
+
+
+		bool soft_reset()
+		{
+			return !read<Control_status::No_soft_reset>();
+		}
 	};
 
 
@@ -235,6 +312,7 @@ struct Pci::Config : Genode::Mmio
 	{
 		struct Control : Register<0x2, 16>
 		{
+			struct Slots         : Bitfield<0,  10> {};
 			struct Size          : Bitfield<0,  11> {};
 			struct Function_mask : Bitfield<14, 1> {};
 			struct Enable        : Bitfield<15, 1> {};
@@ -254,6 +332,8 @@ struct Pci::Config : Genode::Mmio
 
 		struct Table_entry : Genode::Mmio
 		{
+			enum { SIZE = 16 };
+
 			struct Address_64_lower : Register<0x0, 32> { };
 			struct Address_64_upper : Register<0x4, 32> { };
 			struct Data             : Register<0x8, 32> { };
@@ -266,16 +346,40 @@ struct Pci::Config : Genode::Mmio
 		};
 
 		using Pci_capability::Pci_capability;
+
+		Genode::uint8_t bar() {
+			return (Genode::uint8_t) read<Table::Bar_index>(); }
+
+		Genode::size_t table_offset() {
+			return read<Table::Offset>() << 3; }
+
+		unsigned slots() { return read<Control::Slots>(); }
+
+		void enable()
+		{
+			Control::access_t ctrl = read<Control>();
+			Control::Function_mask::set(ctrl, 0);
+			Control::Enable::set(ctrl, 1);
+			write<Control>(ctrl);
+		}
 	};
 
 
 	struct Pci_express_capability : Pci_capability
 	{
-		struct Capabilities        : Register<0x2,  16> {};
-		struct Device_capabilities : Register<0x4,  32> {};
-		struct Device_control      : Register<0x8,  16> {};
+		struct Capabilities : Register<0x2, 16> {};
 
-		struct Device_status       : Register<0xa,  16>
+		struct Device_capabilities : Register<0x4,  32>
+		{
+			struct Function_level_reset : Bitfield<28,1> {};
+		};
+
+		struct Device_control : Register<0x8,  16>
+		{
+			struct Function_level_reset : Bitfield<15,1> {};
+		};
+
+		struct Device_status : Register<0xa,  16>
 		{
 			struct Correctable_error    : Bitfield<0, 1> {};
 			struct Non_fatal_error      : Bitfield<1, 1> {};
@@ -353,6 +457,17 @@ struct Pci::Config : Genode::Mmio
 			write<Link_status::Lbm_status>(1);
 			write<Link_control::Lbm_irq_enable>(1);
 		}
+
+		void reset(Delayer & delayer)
+		{
+			if (!read<Device_capabilities::Function_level_reset>())
+				return;
+			write<Device_control::Function_level_reset>(1);
+			try {
+				wait_for(Attempts(100), Microseconds(10000), delayer,
+				         Device_status::Transactions_pending::Equal(0));
+			} catch(Polling_timeout) { }
+		}
 	};
 
 
@@ -364,7 +479,7 @@ struct Pci::Config : Genode::Mmio
 
 	struct Pci_express_extended_capability : Genode::Mmio
 	{
-		struct Id : Register<0,16>
+		struct Id : Register<0x0, 16>
 		{
 			enum {
 				INVALID                  = 0x0,
@@ -377,7 +492,7 @@ struct Pci::Config : Genode::Mmio
 			};
 		};
 
-		struct Next_and_version : Register<16, 8>
+		struct Next_and_version : Register<0x2, 16>
 		{
 			struct Offset : Bitfield<4, 12> {};
 		};
@@ -451,19 +566,8 @@ struct Pci::Config : Genode::Mmio
 			case Pci_capability::Id::PCI_E:
 				pci_e_cap.construct(base()+off); break;
 
-			case Pci_capability::Id::AGP:
-			case Pci_capability::Id::VITAL_PRODUCT:
-			case Pci_capability::Id::SATA:
-			case Pci_capability::Id::VENDOR:
-			case Pci_capability::Id::ADVANCED:
-			case Pci_capability::Id::BRIDGE_SUB:
-			case Pci_capability::Id::DEBUG:
-				break;
-
 			default:
-				warning("Found unhandled capability ",
-				        cap.read<Pci_capability::Id>(),
-				        " at offset ", Hex(base()+off));
+				/* ignore unhandled capability */ ;
 			}
 			off = cap.read<Pci_capability::Pointer>();
 		}
@@ -480,15 +584,8 @@ struct Pci::Config : Genode::Mmio
 			case Pci_express_extended_capability::Id::ADVANCED_ERROR_REPORTING:
 				adv_err_cap.construct(base() + off); break;
 
-			case Pci_express_extended_capability::Id::VENDOR:
-			case Pci_express_extended_capability::Id::VIRTUAL_CHANNEL:
-			case Pci_express_extended_capability::Id::MULTI_ROOT_IO_VIRT:
-				break;
-
 			default:
-				warning("Found unhandled extended capability ",
-				        cap.read<Pci_express_extended_capability::Id>(),
-				        " at offset ", Hex(base()+off));
+				/* ignore unhandled extended capability */ ;
 			}
 			off = cap.read<Pci_express_extended_capability::Next_and_version::Offset>();
 		}
@@ -518,12 +615,35 @@ struct Pci::Config : Genode::Mmio
 			if (!reg0.valid())
 				continue;
 			if (reg0.memory()) {
+				memory(reg0.addr(), reg0.size(), i, reg0.prefetchable());
 				if (reg0.bit64()) i++;
-				memory(reg0.addr(), reg0.size());
 			} else
-				io(reg0.addr(), reg0.size());
+				io(reg0.addr(), reg0.size(), i);
 		}
 	};
+
+	void set_bar_address(unsigned idx, Genode::uint64_t addr)
+	{
+		if (idx > 5 || (idx > 1 && bridge()))
+			return;
+
+		Base_address bar { base() + BASE_ADDRESS_0 + idx*0x4 };
+		bar.set(addr);
+	}
+
+	void power_on(Delayer & delayer)
+	{
+		if (!power_cap.constructed() || !power_cap->power_on(delayer))
+			return;
+
+		if (power_cap->soft_reset() && pci_e_cap.constructed())
+			pci_e_cap->reset(delayer);
+	}
+
+	void power_off()
+	{
+		if (power_cap.constructed()) power_cap->power_off();
+	}
 };
 
 
@@ -537,6 +657,9 @@ struct Pci::Config_type0 : Pci::Config
 	Base_address bar3 { base() + BASE_ADDRESS_0 + 0xc  };
 	Base_address bar4 { base() + BASE_ADDRESS_0 + 0x10 };
 	Base_address bar5 { base() + BASE_ADDRESS_0 + 0x14 };
+
+	struct Subsystem_vendor : Register<0x2c, 16> { };
+	struct Subsystem_device : Register<0x2e, 16> { };
 };
 
 

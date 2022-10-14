@@ -40,7 +40,6 @@ const guid_t pci_acpi_dsm_guid =
 
 void register_syscore_ops(struct syscore_ops * ops)
 {
-	wait_bit_init();
 	lx_emul_trace(__func__);
 }
 
@@ -526,4 +525,55 @@ void intel_dsb_cleanup(struct intel_crtc_state *crtc_state)
 void intel_dsb_commit(const struct intel_crtc_state *crtc_state)
 {
 	lx_emul_trace(__func__);
+}
+
+
+#include <asm/smp.h>
+
+struct smp_ops smp_ops = { };
+EXPORT_SYMBOL_GPL(smp_ops);
+
+
+#include <linux/prandom.h>
+
+u32 prandom_u32(void)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+int wbinvd_on_all_cpus(void)
+{
+	lx_emul_trace(__func__);
+	return 0;
+}
+
+
+void srcu_drive_gp(struct work_struct *wp);
+void srcu_drive_gp(struct work_struct *wp)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/pci.h>
+
+int pci_bus_read_config_byte(struct pci_bus *bus, unsigned int devfn,
+                             int where, u8 *val)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+int pci_bus_read_config_word(struct pci_bus *bus, unsigned int devfn,
+                             int where, u16 *val)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+int pci_bus_write_config_byte(struct pci_bus *bus, unsigned int devfn,
+                              int where, u8 val)
+{
+	lx_emul_trace_and_stop(__func__);
 }

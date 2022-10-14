@@ -58,6 +58,11 @@ void Device_model::destroy_element(Device & device)
 		device._pci_config_list.destroy_all_elements(policy);
 	}
 
+	{
+		Reserved_memory_update_policy policy(_heap);
+		device._reserved_mem_list.destroy_all_elements(policy);
+	}
+
 	Genode::destroy(_heap, &device);
 }
 
@@ -66,7 +71,7 @@ Device & Device_model::create_element(Genode::Xml_node node)
 {
 	Device::Name name = node.attribute_value("name", Device::Name());
 	Device::Type type = node.attribute_value("type", Device::Type());
-	return *(new (_heap) Device(*this, name, type));
+	return *(new (_heap) Device(_env, *this, name, type));
 }
 
 
@@ -111,5 +116,10 @@ void Device_model::update_element(Device & device,
 	{
 		Pci_config_update_policy policy(_heap);
 		device._pci_config_list.update_from_xml(policy, node);
+	}
+
+	{
+		Reserved_memory_update_policy policy(_heap);
+		device._reserved_mem_list.update_from_xml(policy, node);
 	}
 }

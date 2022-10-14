@@ -11,6 +11,8 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+#include <util/bit_array.h>
+
 #include <device.h>
 #include <pci.h>
 #include <device_component.h>
@@ -79,7 +81,7 @@ void Driver::Device::acquire(Session_component & sc)
 		}
 	});
 
-	pci_enable(sc.env(), sc.device_pd(), *this);
+	pci_enable(_env, sc.device_pd(), *this);
 	sc.update_devices_rom();
 	_model.device_status_changed();
 }
@@ -90,7 +92,7 @@ void Driver::Device::release(Session_component & sc)
 	if (!(_owner == sc))
 		return;
 
-	pci_disable(sc.env(), *this);
+	pci_disable(_env, *this);
 
 	_reset_domain_list.for_each([&] (Reset_domain & r)
 	{
@@ -124,6 +126,8 @@ void Driver::Device::generate(Xml_generator & xml, bool info) const
 		xml.attribute("used", _owner.valid());
 		_io_mem_list.for_each([&] (Io_mem const & io_mem) {
 			xml.node("io_mem", [&] () {
+				if (io_mem.bar.valid())
+					xml.attribute("pci_bar", io_mem.bar.number);
 				if (!info)
 					return;
 				xml.attribute("phys_addr", String<16>(Hex(io_mem.range.start)));
@@ -135,14 +139,17 @@ void Driver::Device::generate(Xml_generator & xml, bool info) const
 				if (!info)
 					return;
 				xml.attribute("number", irq.number);
+				if (irq.shared) xml.attribute("shared", true);
 			});
 		});
-		_io_port_range_list.for_each([&] (Io_port_range const & io_port_range) {
+		_io_port_range_list.for_each([&] (Io_port_range const & iop) {
 			xml.node("io_port_range", [&] () {
+				if (iop.bar.valid())
+					xml.attribute("pci_bar", iop.bar.number);
 				if (!info)
 					return;
-				xml.attribute("phys_addr", String<16>(Hex(io_port_range.addr)));
-				xml.attribute("size",      String<16>(Hex(io_port_range.size)));
+				xml.attribute("phys_addr", String<16>(Hex(iop.range.addr)));
+				xml.attribute("size",      String<16>(Hex(iop.range.size)));
 			});
 		});
 		_property_list.for_each([&] (Property const & p) {
@@ -164,14 +171,18 @@ void Driver::Device::generate(Xml_generator & xml, bool info) const
 				xml.attribute("vendor_id", String<16>(Hex(pci.vendor_id)));
 				xml.attribute("device_id", String<16>(Hex(pci.device_id)));
 				xml.attribute("class",     String<16>(Hex(pci.class_code)));
+				xml.attribute("revision",  String<16>(Hex(pci.revision)));
+				xml.attribute("sub_vendor_id", String<16>(Hex(pci.sub_vendor_id)));
+				xml.attribute("sub_device_id", String<16>(Hex(pci.sub_device_id)));
+				pci_device_specific_info(*this, _env, _model, xml);
 			});
 		});
 	});
 }
 
 
-Driver::Device::Device(Device_model & model, Name name, Type type)
-: _model(model), _name(name), _type(type) { }
+Driver::Device::Device(Env & env, Device_model & model, Name name, Type type)
+: _env(env), _model(model), _name(name), _type(type) { }
 
 
 Driver::Device::~Device()
@@ -197,4 +208,57 @@ void Driver::Device_model::generate(Xml_generator & xml) const
 void Driver::Device_model::update(Xml_node const & node)
 {
 	_model.update_from_xml(*this, node);
+
+	/*
+	 * Detect all shared interrupts
+	 */
+	enum { MAX_IRQ = 1024 };
+	Bit_array<MAX_IRQ> detected_irqs, shared_irqs;
+	for_each([&] (Device const & device) {
+		device._irq_list.for_each([&] (Device::Irq const & irq) {
+
+			if (irq.type != Device::Irq::LEGACY)
+				return;
+
+			if (detected_irqs.get(irq.number, 1)) {
+				if (!shared_irqs.get(irq.number, 1))
+					shared_irqs.set(irq.number, 1);
+			} else
+				detected_irqs.set(irq.number, 1);
+		});
+	});
+
+	/*
+	 * Mark all shared interrupts in the devices
+	 */
+	for_each([&] (Device & device) {
+		device._irq_list.for_each([&] (Device::Irq & irq) {
+
+			if (irq.type != Device::Irq::LEGACY)
+				return;
+
+			if (shared_irqs.get(irq.number, 1))
+				irq.shared = true;
+		});
+	});
+
+	/*
+	 * Create shared interrupt objects
+	 */
+	for (unsigned i = 0; i < MAX_IRQ; i++) {
+		if (!shared_irqs.get(i, 1))
+			continue;
+		bool found = false;
+		_shared_irqs.for_each([&] (Shared_interrupt & sirq) {
+			if (sirq.number() == i) found = true; });
+		if (!found)
+			new (_heap) Shared_interrupt(_shared_irqs, _env, i);
+	}
+
+	/*
+	 * Iterate over all devices and apply PCI quirks if necessary
+	 */
+	for_each([&] (Device const & device) {
+		pci_apply_quirks(_env, device);
+	});
 }

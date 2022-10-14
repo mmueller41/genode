@@ -1,7 +1,7 @@
 /*
  * \brief  Dummy definitions of Linux Kernel functions
  * \author Automatically generated file - do no edit
- * \date   2022-05-06
+ * \date   2022-07-29
  */
 
 #include <lx_emul.h>
@@ -283,14 +283,6 @@ int dev_ioctl(struct net * net,unsigned int cmd,struct ifreq * ifr,bool * need_c
 }
 
 
-#include <linux/interrupt.h>
-
-asmlinkage __visible void do_softirq(void)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <net/dst.h>
 
 void dst_release(struct dst_entry * dst)
@@ -562,14 +554,6 @@ void iov_iter_revert(struct iov_iter * i,size_t unroll)
 }
 
 
-#include <linux/fs.h>
-
-void iput(struct inode * inode)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <linux/irq_work.h>
 
 void irq_work_tick(void)
@@ -584,11 +568,6 @@ bool is_software_node(const struct fwnode_handle * fwnode)
 {
 	lx_emul_trace_and_stop(__func__);
 }
-
-
-#include <linux/jiffies.h>
-
-unsigned long volatile __cacheline_aligned_in_smp __jiffy_arch_data jiffies;
 
 
 #include <linux/kobject.h>
@@ -660,9 +639,17 @@ int kobject_synth_uevent(struct kobject * kobj,const char * buf,size_t count)
 }
 
 
-#include <linux/kernel.h>
+#include <linux/preempt.h>
 
-unsigned long long memparse(const char * ptr,char ** retptr)
+void migrate_disable(void)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/preempt.h>
+
+void migrate_enable(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -717,63 +704,7 @@ enum reboot_mode panic_reboot_mode;
 
 #include <linux/pci.h>
 
-void pci_assign_unassigned_bridge_resources(struct pci_dev * bridge)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/pci.h>
-
-void pci_assign_unassigned_bus_resources(struct pci_bus * bus)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern unsigned long pci_cardbus_resource_alignment(struct resource * res);
-unsigned long pci_cardbus_resource_alignment(struct resource * res)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/pci.h>
-
-unsigned int pci_flags;
-
-
-extern int pci_idt_bus_quirk(struct pci_bus * bus,int devfn,u32 * l,int timeout);
-int pci_idt_bus_quirk(struct pci_bus * bus,int devfn,u32 * l,int timeout)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/pci.h>
-
-int pci_mmap_resource_range(struct pci_dev * pdev,int bar,struct vm_area_struct * vma,enum pci_mmap_state mmap_state,int write_combine)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void __init pci_realloc_get_opt(char * str);
-void __init pci_realloc_get_opt(char * str)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void pci_restore_vc_state(struct pci_dev * dev);
-void pci_restore_vc_state(struct pci_dev * dev)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern int pci_save_vc_state(struct pci_dev * dev);
-int pci_save_vc_state(struct pci_dev * dev)
+int pci_read_config_dword(const struct pci_dev * dev,int where,u32 * val)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -789,42 +720,7 @@ void pci_stop_and_remove_bus_device(struct pci_dev * dev)
 
 #include <linux/pci.h>
 
-void pci_stop_and_remove_bus_device_locked(struct pci_dev * dev)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void pci_vpd_release(struct pci_dev * dev);
-void pci_vpd_release(struct pci_dev * dev)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern unsigned int pcibios_assign_all_busses(void);
-unsigned int pcibios_assign_all_busses(void)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void pcie_aspm_init_link_state(struct pci_dev * pdev);
-void pcie_aspm_init_link_state(struct pci_dev * pdev)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void pcie_aspm_pm_state_change(struct pci_dev * pdev);
-void pcie_aspm_pm_state_change(struct pci_dev * pdev)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-extern void pcie_aspm_powersave_config_link(struct pci_dev * pdev);
-void pcie_aspm_powersave_config_link(struct pci_dev * pdev)
+int pci_write_config_word(const struct pci_dev * dev,int where,u16 val)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -889,14 +785,6 @@ void put_cmsg_scm_timestamping64(struct msghdr * msg,struct scm_timestamping_int
 #include <linux/file.h>
 
 void put_unused_fd(unsigned int fd)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/pci.h>
-
-int raw_pci_read(unsigned int domain,unsigned int bus,unsigned int devfn,int reg,int len,u32 * val)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -1117,7 +1005,15 @@ int sk_reuseport_attach_filter(struct sock_fprog * fprog,struct sock * sk)
 
 #include <linux/smp.h>
 
-int smp_call_function_single(int cpu,void (* func)(void * info),void * info,int wait)
+int smp_call_function_single(int cpu,smp_call_func_t func,void * info,int wait)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/smp.h>
+
+int smp_call_function_single_async(int cpu,struct __call_single_data * csd)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -1126,14 +1022,6 @@ int smp_call_function_single(int cpu,void (* func)(void * info),void * info,int 
 #include <linux/sock_diag.h>
 
 void sock_diag_broadcast_destroy(struct sock * sk)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/srcutiny.h>
-
-void srcu_drive_gp(struct work_struct * wp)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -1165,14 +1053,6 @@ int string_escape_mem(const char * src,size_t isz,char * dst,size_t osz,unsigned
 int suppress_printk;
 
 
-#include <linux/srcutiny.h>
-
-void synchronize_srcu(struct srcu_struct * ssp)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <linux/sysfs.h>
 
 int sysfs_rename_dir_ns(struct kobject * kobj,const char * new_name,const void * new_ns)
@@ -1192,14 +1072,6 @@ int sysfs_rename_link_ns(struct kobject * kobj,struct kobject * targ,const char 
 #include <linux/task_work.h>
 
 struct callback_head * task_work_cancel(struct task_struct * task,task_work_func_t func)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/interrupt.h>
-
-void tasklet_kill(struct tasklet_struct * t)
 {
 	lx_emul_trace_and_stop(__func__);
 }

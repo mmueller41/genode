@@ -38,53 +38,62 @@ class Driver::Device_component : public Rpc_object<Platform::Device_interface,
 
 		struct Irq : Registry<Irq>::Element
 		{
-			unsigned                      idx;
-			unsigned                      number;
-			Device::Irq::Type             type;
-			Irq_session::Polarity         polarity;
-			Irq_session::Trigger          mode;
-			Constructible<Irq_connection> irq {};
+			unsigned                                idx;
+			unsigned                                number;
+			Device::Irq::Type                       type;
+			Irq_session::Polarity                   polarity;
+			Irq_session::Trigger                    mode;
+			bool                                    shared;
+			Constructible<Irq_connection>           irq {};
+			Constructible<Shared_interrupt_session> sirq {};
 
 			Irq(Registry<Irq>       & registry,
 			    unsigned              idx,
 			    unsigned              number,
 			    Device::Irq::Type     type,
 			    Irq_session::Polarity polarity,
-			    Irq_session::Trigger  mode)
+			    Irq_session::Trigger  mode,
+			    bool                  shared)
 			:
 				Registry<Irq>::Element(registry, *this),
 				idx(idx), number(number), type(type),
-				polarity(polarity), mode(mode) {}
+				polarity(polarity), mode(mode), shared(shared) {}
 		};
 
 		struct Io_mem : Registry<Io_mem>::Element
 		{
+			using Pci_bar = Device::Pci_bar;
+
+			Pci_bar                          bar;
 			unsigned                         idx;
 			Range                            range;
+			bool                             prefetchable;
 			Constructible<Io_mem_connection> io_mem {};
 
 			Io_mem(Registry<Io_mem> & registry,
+			       Pci_bar            bar,
 			       unsigned           idx,
-			       Range              range)
+			       Range              range,
+			       bool               pf)
 			:
 				Registry<Io_mem>::Element(registry, *this),
-				idx(idx), range(range) {}
+				bar(bar), idx(idx), range(range), prefetchable(pf) {}
 		};
 
 		struct Io_port_range : Registry<Io_port_range>::Element
 		{
+			using Range = Device::Io_port_range::Range;
+
 			unsigned                          idx;
-			uint16_t                          addr;
-			uint16_t                          size;
+			Range                             range;
 			Constructible<Io_port_connection> io_port_range {};
 
 			Io_port_range(Registry<Io_port_range> & registry,
-			        unsigned            idx,
-			        uint16_t            addr,
-			        uint16_t            size)
+			              unsigned                  idx,
+			              Range                     range)
 			:
 				Registry<Io_port_range>::Element(registry, *this),
-				idx(idx), addr(addr), size(size) {}
+				idx(idx), range(range) {}
 		};
 
 		struct Pci_config
@@ -95,12 +104,15 @@ class Driver::Device_component : public Rpc_object<Platform::Device_interface,
 		};
 
 		Device_component(Registry<Device_component> & registry,
+		                 Env                        & env,
 		                 Session_component          & session,
+		                 Device_model               & model,
 		                 Driver::Device             & device);
 		~Device_component();
 
 		Driver::Device::Name device() const;
 		Session_component  & session();
+		unsigned io_mem_index(Device::Pci_bar bar);
 
 
 		/************************************
@@ -108,12 +120,14 @@ class Driver::Device_component : public Rpc_object<Platform::Device_interface,
 		 ************************************/
 
 		Irq_session_capability     irq(unsigned);
-		Io_mem_session_capability  io_mem(unsigned, Range &, Cache);
+		Io_mem_session_capability  io_mem(unsigned, Range &);
 		Io_port_session_capability io_port_range(unsigned);
 
 	private:
 
+		Env                               & _env;
 		Session_component                 & _session;
+		Device_model                      & _device_model;
 		Driver::Device::Name const          _device;
 		size_t                              _cap_quota { 0 };
 		size_t                              _ram_quota { 0 };
@@ -121,6 +135,7 @@ class Driver::Device_component : public Rpc_object<Platform::Device_interface,
 		Registry<Irq>                       _irq_registry {};
 		Registry<Io_mem>                    _io_mem_registry {};
 		Registry<Io_port_range>             _io_port_range_registry {};
+		Registry<Io_mem>                    _reserved_mem_registry {};
 		Constructible<Pci_config>           _pci_config {};
 
 		void _release_resources();

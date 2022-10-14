@@ -43,16 +43,6 @@ const struct trace_print_flags vmaflag_names[]  = { {0,NULL}};
 const struct trace_print_flags pageflag_names[] = { {0,NULL}};
 
 
-#include <linux/kernel_stat.h>
-
-struct kernel_stat kstat;
-
-#include <linux/delay.h>
-
-/* support for arch/x86/lib/delay.c, normally defined in init/main.c */
-unsigned long loops_per_jiffy = (1<<12);
-
-
 #include <asm/processor.h>
 
 /*
@@ -68,11 +58,6 @@ struct cpuinfo_x86 boot_cpu_data =
 };
 
 unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
-
-
-#include <linux/delay.h>
-
-unsigned long lpj_fine = 0;
 
 
 /*
@@ -379,3 +364,48 @@ bool pat_enabled(void)
 	lx_emul_trace(__func__);
 	return true;
 }
+
+
+struct srcu_struct;
+extern int __srcu_read_lock(struct srcu_struct * ssp);
+int __srcu_read_lock(struct srcu_struct * ssp)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/cpu.h>
+
+void cpu_hotplug_disable(void)
+{
+	lx_emul_trace(__func__);
+}
+
+
+#include <linux/cpu.h>
+
+void cpu_hotplug_enable(void)
+{
+	lx_emul_trace(__func__);
+}
+
+
+extern void synchronize_srcu(struct srcu_struct * ssp);
+void synchronize_srcu(struct srcu_struct * ssp)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#ifdef CONFIG_X86_64
+DEFINE_PER_CPU(void *, hardirq_stack_ptr);
+#endif
+DEFINE_PER_CPU(bool, hardirq_stack_inuse);
+
+
+#include <asm/processor.h>
+
+DEFINE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
+EXPORT_PER_CPU_SYMBOL(cpu_info);
+
+

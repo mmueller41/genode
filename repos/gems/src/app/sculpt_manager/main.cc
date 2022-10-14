@@ -53,6 +53,7 @@ struct Sculpt::Main : Input_event_handler,
                       Dialog::Generator,
                       Runtime_config_generator,
                       Storage::Target_user,
+                      Network::Action,
                       Graph::Action,
                       Panel_dialog::Action,
                       Popup_dialog::Action,
@@ -88,6 +89,14 @@ struct Sculpt::Main : Input_event_handler,
 	{
 		_gui.input()->for_each_event([&] (Input::Event const &ev) {
 			handle_input_event(ev); });
+	}
+
+	Managed_config<Main> _system_config {
+		_env, "system", "system", *this, &Main::_handle_system_config };
+
+	void _handle_system_config(Xml_node)
+	{
+		_system_config.try_generate_manually_managed();
 	}
 
 	Signal_handler<Main> _gui_mode_handler {
@@ -170,16 +179,19 @@ struct Sculpt::Main : Input_event_handler,
 	void _handle_pci_devices()
 	{
 		_pci_devices.update();
-		_pci_info.wifi_present = false;
+		_pci_info.wifi_present  = false;
+		_pci_info.lan_present   = true;
+		_pci_info.modem_present = false;
 
 		_pci_devices.xml().for_each_sub_node("device", [&] (Xml_node device) {
-
-			/* detect Intel Wireless card */
-			if (device.attribute_value("class_code", 0UL) == 0x28000)
-				_pci_info.wifi_present = true;
+			device.with_optional_sub_node("pci-config", [&] (Xml_node pci) {
+				/* detect Intel Wireless card */
+				if (pci.attribute_value("class", 0UL) == 0x28000)
+					_pci_info.wifi_present = true;
+			});
 		});
 
-		_network.update_view();
+		update_network_dialog();
 	}
 
 
@@ -213,8 +225,20 @@ struct Sculpt::Main : Input_event_handler,
 		generate_runtime_config();
 	}
 
+	Network _network { _env, _heap, *this, _child_states, *this, _runtime_state, _pci_info };
 
-	Network _network { _env, _heap, _child_states, *this, *this, _runtime_state, _pci_info };
+	Menu_view _network_menu_view { _env, _child_states, _network.dialog, "network_view",
+	                               Ram_quota{4*1024*1024}, Cap_quota{150},
+	                               "network_dialog", "network_view_hover",
+	                               *this };
+
+	/**
+	 * Network::Action interface
+	 */
+	void update_network_dialog() override
+	{
+		_network_menu_view.generate();
+	}
 
 
 	/************
@@ -361,7 +385,6 @@ struct Sculpt::Main : Input_event_handler,
 		_popup_menu_view.generate();
 		_deploy._handle_managed_deploy();
 	}
-
 
 	Deploy _deploy { _env, _heap, _child_states, _runtime_state, *this, *this, *this,
 	                 _launcher_listing_rom, _blueprint_rom, _download_queue };
@@ -522,6 +545,7 @@ struct Sculpt::Main : Input_event_handler,
 
 	Attached_rom_dataspace const _platform { _env, "platform_info" };
 
+
 	/****************************************
 	 ** Cached model of the runtime config **
 	 ****************************************/
@@ -637,9 +661,9 @@ struct Sculpt::Main : Input_event_handler,
 			_settings_menu_view.generate();
 			_clicked_seq_number.destruct();
 		}
-		else if (_network.dialog_hovered(seq)) {
+		else if (_network_menu_view.hovered(seq)) {
 			_network.dialog.click(_network);
-			_network.update_view();
+			_network_menu_view.generate();
 			_clicked_seq_number.destruct();
 		}
 		else if (_file_browser_menu_view.hovered(seq)) {
@@ -784,6 +808,11 @@ struct Sculpt::Main : Input_event_handler,
 		} else if (name == "wifi_drv") {
 
 			_network.restart_wifi_drv_on_next_runtime_cfg();
+			generate_runtime_config();
+
+		} else if (name == "usb_net") {
+
+			_network.restart_usb_net_on_next_runtime_cfg();
 			generate_runtime_config();
 
 		} else {
@@ -1219,7 +1248,6 @@ struct Sculpt::Main : Input_event_handler,
 		 */
 		_handle_gui_mode();
 		_storage.handle_storage_devices_update();
-		_deploy.handle_deploy();
 		_handle_pci_devices();
 		_handle_runtime_config();
 		_handle_clicked();
@@ -1227,7 +1255,7 @@ struct Sculpt::Main : Input_event_handler,
 		/*
 		 * Read static platform information
 		 */
-		_platform.xml().with_sub_node("affinity-space", [&] (Xml_node const &node) {
+		_platform.xml().with_optional_sub_node("affinity-space", [&] (Xml_node const &node) {
 			_affinity_space = Affinity::Space(node.attribute_value("width",  1U),
 			                                  node.attribute_value("height", 1U));
 		});
@@ -1289,9 +1317,7 @@ void Sculpt::Main::_handle_window_layout()
 	_window_list.update();
 	Xml_node const window_list = _window_list.xml();
 
-	auto win_size = [&] (Xml_node win) {
-		return Area(win.attribute_value("width",  0U),
-		            win.attribute_value("height", 0U)); };
+	auto win_size = [&] (Xml_node win) { return Area::from_xml(win); };
 
 	unsigned panel_height = 0;
 	_with_window(window_list, panel_view_label, [&] (Xml_node win) {
@@ -1543,7 +1569,7 @@ void Sculpt::Main::_handle_gui_mode()
 	_panel_menu_view.min_width = _screen_size.w();
 	unsigned const menu_width = max((unsigned)(_font_size_px*21.0), 320u);
 	_main_menu_view.min_width = menu_width;
-	_network.min_dialog_width(menu_width);
+	_network_menu_view.min_width = menu_width;
 
 	/* font size may has changed, propagate fonts config of runtime view */
 	generate_runtime_config();
@@ -1572,20 +1598,21 @@ void Sculpt::Main::_handle_update_state()
 	_download_queue.apply_update_state(update_state);
 	_download_queue.remove_inactive_downloads();
 
-	Xml_node const blueprint = _blueprint_rom.xml();
-	bool const new_depot_query_needed = popup_watches_downloads
-	                                 || blueprint_any_missing(blueprint)
-	                                 || blueprint_any_rom_missing(blueprint);
-	if (new_depot_query_needed)
-		trigger_depot_query();
-
-	if (popup_watches_downloads)
-		_deploy.update_installation();
-
 	bool const installation_complete =
 		!update_state.attribute_value("progress", false);
 
 	if (installation_complete) {
+
+		Xml_node const blueprint = _blueprint_rom.xml();
+		bool const new_depot_query_needed = popup_watches_downloads
+		                                 || blueprint_any_missing(blueprint)
+		                                 || blueprint_any_rom_missing(blueprint);
+		if (new_depot_query_needed)
+			trigger_depot_query();
+
+		if (popup_watches_downloads)
+			_deploy.update_installation();
+
 		_deploy.reattempt_after_installation();
 	}
 }
@@ -1719,9 +1746,6 @@ void Sculpt::Main::_handle_runtime_state()
 		if (exit_state.exited) {
 			_prepare_completed = _prepare_version;
 
-			/* trigger deployment */
-			_deploy.handle_deploy();
-
 			/* trigger update and deploy */
 			reconfigure_runtime = true;
 		}
@@ -1764,12 +1788,6 @@ void Sculpt::Main::_handle_runtime_state()
 			regenerate_dialog   = true;
 		}
 	});
-
-	/*
-	 * Re-attempt NIC-router configuration as the uplink may have become
-	 * available in the meantime.
-	 */
-	_network.reattempt_nic_router_config();
 
 	if (_deploy.update_child_conditions()) {
 		reconfigure_runtime = true;
@@ -1838,7 +1856,7 @@ void Sculpt::Main::_generate_runtime_config(Xml_generator &xml) const
 	_panel_menu_view.gen_start_node(xml);
 	_main_menu_view.gen_start_node(xml);
 	_settings_menu_view.gen_start_node(xml);
-	_network._menu_view.gen_start_node(xml);
+	_network_menu_view.gen_start_node(xml);
 	_popup_menu_view.gen_start_node(xml);
 	_file_browser_menu_view.gen_start_node(xml);
 

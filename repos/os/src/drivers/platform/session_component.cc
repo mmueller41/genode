@@ -24,7 +24,7 @@ Genode::Capability<Platform::Device_interface>
 Session_component::_acquire(Device & device)
 {
 	Device_component * dc = new (heap())
-		Device_component(_device_registry, *this, device);
+		Device_component(_device_registry, _env, *this, _devices, device);
 	device.acquire(*this);
 	return _env.ep().rpc_ep().manage(dc);
 };
@@ -112,9 +112,6 @@ void Session_component::produce_xml(Xml_generator &xml)
 }
 
 
-Genode::Env & Session_component::env() { return _env; }
-
-
 Genode::Heap & Session_component::heap() { return _md_alloc; }
 
 
@@ -156,7 +153,7 @@ Session_component::acquire_single_device()
 	Capability<Platform::Device_interface> cap;
 
 	_devices.for_each([&] (Device & dev) {
-		if (matches(dev) && !dev.owner().valid())
+		if (!cap.valid() && matches(dev) && !dev.owner().valid())
 			cap = _acquire(dev); });
 
 	return cap;

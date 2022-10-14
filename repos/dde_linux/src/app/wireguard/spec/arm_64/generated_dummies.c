@@ -1,7 +1,7 @@
 /*
  * \brief  Dummy definitions of Linux Kernel functions
  * \author Automatically generated file - do no edit
- * \date   2022-05-04
+ * \date   2022-07-21
  */
 
 #include <lx_emul.h>
@@ -39,14 +39,6 @@ unsigned long __get_free_pages(gfp_t gfp_mask,unsigned int order)
 }
 
 
-#include <net/icmp.h>
-
-void __icmp_send(struct sk_buff * skb_in,int type,int code,__be32 info,const struct ip_options * opt)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <net/ipv6.h>
 
 int __ipv6_addr_type(const struct in6_addr * addr)
@@ -66,14 +58,6 @@ struct irq_domain * __irq_domain_add(struct fwnode_handle * fwnode,int size,irq_
 #include <linux/irqdomain.h>
 
 struct irq_desc * __irq_resolve_mapping(struct irq_domain * domain,irq_hw_number_t hwirq,unsigned int * irq)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/netdevice.h>
-
-void __netif_napi_del(struct napi_struct * napi)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -155,6 +139,11 @@ void flush_dcache_page(struct page * page)
 {
 	lx_emul_trace_and_stop(__func__);
 }
+
+
+#include <linux/interrupt.h>
+
+bool force_irqthreads;
 
 
 #include <linux/netdevice.h>
@@ -439,14 +428,6 @@ void migrate_enable(void)
 
 #include <linux/netdevice.h>
 
-void napi_disable(struct napi_struct * n)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/netdevice.h>
-
 void netif_carrier_off(struct net_device * dev)
 {
 	lx_emul_trace_and_stop(__func__);
@@ -522,25 +503,17 @@ int printk_deferred(const char * fmt,...)
 }
 
 
-#include <asm-generic/qrwlock.h>
+#include <linux/rcutree.h>
 
-void queued_read_lock_slowpath(struct qrwlock * lock)
+void rcu_irq_enter_irqson(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
 
 
-#include <asm-generic/qspinlock.h>
+#include <linux/rcutree.h>
 
-void queued_spin_lock_slowpath(struct qspinlock * lock,u32 val)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <asm-generic/qrwlock.h>
-
-void queued_write_lock_slowpath(struct qrwlock * lock)
+void rcu_irq_exit_irqson(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
