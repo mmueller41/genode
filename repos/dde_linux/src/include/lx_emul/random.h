@@ -3,6 +3,7 @@
  * \author Josef Soentgen
  * \author Stefan Kalkowski
  * \author Martin Stein
+ * \author Christian Helmuth
  * \date   2022-05-19
  *
  * :Warning:
@@ -26,6 +27,8 @@
 #ifndef _LX_EMUL__RANDOM_H_
 #define _LX_EMUL__RANDOM_H_
 
+#include <base/fixed_stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,13 +37,14 @@ extern "C" {
  * Write a certain number of consecutive, random byte values beginning at
  * a given address.
  */
-void lx_emul_gen_random_bytes(void          *dst,
+void lx_emul_random_gen_bytes(void          *dst,
                               unsigned long  nr_of_bytes);
 
 /**
  * Return a random unsigned integer value.
  */
-unsigned int lx_emul_gen_random_uint(void);
+genode_uint32_t lx_emul_random_gen_u32(void);
+genode_uint64_t lx_emul_random_gen_u64(void);
 
 #ifdef __cplusplus
 }

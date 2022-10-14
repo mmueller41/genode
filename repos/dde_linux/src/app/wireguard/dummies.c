@@ -241,6 +241,22 @@ void napi_enable(struct napi_struct * n)
 }
 
 
+#include <linux/netdevice.h>
+
+void napi_disable(struct napi_struct * n)
+{
+	lx_emul_trace(__func__);
+}
+
+
+#include <linux/netdevice.h>
+
+void __netif_napi_del(struct napi_struct * napi)
+{
+	lx_emul_trace(__func__);
+}
+
+
 #include <linux/mmzone.h>
 
 struct mem_section ** mem_section = NULL;
@@ -264,6 +280,14 @@ int net_ratelimit(void)
 
 
 __wsum csum_partial(const void * buff,int len,__wsum sum)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/rcutree.h>
+
+void kvfree(const void * addr)
 {
 	lx_emul_trace_and_stop(__func__);
 }

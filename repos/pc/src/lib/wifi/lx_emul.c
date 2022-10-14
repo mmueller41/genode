@@ -18,20 +18,6 @@
 #include <lx_emul/alloc.h>
 #include <lx_emul/io_mem.h>
 
-
-#include <asm-generic/delay.h>
-#include <linux/delay.h>
-
-void __const_udelay(unsigned long xloops)
-{
-       unsigned long usecs = xloops / 0x10C7UL;
-       if (usecs < 100)
-               lx_emul_time_udelay(usecs);
-       else
-               usleep_range(usecs, usecs * 10);
-}
-
-
 #include <linux/slab.h>
 
 struct kmem_cache * kmem_cache_create_usercopy(const char * name,
@@ -118,17 +104,33 @@ struct vfsmount * kern_mount(struct file_system_type * type)
 
 struct inode * new_inode_pseudo(struct super_block * sb)
 {
-    const struct super_operations *ops = sb->s_op;
-    struct inode *inode;
+	const struct super_operations *ops = sb->s_op;
+	struct inode *inode;
 
-    if (ops->alloc_inode) {
-        inode = ops->alloc_inode(sb);
-	}
+	if (ops->alloc_inode)
+		inode = ops->alloc_inode(sb);
 
 	if (!inode)
 		return (struct inode*)ERR_PTR(-ENOMEM);
 
+	if (!inode->free_inode)
+		inode->free_inode = ops->free_inode;
+
 	return inode;
+}
+
+
+void iput(struct inode * inode)
+{
+	if (!inode)
+		return;
+
+	if (atomic_read(&inode->i_count)
+	    && !atomic_dec_and_test(&inode->i_count))
+		return;
+
+	if (inode->free_inode)
+		inode->free_inode(inode);
 }
 
 
@@ -300,14 +302,6 @@ int task_work_add(struct task_struct * task,struct callback_head * work,enum tas
 }
 
 
-#include <linux/interrupt.h>
-
-void __raise_softirq_irqoff(unsigned int nr)
-{
-    raise_softirq(nr);
-}
-
-
 #include <linux/slab.h>
 
 void kfree_sensitive(const void *p)
@@ -439,42 +433,17 @@ void __put_page(struct page * page)
 }
 
 
-#include <linux/random.h>
-
-u32 get_random_u32(void)
-{
-	return lx_emul_gen_random_uint();
-}
-
-
-int __must_check get_random_bytes_arch(void *buf, int nbytes)
-{
-	if (nbytes < 0)
-		return -1;
-
-	lx_emul_gen_random_bytes(buf, (unsigned long)nbytes);
-	return 0;
-}
-
-
-void get_random_bytes(void *buf, int nbytes)
-{
-	int const err = get_random_bytes_arch(buf, nbytes);
-	(void)err;
-}
-
-
 #include <linux/prandom.h>
 
 void prandom_bytes(void *buf, size_t bytes)
 {
-	lx_emul_gen_random_bytes(buf, bytes);
+	lx_emul_random_gen_bytes(buf, bytes);
 }
 
 
 u32 prandom_u32(void)
 {
-	return lx_emul_gen_random_uint();
+	return lx_emul_random_gen_u32();
 }
 
 
@@ -492,7 +461,7 @@ void *page_frag_alloc_align(struct page_frag_cache *nc,
 
 	/* see page_frag_free */
 	if (order > 0)
-		printk("%s: alloc might leak memory: fragsz: %u PAGE_SIZE: %u "
+		printk("%s: alloc might leak memory: fragsz: %u PAGE_SIZE: %lu "
 		       "order: %u page: %p addr: %p\n", __func__, fragsz, PAGE_SIZE, order, page, page->virtual);
 
 	return page->virtual;
@@ -547,6 +516,10 @@ struct task_struct *rfkill_task_struct_ptr;
 
 int lx_emul_rfkill_get_any(void)
 {
+	/*
+	 * Since this function may also be called from non EPs
+	 * _do not_ execute _any_ kernel code.
+	 */
 	return _rfkill_state.rfkilled;
 }
 
@@ -584,4 +557,50 @@ void rfkill_init(void)
 	pid = kernel_thread(rfkill_task_function, NULL, CLONE_FS | CLONE_FILES);
 
 	rfkill_task_struct_ptr = find_task_by_pid_ns(pid, NULL);
+}
+
+
+#ifdef CONFIG_X86_32
+s64 arch_atomic64_add_return(s64 i, atomic64_t *v)
+{
+	v->counter += i;
+	return v->counter;
+}
+#endif
+
+
+void kvfree_call_rcu(struct rcu_head * head,rcu_callback_t func)
+{
+	void *ptr = (void *) head - (unsigned long) func;
+	kvfree(ptr);
+}
+
+
+#include <linux/pci.h>
+#include <uapi/linux/pci_regs.h>
+
+int pci_write_config_byte(const struct pci_dev * dev,int where,u8 val)
+{
+	enum { PCI_CFG_RETRY_TIMEOUT = 0x41 };
+
+	switch (where) {
+		/*
+		 * iwlwifi: "We disable the RETRY_TIMEOUT register (0x41) to keep
+		 *           PCI Tx retries from interfering with C3 CPU state"
+		 */
+		case PCI_CFG_RETRY_TIMEOUT:
+			return 0;
+	};
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+int pci_read_config_word(const struct pci_dev * dev,int where,u16 * val)
+{
+	switch (where) {
+		case PCI_COMMAND:
+			*val = PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY | PCI_COMMAND_IO;
+			return 0;
+	};
+	lx_emul_trace_and_stop(__func__);
 }

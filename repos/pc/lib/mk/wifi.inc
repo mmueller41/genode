@@ -25,7 +25,6 @@ SRC_C   += lx_socket_call.c
 
 SRC_C   += $(notdir $(wildcard $(TARGET_LIB_DIR)/generated_dummies.c))
 SRC_C   += lx_emul/common_dummies.c
-SRC_C   += lx_emul/spec/x86/pci.c
 
 CC_C_OPT += -I$(LX_SRC_DIR)/drivers/net/wireless/intel/iwlwifi
 CC_C_OPT += -I$(LX_SRC_DIR)/include/linux
@@ -47,7 +46,7 @@ vpath %.cc $(REP_DIR)/src/lib/pc
 vpath %.c $(TARGET_LIB_DIR)
 vpath %.cc $(TARGET_LIB_DIR)
 
-CUSTOM_TARGET_DEPS += $(TARGET_LIB_DIR)/symbol.map
+$(LIB).lib.so: $(TARGET_LIB_DIR)/symbol.map
 
 #
 # Genode C-API backends

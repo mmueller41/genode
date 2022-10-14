@@ -1,6 +1,7 @@
 /**
  * \brief  Dummy definitions of lx_emul
  * \author Stefan Kalkowski
+ * \author Christian Helmuth
  * \date   2022-01-10
  */
 
@@ -14,12 +15,24 @@
 /* app/wireguard includes */
 #include <lx_emul.h>
 
+/* dde_linux/src/include/lx_emul */
 #include <lx_emul/random.h>
+
+
+#include <net/icmp.h>
+
+void __icmp_send(struct sk_buff * skb_in,int type,int code,__be32 info,const struct ip_options * opt)
+{
+	printk("Warning: sending ICMP not supported\n");
+	kfree_skb(skb_in);
+}
+
+
 #include <linux/random.h>
 
 void get_random_bytes(void * buf,int nbytes)
 {
-	lx_emul_gen_random_bytes(buf, nbytes);
+	lx_emul_random_gen_bytes(buf, nbytes);
 }
 
 
@@ -36,9 +49,7 @@ int wait_for_random_bytes(void)
 
 u32 get_random_u32(void)
 {
-	u8 buf[4];
-	lx_emul_gen_random_bytes(buf, sizeof(buf));
-	return *((u32*)&buf);
+	return lx_emul_random_gen_u32();
 }
 
 
@@ -46,18 +57,16 @@ u32 get_random_u32(void)
 
 u32 prandom_u32(void)
 {
-	u8 buf[4];
-	lx_emul_gen_random_bytes(buf, sizeof(buf));
-	return *((u32*)&buf);
+	return lx_emul_random_gen_u32();
 }
 
 
 #include <linux/random.h>
 
-int __must_check get_random_bytes_arch(void * buf,int nbytes)
+int __must_check get_random_bytes_arch(void * buf, int nbytes)
 {
-	lx_emul_gen_random_bytes(buf, nbytes);
-	return 0;
+	lx_emul_random_gen_bytes(buf, nbytes);
+	return nbytes;
 }
 
 
@@ -267,26 +276,6 @@ struct rtable * ip_route_output_flow(struct net * net,struct flowi4 * flp4,const
 }
 
 
-#include <linux/sched.h>
-
-int __cond_resched(void)
-{
-	if (should_resched(0)) {
-		schedule();
-		return 1;
-	}
-	return 0;
-}
-
-
-#include <linux/rcupdate.h>
-
-void call_rcu(struct rcu_head * head,rcu_callback_t func)
-{
-	func(head);
-}
-
-
 #include <linux/slab.h>
 
 void kfree_sensitive(const void * p)
@@ -374,3 +363,9 @@ bool __do_once_start(bool * done,unsigned long * flags)
 {
 	return !*done;
 }
+
+
+#ifdef CONFIG_X86_64
+DEFINE_PER_CPU(void *, hardirq_stack_ptr);
+#endif
+DEFINE_PER_CPU(bool, hardirq_stack_inuse);

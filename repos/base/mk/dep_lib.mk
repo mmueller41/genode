@@ -82,14 +82,19 @@ include $(BASE_DIR)/mk/base-libs.mk
 include $(LIB_MK)
 
 ifdef SHARED_LIB
-LIBS += ldso_so_support
+BUILD_ARTIFACTS ?= $(LIB).lib.so
+endif
 
 # record creation of shared library build artifact
 append_artifact_to_progress_log:
-	@echo -e "\n# Build artifact $(LIB).lib.so\n" >> $(LIB_PROGRESS_LOG)
+	@( $(foreach A,$(BUILD_ARTIFACTS),\
+	      echo -e "\n# Build artifact $A\n";) true \
+	) >> $(LIB_PROGRESS_LOG)
 append_lib_to_progress_log: append_artifact_to_progress_log
-endif
 
+ifdef SHARED_LIB
+LIBS += ldso_so_support
+endif
 
 #
 # Hide archive dependencies of shared libraries from users of the shared
@@ -119,8 +124,9 @@ warn_unsatisfied_requirements: generate_lib_rule_for_defect_library
 	@$(ECHO) "Skip library $(LIB) because it requires $(DARK_COL)$(UNSATISFIED_REQUIREMENTS)$(DEFAULT_COL)"
 
 generate_lib_rule_for_defect_library:
-	@echo "INVALID_DEPS += $(LIB)" >> $(LIB_DEP_FILE)
-	@echo "" >> $(LIB_DEP_FILE)
+	@(echo "INVALID_DEPS += $(LIB)"; \
+	  echo "$(LIB).lib:"; \
+	  echo "") >> $(LIB_DEP_FILE)
 
 LIBS_TO_VISIT = $(filter-out $(LIBS_READY),$(LIBS))
 
