@@ -206,7 +206,7 @@ namespace Nova {
 							      c->thread == thread))
 								continue;
 
-							cpu_numa_map[cpu_i] = c->numa_id;
+							cpu_numa_map[i] = c->numa_id;
 							map_cpus[cpu_i++] = (uint8_t)i;
 							if (cpu_i >= num_cpus)
 								return true;
