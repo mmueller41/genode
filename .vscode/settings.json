@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "stop_token": "cpp",
+        "*.tcc": "cpp",
+        "initializer_list": "cpp",
+        "streambuf": "cpp",
+        "tuple": "cpp",
+        "memory": "cpp"
+    },
+    "vscode-as-git-mergetool.settingsAssistantOnStartup": false,
+    "makefile.makeDirectory": "build/x86_64"
+}
