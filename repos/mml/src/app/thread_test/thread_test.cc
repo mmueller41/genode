@@ -2,6 +2,7 @@
 #include <timer_session/connection.h>
 #include <topo_session/node.h>
 #include <base/heap.h>
+#include <base/log.h>
 #include <cstdint>
 #include <memory>
 #include <chrono>
@@ -17,13 +18,13 @@ class Thread_test::Test_thread : public Thread
 {
     private:
         Env &_env;
-        uint16_t _id;
+        Genode::uint16_t _id;
         Timer::Connection _timer{_env};
 
     public:
         List_element<Test_thread> _list_element{this};
 
-        Test_thread(Env &env, uint16_t id, Location const &location)
+        Test_thread(Env &env, Genode::uint16_t id, Location const &location)
             : Thread(env, Name("test_", location.xpos(), "x", location.ypos()), 4 * 4096, location, Weight(), env.cpu()),
             _env(env),
             _id(id) 
@@ -71,7 +72,7 @@ public:
         for (unsigned i = 1; i < space.total(); i++)
         {
             Affinity::Location location = env.cpu().affinity_space().location_of_index(i);
-            Test_thread *thread = new (_heap) Test_thread(env, (uint16_t)i, location); 
+            Test_thread *thread = new (_heap) Test_thread(env, (Genode::uint16_t)i, location); 
             thread->start();
 
             _threads.insert(&thread->_list_element);
