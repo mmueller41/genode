@@ -1,0 +1,46 @@
+{
+    "configurations": [
+        {
+            "name": "EalánOS",
+            "includePath": [
+                "${workspaceFolder}/depot/genodelabs/api/libc/**",
+                "${workspaceFolder}/depot/genodelabs/api/stdcxx/**",
+                "${workspaceFolder}/repos/base/**",
+                "${workspaceFolder}/repos/base-nova/**",
+                "${workspaceFolder}/repos/**"
+            ],
+            "defines": [
+                "__GENODE__",
+                "__FreeBSD__=12",
+                "_GLIBCXX_HAVE_MBSTATE_T",
+                "_GLIBCXX_ATOMIC_BUILTINS_4",
+                "_GLIBCXX_NO_OBSOLETE_ISINF_ISNAN_DYNAMIC"
+            ],
+            "compilerPath": "/usr/local/genode/tool/21.05/bin/genode-x86-g++",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "${default}",
+            "compilerArgs": [
+                "-nostdinc",
+                "-m64",
+                "-mcmodel=large",
+                "-MMD",
+                "-MP",
+                "-MT"
+            ],
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "Genode",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-clang-x64"
+        }
+    ],
+    "version": 4
+}
