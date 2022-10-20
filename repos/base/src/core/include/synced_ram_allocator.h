@@ -38,6 +38,12 @@ class Genode::Synced_ram_allocator : public Ram_allocator
 			Mutex::Guard mutex_guard(_mutex);
 			return _alloc.try_alloc(size, cache);
 		}
+		
+		Alloc_result try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cache) override
+		{
+			Mutex::Guard mutex_guard(_mutex);
+			return _alloc.try_alloc(size, numa_id, cache);
+		}
 
 		void free(Ram_dataspace_capability ds) override
 		{

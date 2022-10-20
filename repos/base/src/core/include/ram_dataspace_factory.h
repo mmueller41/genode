@@ -45,7 +45,7 @@ class Genode::Ram_dataspace_factory : public Ram_allocator,
 		Rpc_entrypoint &_ep;
 
 		Range_allocator &_phys_alloc;
-		Phys_range const _phys_range;
+		Phys_range _phys_range;
 
 
 		/*
@@ -109,6 +109,7 @@ class Genode::Ram_dataspace_factory : public Ram_allocator,
 		 *****************************/
 
 		Alloc_result try_alloc(size_t, Cache) override;
+		Alloc_result try_alloc(size_t, Ram_allocator::Numa_id, Cache) override;
 		void free(Ram_dataspace_capability) override;
 		size_t dataspace_size(Ram_dataspace_capability ds) const override;
 };
