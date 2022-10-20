@@ -522,6 +522,8 @@ Platform::Platform()
 
 		_io_mem_alloc.remove_range((addr_t)base, (size_t)size);
 		ram_alloc().add_range((addr_t)base, (size_t)size);
+		log("Add mem range ", reinterpret_cast<void*>(base), "-", reinterpret_cast<void*>(base + size), " for node ", mem_desc->domain);
+		numa_mem_ranges[mem_desc->domain] = {base, base + size};
 	}
 
 	addr_t hyp_log = 0;

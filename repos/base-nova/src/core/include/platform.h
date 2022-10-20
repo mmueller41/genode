@@ -19,6 +19,7 @@
 #include <platform_generic.h>
 #include <core_mem_alloc.h>
 #include <address_space.h>
+#include <base/allocator.h>
 
 namespace Genode {
 
@@ -51,6 +52,7 @@ namespace Genode {
 			/* map of virtual cpu ids in Genode to kernel cpu ids */
 			uint8_t map_cpu_ids[MAX_SUPPORTED_CPUS];
 			uint8_t cpu_numa_map[MAX_SUPPORTED_CPUS];
+			Genode::Range_allocator::Range numa_mem_ranges[MAX_SUPPORTED_CPUS]; // TODO: Add new macro for max of numa regions
 
 			addr_t _map_pages(addr_t phys_page, addr_t pages,
 			                  bool guard_page = false);
@@ -120,8 +122,25 @@ namespace Genode {
 			unsigned pager_index(Affinity::Location location) const;
 			unsigned kernel_cpu_id(Affinity::Location location) const;
 
+			/**
+			 * @brief ID of NUMA region the CPU belongs to
+			 * 
+			 * @param kernel_cpu_id id of CPU
+			 * @return unsigned ID of corresponding NUMA region
+			 */
 			unsigned domain_of_cpu(unsigned kernel_cpu_id) const {
 				return cpu_numa_map[kernel_cpu_id];
+			}
+
+			/**
+			 * @brief Return memory range of a given NUMA region
+			 * 
+			 * @param numa_id ID of NUMA region
+			 * @return Genode::Range_allocator::Range physical address range for this NUMA region
+			 */
+
+			Genode::Range_allocator::Range &mem_range(unsigned numa_id) {
+				return numa_mem_ranges[numa_id];
 			}
 
 			Affinity::Location sanitize(Affinity::Location location) {
