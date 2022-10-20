@@ -77,6 +77,11 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 	{
 		return call<Rpc_try_alloc>(size, cache);
 	}
+	
+	Alloc_result try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cache = CACHED) override
+	{
+		return call<Rpc_try_alloc_numa>(size, numa_id, cache);
+	}
 
 	void free(Ram_dataspace_capability ds) override { call<Rpc_free>(ds); }
 
