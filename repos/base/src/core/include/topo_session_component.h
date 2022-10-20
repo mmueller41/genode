@@ -34,6 +34,7 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
         
         Topology::Numa_region _node_affinities[64][64];
         unsigned _node_count;
+        Topology::Numa_region _nodes[64];
 
     public:
         Topo_session_component(Rpc_entrypoint &session_ep,
@@ -53,11 +54,15 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
         Topology::Numa_region node_affinity_of(Affinity::Location const &loc) override
         {
             return _node_affinities[loc.xpos()][loc.ypos()];
-    }
+        }
 
-    unsigned node_count() override
-    {
-        return _node_count;
-    }
+        Topology::Numa_region node_at_id(unsigned numa_id) override
+        {
+            return _nodes[numa_id];
+        }
 
+        unsigned node_count() override
+        {
+            return _node_count;
+        }   
 };

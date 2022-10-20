@@ -34,6 +34,10 @@ struct Genode::Topo_session_client : Rpc_client<Topo_session>
         return call<Rpc_node_affinity>(loc);
     }
 
+    Topology::Numa_region node_at_id(unsigned node_id) override {
+        return call<Rpc_node_id>(node_id);
+    }
+
     unsigned node_count() override {
         return call<Rpc_node_count>();
     }

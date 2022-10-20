@@ -40,6 +40,10 @@ struct Genode::Topo_connection : Connection<Topo_session>, Topo_session_client
         return Topo_session_client::node_affinity_of(loc);
     }
 
+    Topology::Numa_region node_at_id(unsigned node_id) override {
+        return Topo_session_client::node_at_id(node_id);
+    }
+
     unsigned node_count() override {
         return Topo_session_client::node_count();
     }
