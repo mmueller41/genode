@@ -86,8 +86,12 @@ __kernel void corr_kernel(__global DATA_TYPE *symmat, __global DATA_TYPE *data, 
 			{
 				symmat[j1*m + j2] += data[i*m + j1] * data[i*m + j2];
 			}
+			
 			symmat[j2*m + j1] = symmat[j1*m + j2];
 		}
+	}else
+	{
+		symmat[(m-1)*m + (m-1)] = 1.0; 
 	}
 }
 
