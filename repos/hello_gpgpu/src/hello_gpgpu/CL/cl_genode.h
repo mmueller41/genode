@@ -103,6 +103,11 @@ public:
      * @param kconf 
      */
     void wait(struct kernel_config* kconf);
+
+    /**
+    * @brief print bench results */
+    void print_vgpu_bench(unsigned long i);
+
 };
 
 #endif // CL_GENODE_H

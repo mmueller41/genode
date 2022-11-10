@@ -27,6 +27,11 @@ struct Session_client : Genode::Rpc_client<Session>
 	{
 		return call<Rpc_say_hello>(i);
 	}
+
+	void print_vgpu_bench(unsigned long i) override
+	{
+		call<Rpc_print_vgpu_bench>(i);
+	}
 };
 
 }

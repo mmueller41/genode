@@ -3,6 +3,8 @@
 
 #include <util/fifo.h>
 #include "kernel.h"
+#include <base/log.h>
+
 
 // driver
 #define GENODE
@@ -78,6 +80,15 @@ namespace gpgpu_virt {
                 });
                 return ret;
             }
+
+            /**
+            * @brief Print bench
+            */
+            void print_vgpu_bench(unsigned long i)
+            {
+                Genode::log("bench result of vgpu ", i);
+                GPGPU_Driver::getInstance().printBenchResults();
+            };
     };
 }
 
