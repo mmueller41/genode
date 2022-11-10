@@ -50,7 +50,7 @@ void testvm_construct(Genode::Env &env)
 		Genode::log("===Run bicg===");
 		ns_bicg::main(0, 0);
 		Genode::log("===Run doitgen===");
-		ns_doitgen::main(0, 0); //  Number of misses: 2080768 + GPU kernel1 takes very long
+		ns_doitgen::main(0, 0);
 		Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
 		Genode::log("===Run gemver===");
@@ -70,7 +70,7 @@ void testvm_construct(Genode::Env &env)
 		ns_lu::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 516
 
 		Genode::log("===Run correlation===");
-		ns_correlation::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 1.05 Percent: 1
+		ns_correlation::main(0, 0);
 		Genode::log("===Run covariance===");
 		ns_covariance::main(0, 0);
 

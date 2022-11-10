@@ -30,6 +30,7 @@
 #endif
 
 #define POLYBENCH_TIME 1
+#define POLYBENCH_CYCLE_ACCURATE_TIMER
 
 int polybench_papi_counters_threadid = POLYBENCH_THREAD_MONITOR;
 double polybench_program_total_flops = 0;

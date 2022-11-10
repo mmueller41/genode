@@ -622,7 +622,7 @@ clCreateProgramWithBinary(cl_context                     context,
         return NULL;
     }
 
-    cl_program p = (cl_program)g_cl_genode->alloc(sizeof(_cl_program));
+    cl_program p = (cl_program)g_cl_genode->alloc(sizeof(struct _cl_program));
     p->binary = (uint8_t*)binaries[0];
     p->size = lengths[0];
 
@@ -1428,7 +1428,7 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     }
 
     // create copy of kernel (vm and driver should not modify the same kernel)
-    kernel_config* kcopy = new(g_cl_genode->getAlloc()) kernel_config();
+    struct kernel_config* kcopy = new(g_cl_genode->getAlloc()) kernel_config();
     *kcopy = *kc;
 
     // also copy buff configs
