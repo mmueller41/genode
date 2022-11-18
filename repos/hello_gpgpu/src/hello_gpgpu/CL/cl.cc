@@ -18,6 +18,7 @@ struct _cl_command_queue
 {
     struct kernel_config* kc;
     struct _cl_command_queue* next;
+    struct _cl_command_queue* end; // improve list performance; Note: attribute only used on first element! static member would have smaller memory footprint but does not work in C
 };
 struct _cl_program
 {
@@ -1070,7 +1071,7 @@ clFlush(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clFinish(cl_command_queue command_queue)
 {
-    cl_command_queue cmd = command_queue;
+    cl_command_queue cmd = command_queue->end; // no out of order execution => waiting for last kernel is enough
 
     do
     {
@@ -1442,8 +1443,7 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
     g_cl_genode->enqueue_task(kcopy);
 
     // skip to end of queue
-    cl_command_queue cmd = command_queue;
-    for(;cmd->next != NULL; cmd = cmd->next);
+    cl_command_queue cmd = command_queue->end;
 
     // enqueue
     if(cmd->kc == NULL)
@@ -1457,6 +1457,7 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         n->kc = kcopy;
 
         cmd->next = n;
+        command_queue->end = n;
     }
 
     return CL_SUCCESS;
@@ -1716,6 +1717,7 @@ clCreateCommandQueue(cl_context                     context,
     cl_command_queue clcmdqueue = (cl_command_queue)g_cl_genode->alloc(sizeof(struct _cl_command_queue));
     clcmdqueue->kc = NULL;
     clcmdqueue->next = NULL;
+    clcmdqueue->end = clcmdqueue;
     return clcmdqueue;
 }
 
