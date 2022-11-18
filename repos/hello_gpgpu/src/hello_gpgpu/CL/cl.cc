@@ -1438,6 +1438,9 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         kcopy->buffConfigs[i] = kc->buffConfigs[i];
     }
 
+    // start task
+    g_cl_genode->enqueue_task(kcopy);
+
     // skip to end of queue
     cl_command_queue cmd = command_queue;
     for(;cmd->next != NULL; cmd = cmd->next);
@@ -1456,7 +1459,6 @@ clEnqueueNDRangeKernel(cl_command_queue command_queue,
         cmd->next = n;
     }
 
-    g_cl_genode->enqueue_task(kcopy);
     return CL_SUCCESS;
 }
 
