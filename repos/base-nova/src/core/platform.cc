@@ -480,6 +480,7 @@ Platform::Platform()
 	size_t kernel_memory = 0;
 
 	log("Found ", num_mem_desc, " memory entries in HIP");
+	memset(numa_mem_ranges, 0, sizeof(Genode::Range_allocator::Range) * MAX_SUPPORTED_CPUS);
 	/*
 	 * All "available" ram must be added to our physical allocator before all
 	 * non "available" regions that overlaps with ram get removed.
@@ -523,7 +524,10 @@ Platform::Platform()
 		_io_mem_alloc.remove_range((addr_t)base, (size_t)size);
 		ram_alloc().add_range((addr_t)base, (size_t)size);
 		log("Add mem range ", reinterpret_cast<void*>(base), "-", reinterpret_cast<void*>(base + size), " for node ", mem_desc->domain);
-		numa_mem_ranges[mem_desc->domain] = {base, base + size};
+		if (numa_mem_ranges[mem_desc->domain].start == 0)
+			numa_mem_ranges[mem_desc->domain] = {base, base + size};
+		else if (base > numa_mem_ranges[mem_desc->domain].end)
+			numa_mem_ranges[mem_desc->domain].end = base + size;
 	}
 
 	addr_t hyp_log = 0;
