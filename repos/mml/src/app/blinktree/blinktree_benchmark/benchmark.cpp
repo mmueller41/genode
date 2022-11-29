@@ -5,6 +5,7 @@
 #include <json.hpp>
 #include <memory>
 #include <mx/memory/global_heap.h>
+#include <mx/system/topology.h>
 #include <base/log.h>
 
 using namespace application::blinktree_benchmark;
@@ -57,6 +58,9 @@ void Benchmark::start()
         this->_request_scheduler.clear();
     }
 
+    auto *start_task = mx::tasking::runtime::new_task<StartMeasurementTask>(0U, *this);
+    mx::tasking::runtime::spawn(*start_task, 0U);
+
     // Create one request scheduler per core.
     for (auto core_index = 0U; core_index < this->_cores.current().size(); core_index++)
     {
@@ -73,8 +77,9 @@ void Benchmark::start()
     {
         mx::tasking::runtime::profile(this->profile_file_name());
     }
-    this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
-                             this->_current_iteration + 1, this->_cores.current());
+    /*his->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
+                             this->_current_iteration + 1, this->_cores.current());*/
+    //Genode::log("Timer started ");
 }
 
 const mx::util::core_set &Benchmark::core_set()
@@ -116,18 +121,26 @@ void Benchmark::requests_finished()
         const auto result = this->_chronometer.stop(this->_workload.size());
         mx::tasking::runtime::stop();
 
-        Genode::log(result.core_count(), "\t", result.iteration(), "\t", result.phase(), "\t", result.time().count(), " ms\t", result.throughput(), " op/s");
+        //_end = Genode::Trace::timestamp();
+
+        //std::cout << result << std::endl;
+        //if (mx::system::topology::core_id() == 0)
+        //std::cout << result << "\t " << (_end - _start) << " cycles" << std::endl;
+        std::cout << result.to_json().dump() << std::endl;
+        
+
+          //  std::cout << result << std::endl;
         // Dump results to file.
-        /*if (this->_result_file_name.empty() == false)
+        if (this->_result_file_name.empty() == false)
         {
-            std::ofstream result_file_stream(this->_result_file_name, std::ofstream::app);
-            result_file_stream << result.to_json().dump() << std::endl;
+            //std::ofstream result_file_stream(this->_result_file_name, std::ofstream::app);
+            //result_file_stream << result.to_json().dump() << std::endl;
         }
 
         // Dump statistics to file.
         if constexpr (mx::tasking::config::task_statistics())
         {
-            if (this->_statistic_file_name.empty() == false)
+            /*if (this->_statistic_file_name.empty() == false)
             {
                 std::ofstream statistic_file_stream(this->_statistic_file_name, std::ofstream::app);
                 nlohmann::json statistic_json;
@@ -162,8 +175,8 @@ void Benchmark::requests_finished()
                 }
 
                 statistic_file_stream << statistic_json.dump(2) << std::endl;
-            }
-        }*/
+            }*/
+        }
 
         // Check and print the tree.
         if (this->_check_tree)

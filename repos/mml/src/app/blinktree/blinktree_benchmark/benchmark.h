@@ -14,6 +14,10 @@
 #include <string>
 #include <vector>
 #include <libc/component.h>
+#include <mx/tasking/task.h>
+
+#include <trace/timestamp.h>
+#include <base/log.h>
 
 namespace application::blinktree_benchmark {
 /**
@@ -22,6 +26,7 @@ namespace application::blinktree_benchmark {
 class Benchmark final : public Listener
 {
 public:
+
     Benchmark(Libc::Env &env, benchmark::Cores &&, std::uint16_t iterations, std::string &&fill_workload_file,
               std::string &&mixed_workload_file, bool use_performance_counter,
               mx::synchronization::isolation_level node_isolation_level,
@@ -48,6 +53,9 @@ public:
     void start();
 
 private:
+    std::uint64_t _start;
+    std::uint64_t _end;
+
     // Collection of cores the benchmark should run on.
     benchmark::Cores _cores;
 
@@ -100,5 +108,24 @@ private:
      * @return Name of the file to write profiling results to.
      */
     [[nodiscard]] std::string profile_file_name() const;
+
+    friend class StartMeasurementTask;
+};
+
+class StartMeasurementTask : public mx::tasking::TaskInterface
+{
+    private:
+        Benchmark &_benchmark;
+
+    public:
+        constexpr StartMeasurementTask(Benchmark& benchmark) : _benchmark(benchmark) {}
+        ~StartMeasurementTask() override = default;
+
+        mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override 
+        {
+            _benchmark._chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(_benchmark._workload)), _benchmark._current_iteration + 1, _benchmark._cores.current());
+            //_benchmark._start = Genode::Trace::timestamp();
+            return mx::tasking::TaskResult::make_remove();
+        }
 };
 } // namespace application::blinktree_benchmark
