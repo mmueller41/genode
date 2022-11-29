@@ -38,6 +38,13 @@
 # under the terms of the GNU Affero General Public License version 3.
 #
 
+__atomic_store T
+__atomic_load T
+_Unwind_GetLanguageSpecificData T
+_Unwind_GetRegionStart T
+_Unwind_GetIP T
+_Unwind_SetGR T
+_Unwind_SetIP T
 _Z11genode_exiti T
 _Z16main_thread_utcbv T
 _Z22__ldso_raise_exceptionv T
@@ -299,6 +306,7 @@ _ZN6Genode6Thread23stack_area_virtual_baseEv T
 _ZN6Genode6Thread23stack_area_virtual_sizeEv T
 _ZN6Genode6Thread4joinEv T
 _ZN6Genode6Thread4nameEPcm T
+_ZN6Genode6Thread3pinERNS_8Affinity8LocationE T
 _ZN6Genode6Thread4utcbEv T
 _ZN6Genode6Thread5startEv T
 _ZN6Genode6Thread6myselfEv T
@@ -636,8 +644,12 @@ _ZTVSt8bad_cast D 40
 _ZTVSt9bad_alloc D 40
 _ZTVSt9exception D 40
 _ZTVSt9type_info D 64
+_ZdaPvSt11align_val_t W
 _ZdlPv W
 _ZdlPvm W
+_ZdlPvSt11align_val_t W
+_ZdlPvmSt11align_val_t W
+_ZnwmSt11align_val_t W
 __aeabi_atexit W
 __aeabi_unwind_cpp_pr0 T
 __aeabi_unwind_cpp_pr1 T
