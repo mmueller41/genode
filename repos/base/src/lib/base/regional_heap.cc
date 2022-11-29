@@ -130,7 +130,7 @@ Regional_heap::_allocate_dataspace(size_t size, bool enforce_separate_metadata)
 				/* add new local address range to our local allocator */
 				_alloc->add_range((addr_t)attach_guard.ptr, size).with_result(
 					[&] (Range_allocator::Range_ok) {
-						metadata = _alloc->alloc_aligned(sizeof(Regional_heap::Dataspace), log2(16U)); },
+						metadata = _alloc->alloc_aligned(sizeof(Regional_heap::Dataspace), log2(64U)); },
 					[&] (Alloc_error error) {
 						metadata = error; });
 			}
@@ -153,7 +153,7 @@ Regional_heap::_allocate_dataspace(size_t size, bool enforce_separate_metadata)
 
 Allocator::Alloc_result Regional_heap::_try_local_alloc(size_t size)
 {
-	return _alloc->alloc_aligned(size, log2(16U)).convert<Alloc_result>(
+	return _alloc->alloc_aligned(size, log2(64U)).convert<Alloc_result>(
 
 		[&] (void *ptr) {
 			_quota_used += size;
@@ -236,6 +236,7 @@ Allocator::Alloc_result Regional_heap::_unsynchronized_alloc(size_t size)
 
 Allocator::Alloc_result Regional_heap::try_alloc(size_t size)
 {
+	
 	if (size == 0)
 		error("attempt to allocate zero-size block from heap");
 
@@ -291,7 +292,8 @@ void Regional_heap::free(void *addr, size_t)
 			break;
 
 	if (!ds) {
-		warning("heap could not free memory block: invalid address");
+		//warning("heap could not free memory block: invalid address");
+		throw Region_map::Invalid_dataspace();
 		return;
 	}
 
