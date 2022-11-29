@@ -1264,8 +1264,12 @@ _ZTVSt8bad_cast D 40
 _ZTVSt9bad_alloc D 40
 _ZTVSt9exception D 40
 _ZTVSt9type_info D 64
+_ZdaPvSt11align_val_t W
 _ZdlPv W
 _ZdlPvm W
+_ZdlPvSt11align_val_t W
+_ZdlPvmSt11align_val_t W
+_ZnwmSt11align_val_t W
 __aeabi_atexit T
 __aeabi_unwind_cpp_pr0 T
 __aeabi_unwind_cpp_pr1 T
