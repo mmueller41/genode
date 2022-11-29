@@ -20,6 +20,7 @@
 #include <base/sleep.h>
 #include <base/snprintf.h>
 #include <deprecated/env.h>
+#include <cpu_thread/client.h>
 
 /* base-internal includes */
 #include <base/internal/stack_allocator.h>
@@ -197,6 +198,11 @@ size_t Thread::stack_area_virtual_size()
 	return Genode::stack_area_virtual_size();
 }
 
+void Thread::pin(Affinity::Location &loc) 
+{
+	_cpu_session->migrate_thread(_thread_cap, loc);
+	_affinity = loc;
+}
 
 Thread::Thread(size_t weight, const char *name, size_t stack_size,
                Type type, Cpu_session *cpu_session, Affinity::Location affinity)
