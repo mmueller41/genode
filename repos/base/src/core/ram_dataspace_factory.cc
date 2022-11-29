@@ -150,20 +150,8 @@ Ram_allocator::Alloc_result Ram_dataspace_factory::try_alloc(size_t size, Ram_al
 {
 	Ram_dataspace_factory::Phys_range old = {_phys_range.start, _phys_range.end};
 	_phys_range = {platform_specific().mem_range(numa_id).start, platform_specific().mem_range(numa_id).end};
-	log("Using Mem range for NUMA node ", numa_id, " ", reinterpret_cast<void*>(_phys_range.start), "-", reinterpret_cast<void*>(_phys_range.end));
 	Ram_allocator::Alloc_result result = Ram_dataspace_factory::try_alloc(size, cached);
-	result.with_result(
-		[&](Genode::Ram_dataspace_capability cap)
-		{
-			_ep.apply(cap, [&](Dataspace_component *c)
-					  { log("Allocated memory at ", reinterpret_cast<void*>(c->phys_addr()), " on Node ", numa_id); });
-		},
-		[&](Ram_allocator::Alloc_error)
-		{
-			log("Error at allocation");
-		});
 	_phys_range = {old.start, old.end};
-	log("Restored original range to ", reinterpret_cast<void*>(_phys_range.start), "-", reinterpret_cast<void*>(_phys_range.end));
 	return result;
 }
 
