@@ -429,6 +429,8 @@ class Genode::Thread
 		 * Thread affinity
 		 */
 		Affinity::Location affinity() const { return _affinity; }
+
+		void pin(Affinity::Location &loc);
 };
 
 #endif /* _INCLUDE__BASE__THREAD_H_ */
