@@ -5,8 +5,13 @@
 #include <base/env.h>
 
 // allocator
+#define USE_STUPID_ALLOCATOR
+#ifdef USE_STUPID_ALLOCATOR
+#include "../allocator_stupid.h"
+#else // USE_STUPID_ALLOCATOR
 #include <base/heap.h>
 #include <base/allocator_avl.h>
+#endif // USE_STUPID_ALLOCATOR
 #include <dataspace/client.h>
 
 // pci
@@ -25,8 +30,12 @@ private:
     Genode::Env& env;
 
     // allocator
+#ifdef USE_STUPID_ALLOCATOR
+    Genode::Allocator_stupid allocator;
+#else // USE_STUPID_ALLOCATOR
     Genode::Heap heap;
     Genode::Allocator_avl allocator;
+#endif // USE_STUPID_ALLOCATOR
     Genode::addr_t mapped_base;
 
     // rpc
@@ -79,9 +88,15 @@ public:
      * 
      * @return Genode::Allocator_avl& 
      */
+#ifdef USE_STUPID_ALLOCATOR
+    Genode::Allocator_stupid& getAlloc() {
+        return allocator;
+    }
+#else // USE_STUPID_ALLOCATOR
     Genode::Allocator_avl& getAlloc() {
         return allocator;
     }
+#endif // USE_STUPID_ALLOCATOR
 
     /**
      * @brief 
@@ -103,6 +118,10 @@ public:
      * @param kconf 
      */
     void wait(struct kernel_config* kconf);
+
+#ifdef USE_STUPID_ALLOCATOR
+    void reset() { allocator.reset(); }
+#endif // USE_STUPID_ALLOCATOR
 
     /**
     * @brief print bench results */

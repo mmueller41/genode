@@ -1,6 +1,12 @@
 #include "cl_genode.h"
 
-cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), heap{ env.ram(), env.rm() }, allocator(&heap), mapped_base(0), backend_driver(env)
+cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env),
+#ifdef USE_STUPID_ALLOCATOR
+allocator(),
+#else // USE_STUPID_ALLOCATOR
+ heap{ env.ram(), env.rm() }, allocator(&heap),
+#endif // USE_STUPID_ALLOCATOR
+  mapped_base(0), backend_driver(env)
 {
     // get shared memory with driver
     Genode::Ram_dataspace_capability ram_cap;
@@ -20,6 +26,9 @@ cl_genode::~cl_genode()
 
 void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size)
 {
+#ifdef USE_STUPID_ALLOCATOR
+    return allocator.alloc_aligned(alignment, size);
+#else // USE_STUPID_ALLOCATOR
     if(alignment == 0x1000)
     {
         alignment = 12;
@@ -39,6 +48,7 @@ void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size
             return nullptr; 
         }
     );
+#endif // USE_STUPID_ALLOCATOR
 }
 
 void* cl_genode::alloc(Genode::uint32_t size)

@@ -1,5 +1,7 @@
 #include <base/log.h>
 #include <libc/component.h>
+#include <base/heap.h>
+#include <base/allocator_avl.h>
 
 #include <unistd.h>
 
@@ -43,49 +45,112 @@ void testvm_construct(Genode::Env &env)
 	Libc::with_libc([&] {
 		Genode::log("===Run 2mm===");
 		ns_2mm::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run 3mm===");
 		ns_3mm::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run atax===");
 		ns_atax::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run bicg===");
 		ns_bicg::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run doitgen===");
 		ns_doitgen::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run gemm===");
 		ns_gemm::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run gemver===");
 		ns_gemver::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run gesummv===");
 		ns_gesummv::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run mvt===");
 		ns_mvt::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run syr2k===");
 		ns_syr2k::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run syrk===");
 		ns_syrk::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 
-		//Genode::log("===Run gramschmidt===");
-		//ns_gramschmidt::main(0, 0); // this one is broken (div by 0 and unsolvable input instance) (official Linux version is broken too!)
+		/*Genode::log("===Run gramschmidt===");
+		ns_gramschmidt::main(0, 0); // this one is broken (div by 0 and unsolvable input instance) (official Linux version is broken too!)
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR*/
 		Genode::log("===Run lu===");
-		ns_lu::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 0.05 Percent: 516
+		ns_lu::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 
 		Genode::log("===Run correlation===");
 		ns_correlation::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run covariance===");
 		ns_covariance::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 
 		Genode::log("===Run adi===");
-		ns_adi::main(0, 0); // CPU-GPU Outputs Beyond Error Threshold of 10.05 Percent: 455
+		ns_adi::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run convolution_2d===");
 		ns_convolution_2d::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run convolution_3d===");
 		ns_convolution_3d::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run fdtd_2d===");
-		ns_fdtd_2d::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 1.05 Percent: 1
+		ns_fdtd_2d::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run jacobi_1d_imper===");
-		ns_jacobi_1d_imper::main(0, 0); // Non-Matching CPU-GPU Outputs Beyond Error Threshold of 10.05 Percent: 1109
+		ns_jacobi_1d_imper::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 		Genode::log("===Run jacobi_2d_imper===");
 		ns_jacobi_2d_imper::main(0, 0);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 	});
 
 	Genode::log("===End===");

@@ -1,5 +1,6 @@
 TARGET = hello_gpgpu
 SRC_CC = main.cc \
+		allocator_stupid.cc \
 		test.cc polybench.cc \
 		CL/cl.cc CL/cl_genode.cc \
 		benchmark/2mm/2mm.cc \
