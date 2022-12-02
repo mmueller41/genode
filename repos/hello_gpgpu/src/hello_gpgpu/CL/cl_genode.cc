@@ -69,7 +69,7 @@ void cl_genode::testRPC()
 	Genode::log("got number back from RPC: ", ret, "; number ref: ", i);
 }
 
-int cl_genode::enqueue_task(struct kernel_config* kconf)
+void cl_genode::enqueue_task(struct kernel_config* kconf)
 {
     // convert virt vm addr to offset
     for(int i = 0; i < kconf->buffCount; i++)
@@ -81,7 +81,7 @@ int cl_genode::enqueue_task(struct kernel_config* kconf)
     kconf->binary = (Genode::uint8_t*)((Genode::addr_t)kconf->binary - mapped_base);
 
     // send RPC
-    return backend_driver.start_task((unsigned long)kconf - mapped_base);
+    backend_driver.start_task((unsigned long)kconf - mapped_base);
 }
 
 void cl_genode::wait(struct kernel_config* kconf)

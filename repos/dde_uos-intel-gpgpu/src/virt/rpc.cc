@@ -43,7 +43,7 @@ void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_c
 	_global_sched->add_vgpu(&vgpu);
 }
 
-int Session_component::start_task(unsigned long kconf)
+void Session_component::start_task(unsigned long kconf)
 {
 	// convert offset to driver virt addr
 	struct kernel_config* kc = (struct kernel_config*)(kconf + mapped_base);
@@ -72,8 +72,8 @@ int Session_component::start_task(unsigned long kconf)
 		_global_sched->handle_gpu_event();
 	}
 
-	static int id = 0;
-	/*Genode::log("Kernel ", id);
+	/*static int id = 0;
+	Genode::log("Kernel ", id);
 	for(int i = 0; i < 3; i++)
 	{
 		Genode::log("\t\trange: ", (int)kc->range[i]);
@@ -97,8 +97,8 @@ int Session_component::start_task(unsigned long kconf)
 			Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);  // to print this, temporary make the var public
 		}
 		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
-	}*/
-	return id++;
+	}
+	id++;*/
 }
 
 Session_component::~Session_component()

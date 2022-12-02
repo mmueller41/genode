@@ -108,9 +108,8 @@ public:
      * @brief 
      * 
      * @param kconf 
-     * @return int 
      */
-    int enqueue_task(struct kernel_config* kconf);
+    void enqueue_task(struct kernel_config* kconf);
 
     /**
      * @brief 

@@ -13,9 +13,9 @@ struct Session_client : Genode::Rpc_client<Session>
 	Session_client(Genode::Capability<Session> cap)
 	: Genode::Rpc_client<Session>(cap) { }
 
-	int start_task(unsigned long kconf) override
+	void start_task(unsigned long kconf) override
 	{
-		return call<Rpc_start_task>(kconf);
+		call<Rpc_start_task>(kconf);
 	}
 
 	void register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override
