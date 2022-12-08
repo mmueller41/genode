@@ -246,6 +246,8 @@ namespace Nova {
 		EC_RESCHEDULE = 3U,
 		EC_MIGRATE = 4U,
 		EC_TIME = 5U,
+		EC_RDMSR = 6U,
+		EC_WRMSR = 7U,
 	};
 
 	enum Sc_op {
@@ -543,7 +545,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)

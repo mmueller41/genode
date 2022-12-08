@@ -253,6 +253,21 @@ namespace Nova {
 		return util_time(NOVA_EC_CTRL, ec, Ec_op::EC_TIME, time);
 	}
 
+	ALWAYS_INLINE
+	inline uint8_t ec_rdmsr(mword_t const ec, mword_t reg, mword_t &reg_val)
+	{
+		uint8_t res = syscall_5(NOVA_EC_CTRL, EC_RDMSR, ec, reg_val, reg);
+		
+		return res;
+	}
+	
+	ALWAYS_INLINE
+	inline uint8_t ec_wrmsr(mword_t const ec, mword_t reg, mword_t &reg_val)
+	{
+		uint8_t res = syscall_5(NOVA_EC_CTRL, EC_WRMSR, ec, reg_val, reg);
+		
+		return res;
+	}
 
 	ALWAYS_INLINE
 	inline uint8_t create_sc(mword_t sc, mword_t pd, mword_t ec, Qpd qpd)
