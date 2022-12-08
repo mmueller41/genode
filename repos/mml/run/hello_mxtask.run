@@ -20,7 +20,9 @@ set config {
         <service name="IO_MEM"/>
         <service name="IO_PORT"/>
         <service name="RM"/>
+        <service name="TOPO"/>
     </parent-provides>
+        <affinity-space width="32" height="1"/> 
     <default-route>
         <any-service><parent/><any-child/></any-service>
     </default-route>
@@ -38,7 +40,8 @@ append_platform_drv_config
 
 append config {
     <start name="hello_mxtask">
-        <resource name="RAM" quantum="3G"/>
+        <resource name="RAM" quantum="16G"/>
+            <affinity xpos="0" ypos="0" width="16" height="1"/>
         <config>
             <vfs> <dir name="dev"> 
                 <log/> 
@@ -60,6 +63,6 @@ set boot_modules {
 
 append_platform_drv_boot_modules
 build_boot_image $boot_modules
-append qemu_args "-nographic -m 64"
+append qemu_args "-nographic"
 
 run_genode_until forever
