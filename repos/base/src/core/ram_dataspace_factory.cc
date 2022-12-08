@@ -123,6 +123,7 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	Dataspace_component &ds = *ds_ptr;
 
 	/* create native shared memory representation of dataspace */
+#ifdef ZERO_AT_ALLOC
 	try { _export_ram_ds(ds); }
 	catch (Core_virtual_memory_exhausted) {
 		warning("could not export RAM dataspace of size ", ds.size());
@@ -137,8 +138,8 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	 * function must also make sure to flush all cache lines related to the
 	 * address range used by the dataspace.
 	 */
-	_clear_ds(ds);
-
+	_unmap_ds_from_core(ds);
+#endif 
 	Dataspace_capability ds_cap = _ep.manage(&ds);
 
 	phys_alloc_guard.keep = true;
@@ -181,8 +182,25 @@ void Ram_dataspace_factory::free(Ram_dataspace_capability ds_cap)
 	});
 
 	/* call dataspace destructor and free memory */
-	if (ds)
+	if (ds) {
+		try { _export_ram_ds(*ds); }
+		catch (Core_virtual_memory_exhausted) {
+			warning("could not export RAM dataspace of size ", ds->size());
+
+			/* cleanup unneeded resources */
+			destroy(_ds_slab, ds);
+			return;
+		}
+
+		/*
+		* Fill new dataspaces with zeros. For non-cached RAM dataspaces, this
+		* function must also make sure to flush all cache lines related to the
+		* address range used by the dataspace.
+		*/
+		_clear_ds(*ds);
+		_unmap_ds_from_core(*ds);
 		destroy(_ds_slab, ds);
+	}
 }
 
 
