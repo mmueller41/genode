@@ -59,8 +59,9 @@ append config {
         <resource name="RAM" quantum="1024M"/>
     </start>
 	<start name="hello_gpgpu">
+		<binary name="hello_gpgpu"/>
 		<resource name="RAM" quantum="1024M"/>
-		<config>
+		<config bench="1">
 			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
 		</config>
