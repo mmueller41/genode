@@ -43,8 +43,8 @@ void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size
 
 		[&] (void *ptr) { return ptr; },
 
-		[&] (Genode::Range_allocator::Alloc_error) -> void * {
-            Genode::error("[OCL] Error in driver allocation!");
+		[&] (Genode::Range_allocator::Alloc_error e) -> void * {
+            Genode::error("[OCL] Error in driver allocation: ", e);
             return nullptr; 
         }
     );
