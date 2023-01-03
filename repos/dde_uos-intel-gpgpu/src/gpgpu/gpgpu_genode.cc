@@ -24,10 +24,9 @@ void gpgpu_genode::handleInterrupt()
 gpgpu_genode::gpgpu_genode(Env& e) : env(e), heap{ e.ram(), e.rm() }, alloc(&heap), ram_cap(), mapped_base(0), base(0), pci(e), dev(), prev_dev(), irq(nullptr), dispatcher(env.ep(), *this, &gpgpu_genode::handleInterrupt)
 {
     // size of avaible memory for allocator
-    const unsigned long size = 0x1000 * 0x1000;
+    const unsigned long size = 0x1000 * 0x1000 * 4;
 
     // allocate chunk of ram
-    //ram_cap = e.ram().alloc(size);
     size_t donate = size;
     ram_cap =
         retry<Out_of_ram>(
@@ -42,7 +41,6 @@ gpgpu_genode::gpgpu_genode(Env& e) : env(e), heap{ e.ram(), e.rm() }, alloc(&hea
             });
     mapped_base = e.rm().attach(ram_cap);
     base = pci.dma_addr(ram_cap);
-    //base = Dataspace_client(ram_cap).phys_addr();
 
     // use this ram for allocator
     alloc.add_range(mapped_base, size);
