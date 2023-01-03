@@ -1,0 +1,90 @@
+# build config
+build { core init gpgpu timer hello_gpgpu }
+
+# platform config
+set use_acpica_as_acpi_drv 0
+source ${genode_dir}/repos/base/run/platform_drv.inc
+proc platform_drv_policy {} {
+	global use_acpica_as_acpi_drv
+	set policy ""
+
+	append_if $use_acpica_as_acpi_drv policy {
+			<policy label="acpi_drv -> ">    <pci class="ALL"/> </policy>}
+
+	append policy {
+			<policy label_prefix="gpgpu"> <pci class="ALL"/> </policy>}
+	append policy {
+			<policy label_prefix="hello_gpgpu"> <pci class="ALL"/> </policy>}
+
+	return $policy
+}
+append_platform_drv_build_components
+build $build_components
+
+# boot dir
+create_boot_directory
+
+# other config
+append config {
+	<config>
+		<parent-provides>
+			<service name="ROM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+			<service name="PD"/>
+			<service name="RM"/>
+			<service name="CPU"/>
+			<service name="LOG"/>
+			<service name="RAM"/>
+			<service name="CAP"/>
+		</parent-provides>
+		<default-route>
+			<any-service> <parent/> <any-child/> </any-service>
+		</default-route>
+		<default caps="200"/>
+		<start name="timer">
+			<resource name="RAM" quantum="1M"/>
+			<provides><service name="Timer"/></provides>
+			<route>
+				<any-service><parent/><any-child/></any-service>
+			</route>
+		</start>
+}
+
+append_platform_drv_config
+
+append config {
+    <start name="gpgpu">
+		<provides> <service name="gpgpu"/> </provides>
+        <resource name="RAM" quantum="8192M"/>
+    </start>
+	<start name="hello_gpgpu1">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="2048M"/>
+		<config bench="1">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="hello_gpgpu2">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="2048M"/>
+		<config bench="2">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+</config>}
+
+install_config $config
+
+# boot modules
+set boot_modules {
+	core ld.lib.so libc.lib.so vfs.lib.so libm.lib.so init gpgpu timer hello_gpgpu
+}
+append_platform_drv_boot_modules
+build_boot_image $boot_modules
+
+# qemu stuff
+append qemu_args " -nographic -m 16G"
+run_genode_until "hello gpgpu completed.*\n" 600
