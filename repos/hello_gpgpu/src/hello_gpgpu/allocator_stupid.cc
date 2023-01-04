@@ -1,11 +1,15 @@
 #include "allocator_stupid.h"
+#include <base/log.h>
 
 using namespace Genode;
 
 void* Allocator_stupid::alloc(size_t size)
 {
     if(m_curr + size > m_end)
+    {
+        Genode::error("Allocator_stupid: OOM!");
         return nullptr;
+    }
 
     const addr_t naddr = m_curr;
     m_curr += size;
