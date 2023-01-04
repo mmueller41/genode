@@ -59,6 +59,9 @@ struct hello_gpgpu
 		Genode::addr_t mapped_base = env.rm().attach(ram_cap);
 		alloc.add_range(mapped_base, size);
 		run_gpgpu_test(alloc);
+#ifdef USE_STUPID_ALLOCATOR
+		clg.reset();
+#endif // USE_STUPID_ALLOCATOR
 
 		// run selected benchmarks
 		Genode::log("===Run PolyBench===");
