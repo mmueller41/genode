@@ -1,12 +1,6 @@
 #include "cl_genode.h"
 
-cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env),
-#ifdef USE_STUPID_ALLOCATOR
-allocator(),
-#else // USE_STUPID_ALLOCATOR
- heap{ env.ram(), env.rm() }, allocator(&heap),
-#endif // USE_STUPID_ALLOCATOR
-  mapped_base(0), backend_driver(env)
+cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), allocator(), mapped_base(0), backend_driver(env)
 {
     // get shared memory with driver
     Genode::Ram_dataspace_capability ram_cap;
@@ -26,29 +20,7 @@ cl_genode::~cl_genode()
 
 void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size)
 {
-#ifdef USE_STUPID_ALLOCATOR
     return allocator.alloc_aligned(alignment, size);
-#else // USE_STUPID_ALLOCATOR
-    if(alignment == 0x1000)
-    {
-        alignment = 12;
-    }
-    else if(alignment != 0x0)
-    {
-        Genode::error("[OCL] Unsupported alignment: ", alignment);
-        return nullptr;
-    }
-
-    return allocator.alloc_aligned(size, alignment).convert<void *>(
-
-		[&] (void *ptr) { return ptr; },
-
-		[&] (Genode::Range_allocator::Alloc_error e) -> void * {
-            Genode::error("[OCL] Error in driver allocation: ", e);
-            return nullptr; 
-        }
-    );
-#endif // USE_STUPID_ALLOCATOR
 }
 
 void* cl_genode::alloc(Genode::uint32_t size)

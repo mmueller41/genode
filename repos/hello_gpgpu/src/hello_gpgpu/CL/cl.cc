@@ -12,7 +12,6 @@ struct _cl_mem
 {
     struct buffer_config bc;
     void* virt_vm; // virt addr that can be used by vm
-    bool ocl_allocated;
 };
 struct _cl_command_queue
 {
@@ -263,6 +262,7 @@ clRetainContext(cl_context context)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseContext(cl_context context)
 {
+    g_cl_genode->reset();
     return CL_SUCCESS;
 }
 
@@ -317,22 +317,6 @@ clRetainCommandQueue(cl_command_queue command_queue)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseCommandQueue(cl_command_queue command_queue)
 {
-    cl_command_queue cmd = command_queue;
-    while(cmd != NULL)
-    {
-        cl_command_queue next = cmd->next;
-        for(int i = 0; i < cmd->kc->buffCount; i++)
-        {
-            if(cmd->kc->buffConfigs[i].non_pointer_type)
-            {
-                g_cl_genode->free(cmd->kc->buffConfigs[i].buffer);
-            }
-        }
-        g_cl_genode->free(cmd->kc->buffConfigs);
-        g_cl_genode->free(cmd->kc);
-        g_cl_genode->free(cmd);
-        cmd = next;
-    }
     return CL_SUCCESS;
 }
 
@@ -359,11 +343,9 @@ clCreateBuffer(cl_context   context,
     if(host_ptr == NULL)
     {
         host_ptr = g_cl_genode->aligned_alloc(0x1000, size);
-        clmem->ocl_allocated = true;
     }
     else
     {
-        clmem->ocl_allocated = false;
         Genode::error("[OCL] Memory mapping is currently unsupported!");
     }
 
@@ -462,11 +444,6 @@ clRetainMemObject(cl_mem memobj)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseMemObject(cl_mem memobj)
 {
-    if(memobj->ocl_allocated && !memobj->bc.non_pointer_type)
-    {
-        g_cl_genode->free(memobj->virt_vm);
-    }
-    g_cl_genode->free(memobj);
     return CL_SUCCESS;
 }
 
@@ -670,7 +647,6 @@ clRetainProgram(cl_program program)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseProgram(cl_program program)
 {
-    g_cl_genode->free(program);
     return CL_SUCCESS;
 }
 
@@ -846,18 +822,6 @@ clRetainKernel(cl_kernel    kernel)
 CL_API_ENTRY cl_int CL_API_CALL
 clReleaseKernel(cl_kernel   kernel)
 {
-    struct kernel_config* kc = (struct kernel_config*)kernel;
-    g_cl_genode->free(kc->binary);
-    for(int i = 0; i < kc->buffCount; i++)
-    {
-        if(kc->buffConfigs[i].non_pointer_type)
-        {
-            g_cl_genode->free(kc->buffConfigs[i].buffer);
-        }
-    }
-    g_cl_genode->free(kc->buffConfigs);
-    g_cl_genode->free(kc->kernelName);
-    g_cl_genode->free(kc);
     return CL_SUCCESS;
 }
 
