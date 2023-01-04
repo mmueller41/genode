@@ -50,7 +50,7 @@ gpgpu_genode::~gpgpu_genode()
 {
     // release pci dev and free allocator memory
     pci.release_device(dev);
-    env.ram().free(ram_cap);
+    freeRamCap(ram_cap);
 }
 
 void* gpgpu_genode::aligned_alloc(uint32_t alignment, uint32_t size)
