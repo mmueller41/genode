@@ -5,12 +5,13 @@
 #include <gpgpu_virt/session.h>
 
 #include "rpc.h"
-#include "scheduler.h"
 
 // genode instance
 #include "../gpgpu/gpgpu_genode.h"
 extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
-extern gpgpu_virt::Scheduler* _global_sched;
+#include "scheduler.h"
+#include "strategies/rr.h"
+extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 // driver
 #define GENODE // use genodes stdint header

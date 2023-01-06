@@ -1,28 +1,35 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include <util/fifo.h>
 #include "vgpu.h"
+#include "kernel.h"
+
+#include "strategies/rr.h"
+
+// genode instance
+#include "../gpgpu/gpgpu_genode.h"
+extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
+
+// driver
+#define GENODE
+#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 
 namespace gpgpu_virt {
 
-    class Scheduler
+    template<typename S> class Scheduler
     {
         private:
+            S strat;
             VGpu* _curr_vgpu;
-            Genode::Fifo<VGpu> _run_list;
             bool idle;
+            
+            Scheduler(const Scheduler &copy) = delete;
+            Scheduler(Scheduler&&) = delete;
+            Scheduler& operator=(const Scheduler&) = delete;
+            Scheduler& operator=(Scheduler&&) = delete;
 
         public:
-
-           Scheduler() : _curr_vgpu(nullptr), _run_list(), idle(true) { }
-
-            /**
-             * @brief Select next vGPU from run list
-             * @details At the moment, round-robin is the only implemented strategy. 
-             *          TODO: Implement interface for strategies and strategies             * 
-             */
-            void schedule_next();
+            Scheduler() : strat(), _curr_vgpu(nullptr), idle(true) { }
 
             /**
              * @brief Switch to new vGPU's context
@@ -41,7 +48,40 @@ namespace gpgpu_virt {
              *          executing kernels. It is the target for interrupts coming from the GPGPU driver, e.g. when
              *          a kernel has finished its execution. 
              */
-            void handle_gpu_event();
+            void handle_gpu_event()
+            {
+                // reduce frequency
+                GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
+                gpgpudriver.setMinFreq();
+
+                /* Switch to next vGPU in the run list */
+                _curr_vgpu = strat.nextVGPU();
+
+                // If no vGPU to schedule, this means that we don't have any clients with anymore.
+                if(_curr_vgpu == nullptr)
+                {
+                    idle = true;
+                    return;
+                }
+
+                idle = false;
+
+                Kernel* next = _curr_vgpu->take_kernel();
+
+                // switch context
+                dispatch(*_curr_vgpu);
+
+                // set frequency
+                gpgpudriver.setMaxFreq();
+
+                // run gpgpu task
+                gpgpudriver.enqueueRun(*next->get_config());
+
+                // free kernel object
+                // kernel_config will not be freed, just the Queue object!
+                _global_gpgpu_genode->free(next);
+            }
+
 
             /**
              * @brief 
@@ -50,7 +90,7 @@ namespace gpgpu_virt {
              */
             void add_vgpu(VGpu* vgpu)
             {
-                _run_list.enqueue(*vgpu);
+                strat.addVGPU(vgpu);
             }
 
             /**
@@ -60,7 +100,7 @@ namespace gpgpu_virt {
              */
             void remove_vgpu(VGpu* vgpu)
             {
-                _run_list.remove(*vgpu);
+                strat.removeVGPU(vgpu);
             }
 
             /**
@@ -74,6 +114,8 @@ namespace gpgpu_virt {
                 return idle;
             }
     };
+
+    using GPGPUScheduler = Scheduler<gpgpu_virt::RoundRobin>;
 }
 
 #endif // SCHEDULER_H

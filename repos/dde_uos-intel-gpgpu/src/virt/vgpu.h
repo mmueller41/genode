@@ -36,7 +36,6 @@ namespace gpgpu_virt {
             void add_kernel(Kernel* kernel) {
                 kernel->get_config()->ctx = ctx; // set context
                 ready_list.enqueue(*kernel);
-
             }
 
             /**

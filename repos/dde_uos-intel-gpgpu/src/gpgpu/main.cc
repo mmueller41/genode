@@ -2,6 +2,7 @@
 
 #include "../virt/rpc.h"
 #include "../virt/scheduler.h"
+#include "../virt/strategies/rr.h"
 
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
@@ -15,7 +16,7 @@
 #endif // TEST
 
 gpgpu::gpgpu_genode* _global_gpgpu_genode;
-gpgpu_virt::Scheduler* _global_sched;
+gpgpu_virt::GPGPUScheduler* _global_sched;
 
 void Component::construct(Genode::Env& e)
 {
@@ -25,7 +26,7 @@ void Component::construct(Genode::Env& e)
     // init globals
     static gpgpu::gpgpu_genode gg(e);
     _global_gpgpu_genode = &gg;
-    static gpgpu_virt::Scheduler sched;
+    static gpgpu_virt::GPGPUScheduler sched;
     _global_sched = &sched;
     
 #ifdef TEST
