@@ -31,6 +31,7 @@ void CompletlyFair::removeVGPU(VGpu* vgpu)
         if(ce.vgpu == vgpu)
         {
             _run_list.remove(ce);
+            _global_gpgpu_genode->free(&ce);
         }
     });
 }
