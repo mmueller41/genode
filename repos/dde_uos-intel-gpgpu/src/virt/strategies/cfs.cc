@@ -39,7 +39,7 @@ void CompletlyFair::removeVGPU(VGpu* vgpu)
 VGpu* CompletlyFair::nextVGPU()
 {
     // update cfs entry
-    _curr->runtime += rdtsc() - _curr->ts;
+    _curr->runtime += (rdtsc() - _curr->ts) * -_curr->vgpu->getPriority();
 
     // list empty?
     if(_run_list.empty())

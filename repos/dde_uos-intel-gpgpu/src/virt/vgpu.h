@@ -22,11 +22,34 @@ namespace gpgpu_virt {
             /// list of gpgpu tasks for this vpgu
             Genode::Fifo<Kernel> ready_list;
 
+            /// priority of vgpu
+            int prio;
+
         public:
             /**
              * @brief Construct a new VGpu object
              */
-            VGpu() : ctx(nullptr), ready_list() {}
+            VGpu() : ctx(nullptr), ready_list(), prio(-1) {}
+
+            /**
+             * @brief Set the Priority
+             * 
+             * @param p 
+             */
+            void setPriority(int p)
+            {
+                prio = p;
+            }
+
+            /**
+             * @brief Get the Priority
+             * 
+             * @return int 
+             */
+            int getPriority()
+            {
+                return prio;
+            }
 
             /**
              * @brief Add a kernel to the vGPU's ready list 
