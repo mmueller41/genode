@@ -21,7 +21,23 @@ static unsigned long long int rdtsc()
 
 void CompletlyFair::addVGPU(VGpu* vgpu)
 {
+    // create new entry
     cfs_entry* ce = new (_global_gpgpu_genode->getAlloc()) cfs_entry(vgpu);
+
+    // find current min
+    cfs_entry* min = nullptr;
+    _run_list.head([&min](cfs_entry& ce){
+        min = &ce;
+    });
+    _run_list.for_each([&min](cfs_entry& ce){
+        if(ce.runtime < min->runtime)
+        {
+            min = &ce;
+        }
+    });
+
+    // add new entry with minimum runtime
+    ce->runtime = min->runtime;
     _run_list.enqueue(*ce);
 }
 
