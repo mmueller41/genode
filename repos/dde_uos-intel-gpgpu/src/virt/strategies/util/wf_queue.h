@@ -7,7 +7,7 @@ namespace gpgpu_virt::util {
      * @brief Wait-Free Queue
      * http://www.1024cores.net/home/lock-free-algorithms/queues/intrusive-mpsc-node-based-queue
      */
-    class alignas(64) WFQueue
+    class WFQueue
     {
 
     public:
@@ -23,11 +23,11 @@ namespace gpgpu_virt::util {
 
     private:
         WFQueue(const WFQueue& copy);
-        alignas(64) Chain* volatile head;
+        Chain* volatile head;
 
     protected:
-        alignas(64) Chain* tail;
-        alignas(32) Chain stub;
+        Chain* tail;
+        Chain stub;
 
     public:
         /**
