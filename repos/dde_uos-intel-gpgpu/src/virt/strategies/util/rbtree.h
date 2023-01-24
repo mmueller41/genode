@@ -235,8 +235,8 @@ namespace gpgpu_virt::util {
                 }
 
                 // case 8
-                if(lchild != nullptr && rchild == nullptr ||
-                    lchild == nullptr && rchild != nullptr)
+                if((lchild != nullptr && rchild == nullptr) ||
+                    (lchild == nullptr && rchild != nullptr))
                 {
                     if(node != root)
                     {
