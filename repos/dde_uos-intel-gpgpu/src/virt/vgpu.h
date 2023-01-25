@@ -55,7 +55,7 @@ namespace gpgpu_virt {
              * 
              * @return int 
              */
-            int getPriority()
+            int getPriority() const
             {
                 return prio;
             }
