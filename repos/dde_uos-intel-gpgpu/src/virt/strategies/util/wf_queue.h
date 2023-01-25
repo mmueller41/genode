@@ -63,7 +63,7 @@ namespace gpgpu_virt::util {
          * @return true 
          * @return false 
          */
-        inline bool empty() { return tail->next == nullptr; }
+        inline bool empty() const { return tail->next == nullptr; }
     };
 
     inline void WFQueue::enqueue(Chain* item)
