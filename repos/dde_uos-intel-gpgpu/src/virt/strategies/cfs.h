@@ -1,24 +1,26 @@
 #ifndef CFS_H
 #define CFS_H
 
-#include <util/fifo.h>
+#include "cfs_entry.h"
+#include "util/rbtree.h"
 #include "../strategie.h"
 
 namespace gpgpu_virt {
 
     class CompletlyFair : Strategie
     {
-        class cfs_entry : public Genode::Fifo<cfs_entry>::Element
-        {
-            public:
-                VGpu* vgpu;
-                unsigned long runtime;
-                unsigned long ts;
-                cfs_entry(VGpu* vg) : vgpu(vg), runtime(0), ts(0) {} 
-        };
-        
         private:
-            Genode::Fifo<cfs_entry> _run_list; // TODO: Red Black Tree
+            static int compareCFSentry(const cfs_entry& a, const cfs_entry& b)
+            {
+                return (int)((long)a.runtime - (long)b.runtime);
+            }
+            static int compareAddr(const cfs_entry& a, const cfs_entry& b)
+            {
+                return (int)(&a - &b);
+            }
+        
+            util::RBTree<cfs_entry> rbt_ready;
+            util::RBTree<cfs_entry> rbt_idle;
             cfs_entry* _curr;
 
             CompletlyFair(const CompletlyFair &copy) = delete;
@@ -27,7 +29,7 @@ namespace gpgpu_virt {
             CompletlyFair& operator=(CompletlyFair&&) = delete;     
         
         public:
-            CompletlyFair() : _run_list(), _curr(nullptr) {};
+            CompletlyFair() : rbt_ready(compareCFSentry), rbt_idle(compareAddr), _curr(nullptr) {};
 
             /**
              * @brief 
@@ -42,6 +44,13 @@ namespace gpgpu_virt {
              * @param vgpu 
              */
             void removeVGPU(VGpu* vgpu) override;
+
+            /**
+             * @brief 
+             * 
+             * @param vgpu 
+             */
+            void updateVGPU(VGpu* vgpu) override;
 
             /**
              * @brief 

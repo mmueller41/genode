@@ -1,10 +1,15 @@
 #ifndef VGPU_H
 #define VGPU_H
 
-#include <util/fifo.h>
-#include "kernel.h"
 #include <base/log.h>
+#include "strategies/config.h"
+#include "kernel.h"
 
+#ifdef SCHED_CFS
+    #include "strategies/cfs_entry.h"
+#else
+    #include "strategies/util/wf_queue.h"
+#endif // SCHED_CFS
 
 // driver
 #define GENODE
@@ -13,7 +18,11 @@
 
 namespace gpgpu_virt {
 
-    class VGpu : public Genode::Fifo<VGpu>::Element
+#ifdef SCHED_CFS
+    class VGpu : public cfs_entry
+#else
+    class VGpu : public util::WFQueue::Chain
+#endif // SCHED_CFS
     {
         private:
             // context of vgpu

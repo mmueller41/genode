@@ -1,10 +1,17 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
+#include "strategies/config.h"
 #include "vgpu.h"
 #include "kernel.h"
 
-#include "strategies/rr.h"
+#ifdef SCHED_CFS
+    #include "strategies/util/rbtree.h"
+    #include "strategies/cfs.h"
+#else
+    #include "strategies/util/wf_queue.h"
+    #include "strategies/rr.h"
+#endif // SCHED_CFS
 
 // genode instance
 #include "../gpgpu/gpgpu_genode.h"
@@ -106,6 +113,16 @@ namespace gpgpu_virt {
             /**
              * @brief 
              * 
+             * @param vgpu 
+             */
+            void update_vgpu(VGpu* vgpu)
+            {
+                strat.updateVGPU(vgpu);
+            }
+
+            /**
+             * @brief 
+             * 
              * @return true 
              * @return false 
              */
@@ -115,7 +132,11 @@ namespace gpgpu_virt {
             }
     };
 
+#ifdef SCHED_CFS
+    using GPGPUScheduler = Scheduler<gpgpu_virt::CompletlyFair>;
+#else
     using GPGPUScheduler = Scheduler<gpgpu_virt::RoundRobin>;
+#endif // SCHED_CFS
 }
 
 #endif // SCHEDULER_H

@@ -1,7 +1,7 @@
 #ifndef RR_H
 #define RR_H
 
-#include <util/fifo.h>
+#include "util/wf_queue.h"
 #include "../strategie.h"
 
 namespace gpgpu_virt {
@@ -9,7 +9,7 @@ namespace gpgpu_virt {
     class RoundRobin : Strategie
     {
         private:
-            Genode::Fifo<VGpu> _run_list;
+            util::WFQueue _run_list;
         
         public:
             RoundRobin() : _run_list() {};
@@ -27,6 +27,13 @@ namespace gpgpu_virt {
              * @param vgpu 
              */
             void removeVGPU(VGpu* vgpu) override;
+
+            /**
+             * @brief 
+             * 
+             * @param vgpu 
+             */
+            void updateVGPU(VGpu* vgpu) override { (void)vgpu; }; // not needed
 
             /**
              * @brief 

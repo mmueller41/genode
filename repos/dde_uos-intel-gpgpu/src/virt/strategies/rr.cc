@@ -5,12 +5,12 @@ namespace gpgpu_virt
 
 void RoundRobin::addVGPU(VGpu* vgpu)
 {
-    _run_list.enqueue(*vgpu);
+    _run_list.enqueue((util::WFQueue::Chain*)vgpu);
 }
 
 void RoundRobin::removeVGPU(VGpu* vgpu)
 {
-    _run_list.remove(*vgpu);
+    _run_list.remove((util::WFQueue::Chain*)vgpu);
 }
 
 VGpu* RoundRobin::nextVGPU()
@@ -24,12 +24,10 @@ VGpu* RoundRobin::nextVGPU()
     for(;;)
     {
         // get next vgpu
-        _run_list.dequeue([&next](VGpu& vgpu){
-            next = &vgpu;
-        });
+        next = (VGpu*)_run_list.dequeue();
 
         // add vgpu back to end of list
-        _run_list.enqueue(*next);
+        _run_list.enqueue((util::WFQueue::Chain*)next);
         
         // check if it has kernel?
         if(next->has_kernel())

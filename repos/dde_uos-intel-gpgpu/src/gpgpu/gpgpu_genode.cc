@@ -4,7 +4,6 @@
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
 
 #include "../virt/scheduler.h"
-#include "../virt/strategies/rr.h"
 extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 namespace gpgpu

@@ -10,7 +10,6 @@
 #include "../gpgpu/gpgpu_genode.h"
 extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
 #include "scheduler.h"
-#include "strategies/rr.h"
 extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 // driver
@@ -65,7 +64,14 @@ void Session_component::start_task(unsigned long kconf)
 
 	// add kernel
 	Kernel* kernel = new(_global_gpgpu_genode->getAlloc()) Kernel(kc);
+	const bool needsUpdate = vgpu.has_kernel() == false;
 	vgpu.add_kernel(kernel);
+
+	// trigger vgpu update
+	if(needsUpdate)
+	{
+		_global_sched->update_vgpu(&vgpu);
+	}
 
 	// trigger sched if its idle
 	if(_global_sched->is_idle())

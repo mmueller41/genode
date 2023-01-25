@@ -2,7 +2,6 @@
 
 #include "../virt/rpc.h"
 #include "../virt/scheduler.h"
-#include "../virt/strategies/rr.h"
 
 #define GENODE // use genodes stdint header
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
@@ -96,6 +95,12 @@ void Component::construct(Genode::Env& e)
 
     Genode::log("Register RPCs...");
     static gpgpu_virt::Main main(e);
+
+#ifdef SCHED_CFS
+    Genode::log("Scheduler is using CFS policy!");
+#else
+    Genode::log("Scheduler is using RR policy!");
+#endif // SCHED_CFS
 
     Genode::log("This is the UOS Intel GPGPU End!");
 }

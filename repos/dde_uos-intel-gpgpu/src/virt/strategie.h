@@ -31,6 +31,13 @@ namespace gpgpu_virt {
             /**
              * @brief 
              * 
+             * @param vgpu 
+             */
+            virtual void updateVGPU(VGpu* vgpu) = 0;
+
+            /**
+             * @brief 
+             * 
              * @return VGpu* 
              */
             virtual VGpu* nextVGPU() = 0;

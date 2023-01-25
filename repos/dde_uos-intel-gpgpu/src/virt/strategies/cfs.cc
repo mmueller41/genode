@@ -22,66 +22,88 @@ static unsigned long long int rdtsc()
 void CompletlyFair::addVGPU(VGpu* vgpu)
 {
     // create new entry
-    cfs_entry* ce = new (_global_gpgpu_genode->getAlloc()) cfs_entry(vgpu);
+    cfs_entry* ce = (cfs_entry*)vgpu;
 
     // find current min
-    cfs_entry* min = nullptr;
-    _run_list.head([&min](cfs_entry& ce){
-        min = &ce;
-    });
-    _run_list.for_each([&min](cfs_entry& ce){
-        if(ce.runtime < min->runtime)
-        {
-            min = &ce;
-        }
-    });
+    cfs_entry* min = rbt_ready.getMin_cached();
 
     // add new entry with minimum runtime
-    ce->runtime = min->runtime;
-    _run_list.enqueue(*ce);
+    if(min != nullptr)
+    {
+        ce->runtime = min->runtime;
+    }
+
+    // add vgpu to rbtree
+    if(vgpu->has_kernel())
+    {
+        rbt_ready.insert(*ce);
+    }
+    else
+    {
+        rbt_idle.insert(*ce);
+    }
+
 }
 
 void CompletlyFair::removeVGPU(VGpu* vgpu)
 {
-    _run_list.for_each([&vgpu, this](cfs_entry& ce){
-        if(ce.vgpu == vgpu)
-        {
-            _run_list.remove(ce);
-            _global_gpgpu_genode->free(&ce);
-        }
-    });
+    if((VGpu*)_curr == vgpu || vgpu->has_kernel() )
+    {
+        rbt_ready.remove(*vgpu);
+    }
+    else
+    {
+        rbt_idle.remove(*vgpu);
+    }
+}
+
+void CompletlyFair::updateVGPU(VGpu* vgpu)
+{
+    // dont touch a running vgpu! it will be updated in nextVGPU
+    if(vgpu == (VGpu*)_curr)
+    {
+        return;
+    }
+
+    rbt_idle.remove(*vgpu);
+    rbt_ready.insert(*vgpu);
 }
 
 VGpu* CompletlyFair::nextVGPU()
 {
     // update cfs entry
-    _curr->runtime += (rdtsc() - _curr->ts) * -_curr->vgpu->getPriority();
-
-    // list empty?
-    if(_run_list.empty())
-        return nullptr;
-
-    cfs_entry* min = nullptr;
-    _run_list.head([&min](cfs_entry& ce){
-        min = &ce;
-    });
-
-    _run_list.for_each([&min](cfs_entry& ce){
-        if(ce.runtime < min->runtime && ce.vgpu->has_kernel())
-        {
-            min = &ce;
-        }
-    });
-
-    if(min->vgpu->has_kernel()) // in case this is still the head
+    if(_curr != nullptr)
     {
-        _curr = min;
-        _curr->ts = rdtsc();
-        return min->vgpu;
+        VGpu* curr = (VGpu*)_curr;
+        int prio = curr->getPriority();
+        _curr->runtime += (rdtsc() - _curr->ts) * -prio;
+
+        if(curr->has_kernel())
+        {
+            rbt_ready.insert(*_curr);
+        }
+        else
+        {
+            rbt_idle.insert(*_curr);
+        }
     }
 
-    // no vgpu with kernel found
-    return nullptr;
+    VGpu* min = (VGpu*)rbt_ready.getMin_cached();
+
+    // tree empty?
+    if(min == nullptr)
+    {
+        _curr = nullptr;
+        return nullptr;
+    }
+
+    // remove vgpu from ready tree
+    rbt_ready.remove(*min);
+
+    // exec min
+    _curr = (cfs_entry*)min;
+    _curr->ts = rdtsc();
+    return min;
 }
 
 }
