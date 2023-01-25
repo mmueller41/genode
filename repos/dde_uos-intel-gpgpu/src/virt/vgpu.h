@@ -7,9 +7,8 @@
 
 #ifdef SCHED_CFS
     #include "strategies/cfs_entry.h"
-#else
-    #include "strategies/util/wf_queue.h"
 #endif // SCHED_CFS
+#include "strategies/util/wf_queue.h"
 
 // driver
 #define GENODE
@@ -29,7 +28,7 @@ namespace gpgpu_virt {
             context* ctx;
 
             /// list of gpgpu tasks for this vpgu
-            Genode::Fifo<Kernel> ready_list;
+            util::WFQueue ready_list;
 
             /// priority of vgpu
             int prio;
@@ -67,7 +66,7 @@ namespace gpgpu_virt {
              */
             void add_kernel(Kernel* kernel) {
                 kernel->get_config()->ctx = ctx; // set context
-                ready_list.enqueue(*kernel);
+                ready_list.enqueue((util::WFQueue::Chain*)kernel);
             }
 
             /**
@@ -105,11 +104,7 @@ namespace gpgpu_virt {
              * @return First kernel image in ready list 
              */
             Kernel* take_kernel() { 
-                Kernel* ret = nullptr;
-                ready_list.dequeue([&ret](Kernel& k){
-                    ret = &k;
-                });
-                return ret;
+                return (Kernel*)ready_list.dequeue();
             }
 
             /**

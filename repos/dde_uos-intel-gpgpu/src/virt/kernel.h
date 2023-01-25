@@ -1,7 +1,7 @@
 #ifndef KERNEL_H
 #define KERNEL_H
 
-#include <util/fifo.h>
+#include "strategies/util/wf_queue.h"
 
 #define GENODE
 #include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
@@ -13,7 +13,7 @@ namespace gpgpu_virt {
      * @class This class represents a kernel 
      * 
      */
-    class Kernel : public Genode::Fifo<Kernel>::Element
+    class Kernel : public util::WFQueue::Chain
     {
         private:
             struct kernel_config* kconf;
