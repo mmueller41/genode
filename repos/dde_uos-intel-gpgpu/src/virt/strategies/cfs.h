@@ -2,7 +2,7 @@
 #define CFS_H
 
 #include "cfs_entry.h"
-#include "util/rbtree.h"
+#include "util/guarded_rbtree.h"
 #include "../strategie.h"
 
 namespace gpgpu_virt {
@@ -19,8 +19,8 @@ namespace gpgpu_virt {
                 return (int)(&a - &b);
             }
         
-            util::RBTree<cfs_entry> rbt_ready;
-            util::RBTree<cfs_entry> rbt_idle;
+            util::Guarded_RBTree<cfs_entry> rbt_ready;
+            util::Guarded_RBTree<cfs_entry> rbt_idle;
             cfs_entry* _curr;
 
             CompletlyFair(const CompletlyFair &copy) = delete;

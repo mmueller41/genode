@@ -73,11 +73,8 @@ void Session_component::start_task(unsigned long kconf)
 		_global_sched->update_vgpu(&vgpu);
 	}
 
-	// trigger sched if its idle
-	if(_global_sched->is_idle())
-	{
-		_global_sched->handle_gpu_event();
-	}
+	// trigger sched
+	_global_sched->trigger();
 
 	/*static int id = 0;
 	Genode::log("Kernel ", id);

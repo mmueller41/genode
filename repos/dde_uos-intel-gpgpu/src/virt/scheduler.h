@@ -35,9 +35,6 @@ namespace gpgpu_virt {
             Scheduler& operator=(const Scheduler&) = delete;
             Scheduler& operator=(Scheduler&&) = delete;
 
-        public:
-            Scheduler() : strat(), _curr_vgpu(nullptr), idle(true) { }
-
             /**
              * @brief Switch to new vGPU's context
              * 
@@ -48,6 +45,9 @@ namespace gpgpu_virt {
                 // atm no preemption supported => do nothing here
                 (void)vgpu;
             }
+
+        public:
+            Scheduler() : strat(), _curr_vgpu(nullptr), idle(true) { }
 
             /**
              * @brief Implmentation for the handling of events from the GPU
@@ -89,6 +89,18 @@ namespace gpgpu_virt {
                 _global_gpgpu_genode->free(next);
             }
 
+            /**
+             * @brief 
+             * 
+             */
+            void trigger()
+            {
+                const bool b = __sync_lock_test_and_set(&idle, false);
+                if(b)
+                {
+                    handle_gpu_event();
+                }
+            }
 
             /**
              * @brief 
