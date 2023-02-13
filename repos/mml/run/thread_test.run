@@ -15,10 +15,12 @@ install_config {
             <service name="CAP"/>
             <service name="RM"/>
             <service name="SIGNAL"/>
+            <service name="TOPO"/>
         </parent-provides>
         <default-route>
             <any-service><parent/><any-child/></any-service>
         </default-route>
+        <affinity-space width="16" height="1"/> 
         <default caps="200"/>
         <start name="timer">
             <resource name="RAM" quantum="1M"/>
@@ -29,6 +31,7 @@ install_config {
         </start>
         <start name="thread_test">
             <resource name="RAM" quantum="10M"/>
+            <affinity xpos="0" ypos="0" width="8" height="1"/>
             <route>
                 <service name="Timer"> <child name="timer"/> </service>
                 <any-service><parent/><any-child/></any-service>
@@ -40,4 +43,5 @@ set boot_modules {
     core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so thread_test
 }
 build_boot_image $boot_modules
-append qemu_args "-nographic -m 64"
+append qemu_args "-nographic"
+run_genode_until forever

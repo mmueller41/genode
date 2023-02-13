@@ -62,6 +62,9 @@
 /* declare manually as it is a internal hack^Winterface */
 extern void wifi_kick_socketcall();
 
+extern bool _wifi_get_rfkill(void);
+extern bool _wifi_set_rfkill(bool);
+
 
 namespace Wifi {
 	struct Frontend;
@@ -330,7 +333,7 @@ struct Wifi::Frontend
 
 	/* remaining stuff */
 
-	Msg_buffer _msg { };
+	Msg_buffer &_msg;
 
 	Genode::Blockade _notify_blockade { };
 
@@ -343,7 +346,7 @@ struct Wifi::Frontend
 
 	void _handle_rfkill()
 	{
-		_rfkilled = wifi_get_rfkill();
+		_rfkilled = _wifi_get_rfkill();
 
 		/* re-enable scan timer */
 		if (!_rfkilled) {
@@ -407,7 +410,7 @@ struct Wifi::Frontend
 		 */
 		if (config.has_attribute("rfkill")) {
 			bool const blocked = config.attribute_value("rfkill", false);
-			wifi_set_rfkill(blocked);
+			_wifi_set_rfkill(blocked);
 
 			/*
 			 * In case we get blocked set rfkilled immediately to prevent
@@ -1534,9 +1537,10 @@ struct Wifi::Frontend
 	/**
 	 * Constructor
 	 */
-	Frontend(Genode::Env &env)
+	Frontend(Genode::Env &env, Msg_buffer &msg_buffer)
 	:
 		_ap_allocator(env.ram(), env.rm()),
+		_msg(msg_buffer),
 		_rfkill_handler(env.ep(), *this, &Wifi::Frontend::_handle_rfkill),
 		_config_rom(env, "wifi_config"),
 		_config_sigh(env.ep(), *this, &Wifi::Frontend::_handle_config_update),
@@ -1576,6 +1580,9 @@ struct Wifi::Frontend
 
 		/* read in list of APs */
 		_config_update(false);
+
+		/* get initial RFKILL state */
+		_handle_rfkill();
 
 		/* kick-off initial scanning */
 		_handle_scan_timer();
@@ -1619,13 +1626,6 @@ struct Wifi::Frontend
 	 * Used by the wpa_supplicant to wait for the front end.
 	 */
 	void block_for_processing() { _notify_lock_lock(); }
-
-	/**
-	 * Return shared memory message buffer
-	 *
-	 * Used for communication between front end and wpa_supplicant.
-	 */
-	Msg_buffer &msg_buffer() { return _msg; }
 };
 
 #endif /* _WIFI_FRONTEND_H_ */

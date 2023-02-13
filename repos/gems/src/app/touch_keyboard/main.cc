@@ -49,7 +49,7 @@ struct Touch_keyboard::Main : Sandbox::Local_service_base::Wakeup,
 	Registry<Child_state> _children { };
 
 	Child_state _menu_view_child_state { _children, "menu_view",
-	                                     Ram_quota { 4*1024*1024 },
+	                                     Ram_quota { 10*1024*1024 },
 	                                     Cap_quota { 200 } };
 	/**
 	 * Sandbox::State_handler
@@ -90,7 +90,7 @@ struct Touch_keyboard::Main : Sandbox::Local_service_base::Wakeup,
 	{
 		Input::Seq_number hover_seq { node.attribute_value("seq_number", 0U) };
 
-		node.with_sub_node("dialog", [&] (Xml_node const &dialog) {
+		node.with_optional_sub_node("dialog", [&] (Xml_node const &dialog) {
 			_dialog.handle_hover(hover_seq, dialog); });
 	}
 

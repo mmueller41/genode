@@ -21,6 +21,7 @@
 #include <session/session.h>
 #include <dataspace/capability.h>
 #include <pd_session/pd_session.h>
+#include <base/affinity.h>
 
 namespace Genode {
 
@@ -108,6 +109,14 @@ struct Genode::Cpu_session : Session
 	 * \param thread  capability of the thread to kill
 	 */
 	virtual void kill_thread(Thread_capability thread) = 0;
+
+	/**
+	 * Migrate a thread to a new location
+	 * 
+	 * \param thread 	capability of the thread to migrate
+	 * \param loc 		component-local location to migrate the thread to 
+	 */
+	virtual void migrate_thread(Thread_capability thread, Genode::Affinity::Location loc) = 0;
 
 	/**
 	 * Register default signal handler for exceptions
@@ -237,6 +246,7 @@ struct Genode::Cpu_session : Session
 	                 Capability<Pd_session>, Name const &, Affinity::Location,
 	                 Weight, addr_t);
 	GENODE_RPC(Rpc_kill_thread, void, kill_thread, Thread_capability);
+	GENODE_RPC(Rpc_migrate_thread, void, migrate_thread, Thread_capability, Affinity::Location);
 	GENODE_RPC(Rpc_exception_sigh, void, exception_sigh, Signal_context_capability);
 	GENODE_RPC(Rpc_affinity_space, Affinity::Space, affinity_space);
 	GENODE_RPC(Rpc_trace_control, Dataspace_capability, trace_control);
@@ -247,7 +257,7 @@ struct Genode::Cpu_session : Session
 
 	GENODE_RPC_INTERFACE(Rpc_create_thread, Rpc_kill_thread, Rpc_exception_sigh,
 	                     Rpc_affinity_space, Rpc_trace_control, Rpc_ref_account,
-	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu);
+	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu, Rpc_migrate_thread);
 };
 
 

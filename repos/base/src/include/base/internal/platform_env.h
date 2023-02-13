@@ -34,6 +34,7 @@
 #include <base/internal/expanding_pd_session_client.h>
 #include <base/internal/expanding_region_map_client.h>
 #include <base/internal/expanding_parent_client.h>
+#include <base/internal/expanding_topo_session_client.h>
 
 
 namespace Genode {
@@ -60,13 +61,15 @@ class Genode::Platform_env : public Platform_env_base
 			Expanding_pd_session_client  pd;
 			Expanding_cpu_session_client cpu;
 			Expanding_region_map_client  rm;
+			Expanding_topo_session_client topo;
 
 			Resources(Parent &parent)
 			:
 				pd (parent, request<Pd_session> (parent, Parent::Env::pd())),
 				cpu(parent, request<Cpu_session>(parent, Parent::Env::cpu()),
 				                                 Parent::Env::cpu()),
-				rm(parent, pd.rpc_cap(), pd.address_space(), Parent::Env::pd())
+				rm(parent, pd.rpc_cap(), pd.address_space(), Parent::Env::pd()),
+				topo(parent, request<Topo_session>(parent, Parent::Env::topo()), Parent::Env::topo())
 			{ }
 		};
 
@@ -107,6 +110,8 @@ class Genode::Platform_env : public Platform_env_base
 		Pd_session             *pd_session()      override { return &_resources.pd; }
 		Pd_session_capability   pd_session_cap()  override { return  _resources.pd.rpc_cap(); }
 		Region_map             *rm_session()      override { return &_resources.rm; }
+		Topo_session *topo_session() override { return &_resources.topo; }
+		Topo_session_capability topo_session_cap() override { return _resources.topo.rpc_cap();  }
 };
 
 #endif /* _INCLUDE__BASE__INTERNAL__PLATFORM_ENV_H_ */

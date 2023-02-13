@@ -175,7 +175,17 @@ void genode_wg_genl_family(struct genl_family * family)
 
 struct net_device * genode_wg_net_device(void)
 {
+	/*
+	 * We disable this warning because GCC complained about possible alignment
+	 * issues when returning a reference to the packed member as naturally
+	 * aligned pointer (for some reason only on arm_v8a). However, we know
+	 * that the member is aligned to NETDEV_ALIGN and that the warning is
+	 * therefor unnecessary.
+	 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
 	return &_genode_wg_net_dev.public_data;
+#pragma GCC diagnostic pop
 }
 
 void genode_wg_udp_tunnel_sock_cfg(struct udp_tunnel_sock_cfg * cfg)
@@ -210,10 +220,6 @@ _genode_wg_set_device(struct genl_info *info)
 }
 
 
-void genode_wg_arch_net_dev_init(struct net_device *net_dev,
-                                 int               *pcpu_refcnt);
-
-
 static void
 _genode_wg_config_add_dev(genode_wg_u16_t              listen_port,
                           const genode_wg_u8_t * const priv_key)
@@ -227,9 +233,8 @@ _genode_wg_config_add_dev(genode_wg_u16_t              listen_port,
 
 	/* prepare environment for the execution of 'wg_set_device' */
 	_genode_wg_net_dev.public_data.rtnl_link_ops = _genode_wg_rtnl_link_ops;
+	_genode_wg_net_dev.public_data.pcpu_refcnt = &_genode_wg_net_dev.pcpu_refcnt;
 	_genode_wg_net_dev.pcpu_refcnt = 0;
-	genode_wg_arch_net_dev_init(
-		&_genode_wg_net_dev.public_data, &_genode_wg_net_dev.pcpu_refcnt);
 
 	_genode_wg_sk_buff.sk = &_genode_wg_sock;
 	_genode_wg_sock.sk_user_data = &_genode_wg_net_dev.private_data;
@@ -265,7 +270,7 @@ _genode_wg_config_add_dev(genode_wg_u16_t              listen_port,
 
 	/* trigger execution of 'wg_open' */
 	_genode_wg_net_dev.public_data.netdev_ops->ndo_open(
-		&_genode_wg_net_dev.public_data);
+		genode_wg_net_device());
 }
 
 
@@ -317,7 +322,7 @@ _genode_wg_config_add_peer(genode_wg_u16_t              listen_port,
 
 	peer->flags.header.nla_type = WGPEER_A_FLAGS;
 	peer->flags.header.nla_len = sizeof(peer->flags);
-	peer->flags.data = 2; /* I don't know what this value means */
+	peer->flags.data = WGPEER_F_REPLACE_ALLOWEDIPS;
 
 	peer->allowedips.header.nla_len = sizeof(peer->allowedips);
 	peer->allowedips.header.nla_type = WGPEER_A_ALLOWEDIPS | NLA_F_NESTED;
@@ -347,11 +352,46 @@ _genode_wg_config_add_peer(genode_wg_u16_t              listen_port,
 
 
 static void
-_genode_wg_config_rm_peer(genode_wg_u16_t      listen_port,
-                          genode_wg_u8_t const endpoint_ip[4],
-                          genode_wg_u16_t      endpoint_port)
+_genode_wg_config_rm_peer(genode_wg_u8_t const *const pub_key)
 {
-	printk("%s not yet implemented\n", __func__);
+
+	struct genode_wg_nlattr_ifname ifname;
+	struct genode_wg_nlattr_peers peers;
+	struct nlattr *attrs[__WGDEVICE_A_LAST];
+	struct genl_info info;
+	struct genode_wg_nlattr_peer *peer = &peers.peer_0;
+
+	ifname.data[0] = '\0';
+	ifname.header.nla_len = sizeof(ifname);
+
+	memset(&peers, 0, sizeof(peers));
+
+	peers.header.nla_type = WGDEVICE_A_PEERS | NLA_F_NESTED;
+	peers.header.nla_len = sizeof(peers);
+
+	peer->header.nla_len = sizeof(*peer);
+	peer->header.nla_type |= NLA_F_NESTED;
+
+	peer->public_key.header.nla_type = WGPEER_A_PUBLIC_KEY;
+	peer->public_key.header.nla_len = sizeof(peer->public_key);
+	memcpy(peer->public_key.data, pub_key, sizeof(peer->public_key.data));
+
+	peer->endpoint.header.nla_type = WGPEER_A_ENDPOINT;
+	peer->endpoint.header.nla_len = sizeof(peer->endpoint);
+
+	peer->flags.header.nla_type = WGPEER_A_FLAGS;
+	peer->flags.header.nla_len = sizeof(peer->flags);
+	peer->flags.data = WGPEER_F_REMOVE_ME;
+
+	peer->allowedips.header.nla_len = sizeof(peer->allowedips);
+	peer->allowedips.header.nla_type = WGPEER_A_ALLOWEDIPS | NLA_F_NESTED;
+
+	memset(attrs, 0, sizeof(attrs));
+	attrs[WGDEVICE_A_IFNAME] = &ifname.header;
+	attrs[WGDEVICE_A_PEERS]  = &peers.header;
+
+	info.attrs = attrs;
+	_genode_wg_set_device(&info);
 }
 
 
@@ -452,12 +492,12 @@ void lx_user_init(void)
 	skb_init();
 
 	/* trigger execution of 'wg_setup' */
-	_genode_wg_rtnl_link_ops->setup(&_genode_wg_net_dev.public_data);
+	_genode_wg_rtnl_link_ops->setup(genode_wg_net_device());
 
 	/* trigger execution of 'wg_newlink' */
 	_genode_wg_rtnl_link_ops->newlink(
 		&_genode_wg_src_net,
-		&_genode_wg_net_dev.public_data,
+		genode_wg_net_device(),
 		 _genode_wg_tb,
 		 _genode_wg_data,
 		&_genode_wg_extack);

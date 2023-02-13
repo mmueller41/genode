@@ -36,7 +36,6 @@ int acpi_disabled = 0;
 
 void intel_wopcm_init_early(struct intel_wopcm * wopcm)
 {
-	wait_bit_init();
 	lx_emul_trace(__func__);
 }
 
@@ -215,6 +214,9 @@ void intel_gt_init_early(struct intel_gt * gt, struct drm_i915_private * i915)
 	init_llist_head(&gt->watchdog.list);
 
 	lx_emul_trace(__func__);
+
+	/* disable panel self refresh (required for FUJITSU S937/S938) */
+	i915->params.enable_psr = 0;
 }
 
 
@@ -242,7 +244,7 @@ void * memremap(resource_size_t offset, size_t size, unsigned long flags)
 {
 	lx_emul_trace(__func__);
 
-	return NULL;
+	return intel_io_mem_map(offset, size);
 }
 
 
@@ -259,3 +261,14 @@ void intel_vgpu_detect(struct drm_i915_private * dev_priv)
 
 	printk("disabling PPGTT to avoid GPU code paths\n");
 }
+
+
+/*
+ * taken from src/lib/wifi/lx_emul.c
+ */
+void kvfree_call_rcu(struct rcu_head * head,rcu_callback_t func)
+{
+	void *ptr = (void *) head - (unsigned long) func;
+	kvfree(ptr);
+}
+

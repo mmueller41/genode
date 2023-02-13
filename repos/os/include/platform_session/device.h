@@ -49,9 +49,9 @@ class Platform::Device : Interface, Noncopyable
 			return _cap.call<Device_interface::Rpc_irq>(index);
 		}
 
-		Io_mem_session_capability _io_mem(unsigned index, Range &range, Cache cache)
+		Io_mem_session_capability _io_mem(unsigned index, Range &range)
 		{
-			return _cap.call<Device_interface::Rpc_io_mem>(index, range, cache);
+			return _cap.call<Device_interface::Rpc_io_mem>(index, range);
 		}
 
 		Io_port_session_capability _io_port_range(unsigned index)
@@ -92,7 +92,7 @@ class Platform::Device::Mmio : Range, Attached_dataspace, public Genode::Mmio
 
 		Dataspace_capability _ds_cap(Device &device, unsigned id)
 		{
-			Io_mem_session_client io_mem(device._io_mem(id, *this, UNCACHED));
+			Io_mem_session_client io_mem(device._io_mem(id, *this));
 			return io_mem.dataspace();
 		}
 
@@ -117,6 +117,8 @@ class Platform::Device::Mmio : Range, Attached_dataspace, public Genode::Mmio
 
 		template <typename T>
 		T *local_addr() { return reinterpret_cast<T *>(_local_addr()); }
+
+		Dataspace_capability cap() { return Attached_dataspace::cap(); }
 };
 
 

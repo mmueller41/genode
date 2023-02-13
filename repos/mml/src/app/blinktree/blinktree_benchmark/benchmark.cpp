@@ -1,9 +1,12 @@
 #include "benchmark.h"
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <json.hpp>
 #include <memory>
 #include <mx/memory/global_heap.h>
+#include <mx/system/topology.h>
+#include <base/log.h>
 
 using namespace application::blinktree_benchmark;
 
@@ -55,6 +58,9 @@ void Benchmark::start()
         this->_request_scheduler.clear();
     }
 
+    auto *start_task = mx::tasking::runtime::new_task<StartMeasurementTask>(0U, *this);
+    mx::tasking::runtime::spawn(*start_task, 0U);
+
     // Create one request scheduler per core.
     for (auto core_index = 0U; core_index < this->_cores.current().size(); core_index++)
     {
@@ -71,10 +77,9 @@ void Benchmark::start()
     {
         mx::tasking::runtime::profile(this->profile_file_name());
     }
-#ifdef PERF_SUPPORT
-    this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
-                             this->_current_iteration + 1, this->_cores.current());
-#endif
+    /*his->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
+                             this->_current_iteration + 1, this->_cores.current());*/
+    //Genode::log("Timer started ");
 }
 
 const mx::util::core_set &Benchmark::core_set()
@@ -113,29 +118,35 @@ void Benchmark::requests_finished()
     if (open_requests == 0U) // All request schedulers are done.
     {
         // Stop and print time (and performance counter).
-        //const auto result = this->_chronometer.stop(this->_workload.size());
+        const auto result = this->_chronometer.stop(this->_workload.size());
         mx::tasking::runtime::stop();
-        //std::cout << result << std::endl;
 
+        //_end = Genode::Trace::timestamp();
+
+        //std::cout << result << std::endl;
+        //if (mx::system::topology::core_id() == 0)
+        //std::cout << result << "\t " << (_end - _start) << " cycles" << std::endl;
+        std::cout << result.to_json().dump() << std::endl;
+        
+
+          //  std::cout << result << std::endl;
         // Dump results to file.
         if (this->_result_file_name.empty() == false)
         {
-            std::ofstream result_file_stream(this->_result_file_name, std::ofstream::app);
+            //std::ofstream result_file_stream(this->_result_file_name, std::ofstream::app);
             //result_file_stream << result.to_json().dump() << std::endl;
         }
 
         // Dump statistics to file.
         if constexpr (mx::tasking::config::task_statistics())
         {
-            if (this->_statistic_file_name.empty() == false)
+            /*if (this->_statistic_file_name.empty() == false)
             {
                 std::ofstream statistic_file_stream(this->_statistic_file_name, std::ofstream::app);
                 nlohmann::json statistic_json;
-#ifdef PERF_SUPPORT
                 statistic_json["iteration"] = result.iteration();
                 statistic_json["cores"] = result.core_count();
                 statistic_json["phase"] = result.phase();
-#endif
                 statistic_json["scheduled"] = nlohmann::json();
                 statistic_json["scheduled-on-channel"] = nlohmann::json();
                 statistic_json["scheduled-off-channel"] = nlohmann::json();
@@ -147,7 +158,6 @@ void Benchmark::requests_finished()
                 {
                     const auto core_id = std::int32_t{this->_cores.current()[i]};
                     const auto core_id_string = std::to_string(core_id);
-#ifdef PERF_SUPPORT
                     statistic_json["scheduled"][core_id_string] =
                         result.scheduled_tasks(core_id) / double(result.operation_count());
                     statistic_json["scheduled-on-core"][core_id_string] =
@@ -162,11 +172,10 @@ void Benchmark::requests_finished()
                         result.executed_writer_tasks(core_id) / double(result.operation_count());
                     statistic_json["fill"][core_id_string] =
                         result.worker_fills(core_id) / double(result.operation_count());
-#endif
                 }
 
                 statistic_file_stream << statistic_json.dump(2) << std::endl;
-            }
+            }*/
         }
 
         // Check and print the tree.
@@ -184,11 +193,11 @@ void Benchmark::requests_finished()
             this->_workload == benchmark::phase::MIXED || this->_workload.empty(benchmark::phase::MIXED);
 
         // Dump the tree.
-        if (this->_tree_file_name.empty() == false && is_last_phase)
+        /*if (this->_tree_file_name.empty() == false && is_last_phase)
         {
             std::ofstream tree_file_stream(this->_tree_file_name);
             tree_file_stream << static_cast<nlohmann::json>(*(this->_tree)).dump() << std::endl;
-        }
+        }*/
 
         // Delete the tree to free the hole memory.
         if (is_last_phase)

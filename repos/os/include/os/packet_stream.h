@@ -444,13 +444,13 @@ class Genode::Packet_descriptor_receiver
 			return packet;
 		}
 
-		bool rx_wakeup()
+		bool rx_wakeup(bool omit_signal)
 		{
 			Genode::Mutex::Guard mutex_guard(_rx_queue_mutex);
 
 			bool signal_submitted = false;
 
-			if (_rx_wakeup_needed) {
+			if (_rx_wakeup_needed && !omit_signal) {
 				_tx_ready.submit();
 				signal_submitted = true;
 			}
@@ -639,6 +639,10 @@ class Genode::Packet_stream_source : private Packet_stream_base
 		class Saturated_submit_queue : Exception { };
 		class Empty_ack_queue        : Exception { };
 
+		enum class Alloc_packet_error { FAILED };
+
+		using Alloc_packet_result = Attempt<Packet_descriptor, Alloc_packet_error>;
+
 		/**
 		 * Constructor
 		 *
@@ -727,6 +731,29 @@ class Genode::Packet_stream_source : private Packet_stream_base
 		}
 
 		/**
+		 * Allocate packet without throwing exceptions
+		 *
+		 * \param size   size of packet in bytes
+		 * \param align  alignment of packet as log2 value, default is 1 byte
+		 * \return       an Attempt object that either contains an error or a
+		 *               packet descriptor with an assigned range within the
+		 *               bulk buffer shared between source and sink
+		 */
+		Alloc_packet_result alloc_packet_attempt(Genode::size_t size, unsigned align = PACKET_ALIGNMENT)
+		{
+			if (size == 0)
+				return Packet_descriptor(0, 0);
+
+			return _packet_alloc.alloc_aligned(size, align).convert<Alloc_packet_result>(
+
+				[&] (void *base) {
+					return Packet_descriptor((Genode::off_t)base, size); },
+
+				[&] (Allocator::Alloc_error) {
+					return Alloc_packet_error::FAILED; });
+		}
+
+		/**
 		 * Get pointer to the content of the specified packet
 		 *
 		 * \throw Packet_descriptor::Invalid_packet  raise an exception if
@@ -772,12 +799,13 @@ class Genode::Packet_stream_source : private Packet_stream_base
 		 * Wake up the packet sink if needed
 		 *
 		 * This method assumes that the same signal handler is used for
-		 * the submit transmitter and the ack receiver.
+		 * the submit transmitter and the ack receiver. The ack receiver is not
+		 * signalled if the submit transmitter was already signalled.
 		 */
 		void wakeup()
 		{
-			/* submit only one signal */
-			_submit_transmitter.tx_wakeup() || _ack_receiver.rx_wakeup();
+			/* submit only one signal, prefer submit transmitter over ack receiver */
+			_ack_receiver.rx_wakeup(_submit_transmitter.tx_wakeup());
 		}
 
 		/**
@@ -930,12 +958,13 @@ class Genode::Packet_stream_sink : private Packet_stream_base
 		 * Wake up the packet source if needed
 		 *
 		 * This method assumes that the same signal handler is used for
-		 * the submit receiver and the ack transmitter.
+		 * the submit receiver and the ack transmitter. The submit receiver
+		 * is not signalled if the ack transmitter was already signalled.
 		 */
 		void wakeup()
 		{
-			/* submit only one signal */
-			_submit_receiver.rx_wakeup() || _ack_transmitter.tx_wakeup();
+			/* submit only one signal, prefer ack_avail signal over ready_to_submit */
+			_submit_receiver.rx_wakeup(_ack_transmitter.tx_wakeup());
 		}
 
 		/**

@@ -16,6 +16,8 @@
 
 /* core includes */
 #include <ram_dataspace_factory.h>
+#include <platform_generic.h>
+#include <platform.h>
 
 using namespace Genode;
 
@@ -144,6 +146,14 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	return static_cap_cast<Ram_dataspace>(ds_cap);
 }
 
+Ram_allocator::Alloc_result Ram_dataspace_factory::try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cached=CACHED)
+{
+	Ram_dataspace_factory::Phys_range old = {_phys_range.start, _phys_range.end};
+	_phys_range = {platform_specific().mem_range(numa_id).start, platform_specific().mem_range(numa_id).end};
+	Ram_allocator::Alloc_result result = Ram_dataspace_factory::try_alloc(size, cached);
+	_phys_range = {old.start, old.end};
+	return result;
+}
 
 void Ram_dataspace_factory::free(Ram_dataspace_capability ds_cap)
 {

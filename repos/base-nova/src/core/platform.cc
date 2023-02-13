@@ -312,8 +312,6 @@ Platform::Platform()
 	if (hip.api_version != 8)
 		nova_die();
 
-	/* determine number of available CPUs */
-	_cpus = setup_affinity_space(hip);
 
 	/* register UTCB of main thread */
 	__main_thread_utcb = (Utcb *)(__initial_sp - get_page_size());
@@ -338,6 +336,8 @@ Platform::Platform()
 	/*
 	 * Now that we can access the I/O ports for comport 0, printf works...
 	 */
+	/* determine number of available CPUs */
+	_cpus = setup_affinity_space(hip);
 
 	/*
 	 * Mark successful boot of hypervisor for automatic tests. This must be
@@ -370,7 +370,7 @@ Platform::Platform()
 		      " vs ", sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]));
 		nova_die();
 	}
-	if (!hip.remap_cpu_ids(map_cpu_ids, (unsigned)boot_cpu())) {
+	if (!hip.remap_cpu_ids(map_cpu_ids, cpu_numa_map, (unsigned)boot_cpu())) {
 		error("re-ording cpu_id failed");
 		nova_die();
 	}
@@ -404,6 +404,8 @@ Platform::Platform()
 	/* initialize core allocators */
 	size_t const num_mem_desc = (hip.hip_length - hip.mem_desc_offset)
 	                            / hip.mem_desc_size;
+
+	log("HIP is ", hip.hip_length, " bytes long.");
 
 	addr_t mem_desc_base = ((addr_t)&hip + hip.mem_desc_offset);
 
@@ -477,6 +479,8 @@ Platform::Platform()
 	bool efi_boot = false;
 	size_t kernel_memory = 0;
 
+	log("Found ", num_mem_desc, " memory entries in HIP");
+	memset(numa_mem_ranges, 0, sizeof(Genode::Range_allocator::Range) * MAX_SUPPORTED_CPUS);
 	/*
 	 * All "available" ram must be added to our physical allocator before all
 	 * non "available" regions that overlaps with ram get removed.
@@ -497,7 +501,7 @@ Platform::Platform()
 			uint64_t const base = mem_desc->addr;
 			uint64_t const size = mem_desc->size;
 			log("detected physical memory: ", Hex(base, Hex::PREFIX, Hex::PAD),
-			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD));
+			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD), " - node: ", mem_desc->domain, " type: ", static_cast<uint8_t>(mem_desc->type));
 		}
 
 		if (!mem_desc->size) continue;
@@ -519,6 +523,11 @@ Platform::Platform()
 
 		_io_mem_alloc.remove_range((addr_t)base, (size_t)size);
 		ram_alloc().add_range((addr_t)base, (size_t)size);
+		log("Add mem range ", reinterpret_cast<void*>(base), "-", reinterpret_cast<void*>(base + size), " for node ", mem_desc->domain);
+		if (numa_mem_ranges[mem_desc->domain].start == 0)
+			numa_mem_ranges[mem_desc->domain] = {base, base + size};
+		else if (base > numa_mem_ranges[mem_desc->domain].end)
+			numa_mem_ranges[mem_desc->domain].end = base + size;
 	}
 
 	addr_t hyp_log = 0;
@@ -647,17 +656,19 @@ Platform::Platform()
 
 	_init_rom_modules();
 
-	auto export_pages_as_rom_module = [&] (auto rom_name, size_t pages, auto content_fn)
+	auto export_pages_as_rom_module = [&](auto rom_name, size_t pages, auto content_fn)
 	{
 		size_t const bytes = pages << get_page_size_log2();
 		ram_alloc().alloc_aligned(bytes, get_page_size_log2()).with_result(
 
-			[&] (void *phys_ptr) {
-
+			[&](void *phys_ptr)
+			{
+				log("Allocated mem for ROM module succefully.");
 				addr_t const phys_addr = reinterpret_cast<addr_t>(phys_ptr);
 				char * const core_local_ptr = (char *)_map_pages(phys_addr, pages);
 
-				if (!core_local_ptr) {
+				if (!core_local_ptr)
+				{
 					warning("failed to export ", rom_name, " as ROM module");
 					ram_alloc().free(phys_ptr, bytes);
 					return;
@@ -667,32 +678,39 @@ Platform::Platform()
 				content_fn(core_local_ptr, bytes);
 
 				_rom_fs.insert(new (core_mem_alloc())
-				               Rom_module(phys_addr, bytes, rom_name));
+								   Rom_module(phys_addr, bytes, rom_name));
+				log("ROM succesfully inserted.");
 
 				/* leave the ROM backing store mapped within core */
 			},
 
-			[&] (Range_allocator::Alloc_error) {
-				warning("failed to allocate physical memory for exporting ",
-				        rom_name, " as ROM module"); });
+			[&](Range_allocator::Alloc_error)
+			{ warning("failed to allocate physical memory for exporting ",
+					  rom_name, " as ROM module"); });
 	};
 
-	export_pages_as_rom_module("platform_info", 1,
-		[&] (char * const ptr, size_t const size) {
-			Xml_generator xml(ptr, size, "platform_info", [&] ()
-			{
+	export_pages_as_rom_module("platform_info", 1 + (MAX_SUPPORTED_CPUS / 32),
+							   [&](char *const ptr, size_t const size)
+							   {
+								   log("Exporting platform info as ROM module");
+								   Xml_generator xml(ptr, size, "platform_info", [&]()
+													 {
+				log("Report kernel");
 				xml.node("kernel", [&] () {
 					xml.attribute("name", "nova");
 					xml.attribute("acpi", true);
 					xml.attribute("msi" , true);
 				});
-				if (efi_sys_tab_phy) {
+				if (efi_sys_tab_phy)
+				{
+				log("Report EFI system table");
 					xml.node("efi-system-table", [&] () {
 						xml.attribute("address", String<32>(Hex(efi_sys_tab_phy)));
 					});
 				}
 				xml.node("acpi", [&] () {
 
+				log("Report ACPI");
 					xml.attribute("revision", 2); /* XXX */
 
 					if (rsdt)
@@ -701,11 +719,15 @@ Platform::Platform()
 					if (xsdt)
 						xml.attribute("xsdt", String<32>(Hex(xsdt)));
 				});
+
+				log("Report Affinity-space");
 				xml.node("affinity-space", [&] () {
 					xml.attribute("width", _cpus.width());
 					xml.attribute("height", _cpus.height());
 				});
-				xml.node("boot", [&] () {
+				log("Report boot framebuffer");
+				xml.node("boot", [&]()
+						 {
 					if (!boot_fb)
 						return;
 
@@ -719,20 +741,26 @@ Platform::Platform()
 						xml.attribute("bpp",    Resolution::Bpp::get(boot_fb->size));
 						xml.attribute("type",   Resolution::Type::get(boot_fb->size));
 						xml.attribute("pitch",  boot_fb->aux);
-					});
-				});
+					}); });
+				log("Report Hardware");
 				xml.node("hardware", [&] () {
+					log("Report HW features");
 					xml.node("features", [&] () {
 						xml.attribute("svm", hip.has_feature_svm());
 						xml.attribute("vmx", hip.has_feature_vmx());
 					});
+					log("Report TSC");
 					xml.node("tsc", [&] () {
 						xml.attribute("invariant", cpuid_invariant_tsc());
 						xml.attribute("freq_khz" , hip.tsc_freq);
 					});
-					xml.node("cpus", [&] () {
-						hip.for_each_enabled_cpu([&](Hip::Cpu_desc const &cpu, unsigned i) {
-							xml.node("cpu", [&] () {
+					log("Report CPUs");
+					xml.node("cpus", [&]()
+							 {  
+					hip.for_each_enabled_cpu([&](Hip::Cpu_desc const &cpu, unsigned i)
+											 { 	
+															xml.node("cpu", [&]()
+																   {
 								xml.attribute("id",       i);
 								xml.attribute("package",  cpu.package);
 								xml.attribute("core",     cpu.core);
@@ -741,19 +769,16 @@ Platform::Platform()
 								xml.attribute("model",    String<5>(Hex(cpu.model)));
 								xml.attribute("stepping", String<5>(Hex(cpu.stepping)));
 								xml.attribute("platform", String<5>(Hex(cpu.platform)));
-								xml.attribute("patch",    String<12>(Hex(cpu.patch)));
-							});
-						});
-					});
-				});
-			});
-		}
-	);
+								xml.attribute("patch",    String<12>(Hex(cpu.patch))); }); }); });
+				}); });
+								   log("Exported platform info, succesfully.");
+							   });
 
 	export_pages_as_rom_module("core_log", 4,
-		[&] (char * const ptr, size_t const size) {
-			init_core_log( Core_log_range { (addr_t)ptr, size } );
-	});
+							   [&](char *const ptr, size_t const size)
+							   {
+								   init_core_log(Core_log_range{(addr_t)ptr, size});
+							   });
 
 	/* export hypervisor log memory */
 	if (hyp_log && hyp_log_size)
@@ -782,7 +807,7 @@ Platform::Platform()
 				                          cpu->core, ":", cpu->thread);
 
 			log(" remap (", location.xpos(), "x", location.ypos(),") -> ",
-			    kernel_cpu_id, " - ", text, ") ",
+			    kernel_cpu_id, " - ", text, " node: ", cpu->numa_id, ") ",
 			    boot_cpu() == kernel_cpu_id ? "boot cpu" : "");
 		});
 	}

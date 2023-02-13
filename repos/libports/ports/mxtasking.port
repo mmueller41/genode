@@ -3,7 +3,7 @@ DOWNLOADS := mxtasking.git
 VERSION := git
 
 URL(mxtasking) := https://github.com/mmueller41/mxtasking.git
-REV(mxtasking) := e734ffd0d824634818fe30b356632501b7956595 
+REV(mxtasking) := bfc90d4dcf88b7072c76d70e897cb4072f399248 
 DIR(mxtasking) := src/lib/mxtasking
 
 DIRS += include/mx/memory
@@ -16,6 +16,7 @@ DIRS += include/mx/resource
 DIRS += include/mx/tasking
 DIRS += include/mx/tasking/profiling
 DIRS += include/mx/tasking
+DIRS += include
 
 DIR_CONTENT(include/mx/memory) += src/lib/mxtasking/src/mx/memory/tagged_ptr.h
 DIR_CONTENT(include/mx/memory) += src/lib/mxtasking/src/mx/memory/config.h
@@ -62,4 +63,6 @@ DIR_CONTENT(include/mx/tasking/profiling) += src/lib/mxtasking/src/mx/tasking/pr
 DIR_CONTENT(include/mx/tasking/profiling) += src/lib/mxtasking/src/mx/tasking/profiling/statistic.h
 DIR_CONTENT(include/mx/tasking) += src/lib/mxtasking/src/mx/tasking/channel_occupancy.h
 DIR_CONTENT(include/mx/tasking) += src/lib/mxtasking/src/mx/tasking/task_buffer.h
+DIR_CONTENT(include) += src/lib/mxtasking/lib/json.hpp
+DIR_CONTENT(include) += src/lib/mxtasking/lib/argparse.hpp
 

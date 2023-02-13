@@ -318,6 +318,8 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 
 		Alloc_result try_alloc(size_t, Cache) override;
 
+		Alloc_result try_alloc(size_t, Ram_allocator::Numa_id, Cache) override;
+
 		void free(Ram_dataspace_capability) override;
 
 		size_t dataspace_size(Ram_dataspace_capability) const override;

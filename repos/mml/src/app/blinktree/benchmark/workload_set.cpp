@@ -39,7 +39,9 @@ void NumericWorkloadSet::build(const std::string &fill_workload_file, const std:
         return contains_update;
     };
 
-    /*std::thread fill_thread{[this, &out_mutex, &parse, &fill_workload_file]() {
+//    std::mutex out_mutex;
+
+    std::thread fill_thread{[this, &parse, &fill_workload_file]() {
         std::ifstream fill_file(fill_workload_file);
         if (fill_file.good())
         {
@@ -47,18 +49,18 @@ void NumericWorkloadSet::build(const std::string &fill_workload_file, const std:
         }
         else
         {
-            std::lock_guard lock{out_mutex};
+            //std::lock_guard lock{out_mutex};
             std::cerr << "Could not open workload file '" << fill_workload_file << "'." << std::endl;
         }
-    }};*/
-    Genode::Mutex out_mutex;
+    }};
+    //Genode::Mutex out_mutex;
 
-    Fill_thread fill_thread(_env, out_mutex, fill_workload_file, parse, *this);
+//    Fill_thread fill_thread(_env, out_mutex, fill_workload_file, parse, *this);
 
-    fill_thread.start();
+//    fill_thread.start();
 
 
-    /*std::thread mixed_thread{[this, &out_mutex, &parse, &mixed_workload_file]() {
+    std::thread mixed_thread{[this, &parse, &mixed_workload_file]() {
         std::ifstream mixed_file(mixed_workload_file);
         if (mixed_file.good())
         {
@@ -67,13 +69,13 @@ void NumericWorkloadSet::build(const std::string &fill_workload_file, const std:
         }
         else
         {
-            std::lock_guard lock{out_mutex};
+            //std::lock_guard lock{out_mutex};
             std::cerr << "Could not open workload file '" << mixed_workload_file << "'." << std::endl;
         }
-    }};*/
+    }};
 
-    Mixed_thread mixed_thread(_env, out_mutex, mixed_workload_file, parse, *this);
-    mixed_thread.start();
+    //Mixed_thread mixed_thread(_env, out_mutex, mixed_workload_file, parse, *this);
+    //mixed_thread.start();
 
     fill_thread.join();
     mixed_thread.join();

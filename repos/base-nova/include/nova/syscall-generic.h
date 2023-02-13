@@ -108,6 +108,7 @@ namespace Nova {
 			uint64_t const size;
 			Type     const type;
 			uint32_t const aux;
+			uint32_t const domain;
 		};
 
 		uint32_t const signature;   /* magic value 0x41564f4e */
@@ -143,6 +144,7 @@ namespace Nova {
 			uint8_t platform:3;
 			uint8_t reserved:1;
 			uint32_t patch;
+			uint8_t numa_id;
 		} __attribute__((packed));
 
 		unsigned cpu_max() const {
@@ -175,7 +177,7 @@ namespace Nova {
 		/**
 		 * Map kernel cpu ids to virtual cpu ids.
 		 */
-		bool remap_cpu_ids(uint8_t *map_cpus, unsigned const boot_cpu) const {
+		bool remap_cpu_ids(uint8_t *map_cpus, uint8_t *cpu_numa_map, unsigned const boot_cpu) const {
 			unsigned const num_cpus = cpus();
 			unsigned cpu_i = 0;
 
@@ -193,17 +195,18 @@ namespace Nova {
 				for (uint8_t core = 0; core < 255; core++) {
 					for (uint8_t thread = 0; thread < 255; thread++) {
 						for (unsigned i = 0; i < cpu_max(); i++) {
-							if (i == boot_cpu || !is_cpu_enabled(i))
+							if (i == boot_cpu || !is_cpu_enabled(i)) 
 								continue;
 
 							Cpu_desc const * const c = cpu_desc_of_cpu(i);
-							if (!c)
+							if (!c) 
 								continue;
 
 							if (!(c->package == package && c->core == core &&
 							      c->thread == thread))
 								continue;
 
+							cpu_numa_map[i] = c->numa_id;
 							map_cpus[cpu_i++] = (uint8_t)i;
 							if (cpu_i >= num_cpus)
 								return true;
@@ -256,6 +259,30 @@ namespace Nova {
 	 * Pd operations
 	 */
 	enum Pd_op { TRANSFER_QUOTA = 0U, PD_DEBUG = 2U };
+
+	class Gsi_flags
+	{
+		private:
+
+			uint8_t _value { 0 };
+
+		public:
+
+			enum Mode { HIGH, LOW, EDGE };
+
+			Gsi_flags() { }
+
+			Gsi_flags(Mode m)
+			{
+				switch (m) {
+				case HIGH: _value = 0b110; break; /* level-high */
+				case LOW:  _value = 0b111; break; /* level-low */
+				case EDGE: _value = 0b100; break; /* edge-triggered */
+				}
+			}
+
+			uint8_t value() const { return _value; }
+	};
 
 
 	class Descriptor
@@ -516,7 +543,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)

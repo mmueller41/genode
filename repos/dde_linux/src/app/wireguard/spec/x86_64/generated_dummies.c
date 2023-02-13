@@ -1,7 +1,7 @@
 /*
  * \brief  Dummy definitions of Linux Kernel functions
  * \author Automatically generated file - do no edit
- * \date   2022-01-25
+ * \date   2022-07-19
  */
 
 #include <lx_emul.h>
@@ -31,41 +31,9 @@ const char * __clk_get_name(const struct clk * clk)
 }
 
 
-#include <net/icmp.h>
-
-void __icmp_send(struct sk_buff * skb_in,int type,int code,__be32 info,const struct ip_options * opt)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <net/ipv6.h>
 
 int __ipv6_addr_type(const struct in6_addr * addr)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/irqdomain.h>
-
-struct irq_domain * __irq_domain_add(struct fwnode_handle * fwnode,int size,irq_hw_number_t hwirq_max,int direct_max,const struct irq_domain_ops * ops,void * host_data)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/irqdomain.h>
-
-struct irq_desc * __irq_resolve_mapping(struct irq_domain * domain,irq_hw_number_t hwirq,unsigned int * irq)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/netdevice.h>
-
-void __netif_napi_del(struct napi_struct * napi)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -134,21 +102,6 @@ void ack_bad_irq(unsigned int irq)
 }
 
 
-extern int cpu_has_xfeatures(u64 xfeatures_needed,const char ** feature_name);
-int cpu_has_xfeatures(u64 xfeatures_needed,const char ** feature_name)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <crypto/internal/skcipher.h>
-
-int crypto_register_skciphers(struct skcipher_alg * algs,int count)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
 #include <linux/netdevice.h>
 
 struct net_device * dev_get_by_index(struct net * net,int ifindex)
@@ -171,6 +124,11 @@ asmlinkage __visible void dump_stack(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
+
+
+#include <linux/interrupt.h>
+
+bool force_irqthreads;
 
 
 #include <linux/netdevice.h>
@@ -323,9 +281,9 @@ int ipv6_chk_addr(struct net * net,const struct in6_addr * addr,const struct net
 }
 
 
-#include <linux/irqdomain.h>
+#include <linux/interrupt.h>
 
-void irq_domain_free_irqs_common(struct irq_domain * domain,unsigned int virq,unsigned int nr_irqs)
+int irq_can_set_affinity(unsigned int irq)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -338,9 +296,9 @@ bool irq_fpu_usable(void)
 }
 
 
-#include <linux/irqdomain.h>
+#include <linux/interrupt.h>
 
-void irq_set_default_host(struct irq_domain * domain)
+int irq_set_affinity(unsigned int irq,const struct cpumask * cpumask)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -397,22 +355,17 @@ int kstrtoll(const char * s,unsigned int base,long long * res)
 }
 
 
-#include <linux/rcutiny.h>
+#include <linux/preempt.h>
 
-void kvfree(const void * addr)
+void migrate_disable(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
 
 
-#include <linux/delay.h>
+#include <linux/preempt.h>
 
-unsigned long lpj_fine;
-
-
-#include <linux/netdevice.h>
-
-void napi_disable(struct napi_struct * n)
+void migrate_enable(void)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -429,6 +382,14 @@ void netif_carrier_off(struct net_device * dev)
 #include <linux/gfp.h>
 
 void page_frag_free(void * addr)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#include <linux/percpu_counter.h>
+
+void percpu_counter_add_batch(struct percpu_counter * fbc,s64 amount,s32 batch)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -490,17 +451,9 @@ void skb_set_owner_w(struct sk_buff * skb,struct sock * sk)
 }
 
 
-#include <crypto/internal/skcipher.h>
+#include <linux/smp.h>
 
-int skcipher_walk_done(struct skcipher_walk * walk,int err)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <crypto/internal/skcipher.h>
-
-int skcipher_walk_virt(struct skcipher_walk * walk,struct skcipher_request * req,bool atomic)
+int smp_call_function_single(int cpu,smp_call_func_t func,void * info,int wait)
 {
 	lx_emul_trace_and_stop(__func__);
 }
@@ -594,3 +547,4 @@ void wake_q_add_safe(struct wake_q_head * head,struct task_struct * task)
 {
 	lx_emul_trace_and_stop(__func__);
 }
+

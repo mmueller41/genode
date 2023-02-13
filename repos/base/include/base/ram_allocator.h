@@ -40,6 +40,8 @@ struct Genode::Ram_allocator : Interface
 
 	struct Denied : Exception { };
 
+	typedef unsigned Numa_id;
+
 	/**
 	 * Allocate RAM dataspace
 	 *
@@ -50,6 +52,7 @@ struct Genode::Ram_allocator : Interface
 	 * \return capability to RAM dataspace, or error code of type 'Alloc_error'
 	 */
 	virtual Alloc_result try_alloc(size_t size, Cache cache = CACHED) = 0;
+	virtual Alloc_result try_alloc(size_t size, Numa_id numa_id, Cache cache = CACHED) = 0;
 
 	/**
 	 * Allocate RAM dataspace
@@ -152,6 +155,10 @@ class Genode::Constrained_ram_allocator : public Ram_allocator
 				[&] () -> Result {
 					return Alloc_error::OUT_OF_RAM; }
 			);
+		}
+
+		Alloc_result try_alloc(size_t size, Numa_id, Cache cache = CACHED) override {
+			return this->Constrained_ram_allocator::try_alloc(size, cache); /* overriden in platform specific code */
 		}
 
 		void free(Ram_dataspace_capability ds) override

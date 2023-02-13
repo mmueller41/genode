@@ -21,13 +21,17 @@ set config {
             <service name="IO_MEM"/>
             <service name="IO_PORT"/>
             <service name="RM"/>
+            <service name="TOPO"/>
         </parent-provides>
+        <affinity-space width="64" height="1"/> 
         <default-route>
             <any-service><parent/><any-child/></any-service>
         </default-route>
         <default caps="200"/>
         <start name="timer">
-            <resource name="RAM" quantum="1M"/>
+            <resource name="RAM" quantum="8M"/>
+            <!--<resource name="CPU" quantum="10"/>-->
+            <affinity xpos="0" ypos="0" width="1" height="1"/>
             <provides><service name="Timer"/></provides>
             <route>
                 <any-service><parent/><any-child/></any-service>
@@ -35,11 +39,11 @@ set config {
         </start>
 }
 
-append_platform_drv_config
-
 append config {
-        <start name="blinktree">
-            <resource name="RAM" quantum="8000M"/>
+        <start name="blinktree" caps="1000">
+            <affinity xpos="1" ypos="0" width="63" height="1"/>
+            <resource name="RAM" quantum="240G"/>
+            <!--<resource name="CPU" quantum="90"/>-->
             <route>
                 <service name="Timer"> <child name="timer"/> </service>
                 <any-service> <parent/> <any-child/> </any-service>
@@ -64,10 +68,11 @@ append config {
 install_config $config
 
 set boot_modules { 
-    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so blinktree fill_randint_workloada mixed_randint_workloada
+    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so posix.lib.so blinktree fill_randint_workloada mixed_randint_workloada
 }
 
 append_platform_drv_boot_modules
 
 build_boot_image $boot_modules
-append qemu_args "-nographic -m 64"
+append qemu_args "-nographic"
+run_genode_until forever

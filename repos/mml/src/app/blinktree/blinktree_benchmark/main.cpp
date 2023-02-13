@@ -1,12 +1,14 @@
 #include "benchmark.h"
 #include <argparse.hpp>
 #include <benchmark/cores.h>
+#include <mx/memory/global_heap.h>
 #include <mx/system/environment.h>
 //#include <mx/system/thread.h>
 #include <mx/tasking/runtime.h>
 #include <mx/util/core_set.h>
 #include <tuple>
 #include <libc/component.h>
+#include <cstring>
 
 using namespace application::blinktree_benchmark;
 
@@ -27,6 +29,7 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env& env, in
  *
  * @return Return code of the application.
  */
+extern "C" void wait_for_continue();
 int bt_main(Libc::Env &env, int count_arguments, char **arguments)
 {
     if (mx::system::Environment::is_numa_balancing_enabled())
@@ -39,14 +42,18 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
     {
         return 1;
     }
+    Genode::log("Using system allocator = ", (use_system_allocator? "true" : "false"));
 
     mx::util::core_set cores{};
 
+    //cores = benchmark->core_set();
     while ((cores = benchmark->core_set()))
     {
-        mx::tasking::runtime_guard _(use_system_allocator, cores, prefetch_distance);
+        mx::tasking::runtime_guard _(false, cores, prefetch_distance);
         benchmark->start();
+        //wait_for_continue();
     }
+    Genode::log("Benchmark finished.");
 
     delete benchmark;
 
@@ -157,20 +164,27 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, in
     if (argument_parser.get<bool>("--latched"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::Latch;
+        Genode::log("Set synchronization method to latch");
     }
     else if (argument_parser.get<bool>("--olfit"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::OLFIT;
+        Genode::log("Set synchronization method to OLFIT");
     }
     else if (argument_parser.get<bool>("--sync4me"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::None;
+        Genode::log("Set synchronization method to None");
+    } else {
+        Genode::log("Set synchronization method to Queue");
     }
 
+    Genode::log("Isolation level ", (isolation_level == mx::synchronization::isolation_level::Exclusive) ? "exclusive readers/writers" : "exclusive writers/parallel readers");
+
     // Create the benchmark.
-    Genode::Heap _heap{env.ram(), env.rm()};
+    //Genode::Heap _heap{env.ram(), env.rm()};
     auto *benchmark =
-        new (_heap) Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
+        new  Benchmark(env, std::move(cores), argument_parser.get<std::uint16_t>("-i"), std::move(workload_files[0]),
                       std::move(workload_files[1]), argument_parser.get<bool>("-p"), isolation_level,
                       preferred_synchronization_method, argument_parser.get<bool>("--print-stats"),
                       argument_parser.get<bool>("--disable-check") == false, argument_parser.get<std::string>("-o"),
@@ -184,11 +198,17 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
-    char *args[] = {"blinktree_benchmark", "1:4"};
+    mx::memory::GlobalHeap::myself();
+    std::uint16_t cores = env.cpu().affinity_space().total();
+
+    char cores_arg[10];
+    snprintf(cores_arg, 9, "1:%d", cores);
+
+    char *args[] = {"blinktree_benchmark", "-i", "4", "-pd", "3", cores_arg};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree benchmark" << std::endl;
-                        bt_main(env, 2, args); 
+                        bt_main(env, 6, args); 
                     });
 }

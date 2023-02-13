@@ -22,7 +22,7 @@ void Genode::Core_log::out(char const c)
 {
 	enum { CLOCK = 0, BAUDRATE = 115200 };
 
-	static X86_uart uart(Bios_data_area::singleton()->serial_port(),
+	static X86_uart uart(0x3f8/*Bios_data_area::singleton()->serial_port()*/,
 	                     CLOCK, BAUDRATE);
 	if (c == '\n')
 		uart.put_char('\r');

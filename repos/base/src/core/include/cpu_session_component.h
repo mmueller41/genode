@@ -169,6 +169,7 @@ class Genode::Cpu_session_component : public  Session_object<Cpu_session>,
 		Thread_capability create_thread(Capability<Pd_session>, Name const &,
 		                                Affinity::Location, Weight, addr_t) override;
 		void kill_thread(Thread_capability) override;
+		void migrate_thread(Thread_capability, Affinity::Location) override;
 		void exception_sigh(Signal_context_capability) override;
 		Affinity::Space affinity_space() const override;
 		Dataspace_capability trace_control() override;

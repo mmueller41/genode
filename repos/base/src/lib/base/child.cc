@@ -759,7 +759,7 @@ void Child::_try_construct_env_dependent_members()
 {
 	/* check if the environment sessions are complete */
 	if (!_pd.cap().valid() || !_cpu.cap().valid() || !_log.cap().valid()
-	 || !_binary.cap().valid())
+	 || !_binary.cap().valid() || !_topo.cap().valid())
 		return;
 
 	/*
@@ -824,6 +824,7 @@ void Child::initiate_env_sessions()
 	_cpu   .initiate();
 	_log   .initiate();
 	_binary.initiate();
+	_topo.initiate();
 
 	/*
 	 * Issue environment-session request for obtaining the linker binary. We
@@ -909,6 +910,7 @@ void Child::close_all_sessions()
 	 * Issue close requests to the providers of the environment sessions,
 	 * which may be async services.
 	 */
+	_topo.close();
 	_log.close();
 	_binary.close();
 	if (_linker.constructed())
@@ -923,6 +925,7 @@ void Child::close_all_sessions()
 	_discard_env_session(Env::log());
 	_discard_env_session(Env::binary());
 	_discard_env_session(Env::linker());
+	_discard_env_session(Env::topo());
 
 	/*
 	 * Remove dynamically created sessions from the child's ID space.

@@ -1,6 +1,7 @@
 /*
  * \brief  Platform driver for x86
  * \author Norman Feske
+ * \author Christian Helmuth
  * \date   2008-01-28
  */
 
@@ -20,17 +21,26 @@
 #include "pci_session_component.h"
 #include "pci_device_config.h"
 #include "device_pd.h"
+#include "acpi_devices.h"
 
-namespace Platform { struct Main; };
+namespace Platform {
+	struct Main;
 
+	namespace Nonpci { void acpi_device_registry(Acpi::Device_registry &); }
+};
 
 struct Platform::Main
 {
+	Env &_env;
+
+	Heap _heap { _env.ram(), _env.rm() };
+
+	Acpi::Device_registry _acpi_device_registry { };
+
 	/*
 	 * Use sliced heap to allocate each session component at a separate
 	 * dataspace.
 	 */
-	Env &_env;
 	Sliced_heap sliced_heap { _env.ram(), _env.rm() };
 
 	Attached_rom_dataspace _config { _env, "config" };
@@ -67,13 +77,13 @@ struct Platform::Main
 
 			try {
 				Attached_rom_dataspace info { _env, "platform_info" };
-				info.xml().with_sub_node("kernel", [&] (Xml_node const &node) {
+				info.xml().with_optional_sub_node("kernel", [&] (Xml_node const &node) {
 					acpi_platform = node.attribute_value("acpi", acpi_platform);
 					msi_platform  = node.attribute_value("msi" , msi_platform);
 				});
 			} catch (...) { }
 
-			root.construct(_env, sliced_heap, _config,
+			root.construct(_env, _heap, sliced_heap, _config,
 			               acpi_rom->local_addr<const char>(), acpi_platform,
 			               msi_platform);
 		}
@@ -143,6 +153,8 @@ struct Platform::Main
 			root->generate_pci_report();
 			root->config_update();
 		}
+
+		_acpi_device_registry.init_devices(_heap, _config.xml());
 	}
 
 	Main(Env &env) : _env(env)
@@ -165,6 +177,8 @@ struct Platform::Main
 		config_update();
 		acpi_update();
 		system_update();
+
+		Nonpci::acpi_device_registry(_acpi_device_registry);
 	}
 };
 
@@ -174,7 +188,7 @@ void Platform::Main::_attempt_acpi_reset()
 	if (!acpi_rom.constructed())
 		return;
 
-	acpi_rom->xml().with_sub_node("reset", [&] (Xml_node reset) {
+	acpi_rom->xml().with_optional_sub_node("reset", [&] (Xml_node reset) {
 
 		uint16_t const io_port = reset.attribute_value("io_port", (uint16_t)0);
 		uint8_t  const value   = reset.attribute_value("value",   (uint8_t)0);

@@ -71,7 +71,8 @@ class Genode::Parent
 			static Client::Id log()     { return { 3 }; }
 			static Client::Id binary()  { return { 4 }; }
 			static Client::Id linker()  { return { 5 }; }
-			static Client::Id last()    { return { 5 }; }
+			static Client::Id topo() 	{ return { 6 }; }
+			static Client::Id last()    { return { 6 }; }
 
 			/**
 			 * True if session ID refers to an environment session
