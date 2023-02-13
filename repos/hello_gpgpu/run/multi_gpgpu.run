@@ -37,6 +37,7 @@ append config {
 			<service name="LOG"/>
 			<service name="RAM"/>
 			<service name="CAP"/>
+            <service name="TOPO"/>
 		</parent-provides>
 		<default-route>
 			<any-service> <parent/> <any-child/> </any-service>

@@ -162,6 +162,7 @@ proc platform_drv_config {} {
 			<service name="PD">     <parent/> </service>
 			<service name="RM">     <parent/> </service>
 			<service name="CPU">    <parent/> </service>
+			<service name="TOPO">    <parent/> </service>
 			<service name="ROM">    <parent/> </service>}
 
 		append_if [expr {[acpi_drv_name] eq "acpica"}] drv_config {
@@ -202,6 +203,7 @@ proc platform_drv_config {} {
 			<service name="PD">     <parent/> </service>
 			<service name="CPU">    <parent/> </service>
 			<service name="ROM">    <parent/> </service>
+			<service name="TOPO">    <parent/> </service>
 		</route>
 	</start>}
 
