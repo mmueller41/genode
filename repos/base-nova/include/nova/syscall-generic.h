@@ -3,7 +3,8 @@
  * \author Norman Feske
  * \author Sebastian Sumpf
  * \author Alexander Boettcher
- * \date   2009-12-27
+ * \author Michael Müller
+ * \date   2022-12-13
  */
 
 /*
@@ -133,11 +134,19 @@ namespace Nova {
 		bool has_feature_svm() const { return feature_flags & (1 << 2); }
 
 		struct Cpu_desc {
+			enum Vendor
+			{
+				UNKNOWN,
+				INTEL,
+				AMD
+			};
+
 			uint8_t flags;
 			uint8_t thread;
 			uint8_t core;
 			uint8_t package;
 			uint8_t acpi_id;
+			uint8_t vendor;
 			uint8_t family;
 			uint8_t model;
 			uint8_t stepping:4;
@@ -246,8 +255,6 @@ namespace Nova {
 		EC_RESCHEDULE = 3U,
 		EC_MIGRATE = 4U,
 		EC_TIME = 5U,
-		EC_RDMSR = 6U,
-		EC_WRMSR = 7U,
 	};
 
 	enum Sc_op {
@@ -255,6 +262,19 @@ namespace Nova {
 		SC_TIME_CROSS  = 1,
 		SC_TIME_KILLED = 2,
 		SC_EC_TIME     = 3,
+	};
+
+	/**
+	 * Hpc operations
+	 * 
+	 */
+	enum Hpc_op
+	{
+		HPC_SETUP = 6U,
+		HPC_START = 7U,
+		HPC_STOP = 8U,
+		HPC_RESET = 9U,
+		HPC_READ = 10U,
 	};
 
 	/**
@@ -545,7 +565,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)
