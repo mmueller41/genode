@@ -22,16 +22,14 @@ Benchmark::Benchmark(Libc::Env &env, benchmark::Cores &&cores, const std::uint16
       _result_file_name(std::move(result_file_name)), _statistic_file_name(std::move(statistic_file_name)),
       _tree_file_name(std::move(tree_file_name)), _profile(profile), _workload(env)
 {
-#ifdef PERF_SUPPORT
     if (use_performance_counter)
     {
         this->_chronometer.add(benchmark::Perf::CYCLES);
         this->_chronometer.add(benchmark::Perf::INSTRUCTIONS);
-        this->_chronometer.add(benchmark::Perf::STALLS_MEM_ANY);
+        //this->_chronometer.add(benchmark::Perf::STALLS_MEM_ANY);
         this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_NTA);
         this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_WRITE);
     }
-#endif
     std::cout << "core configuration: \n" << this->_cores.dump(2) << std::endl;
 
     this->_workload.build(fill_workload_file, mixed_workload_file);
@@ -117,7 +115,18 @@ void Benchmark::requests_finished()
 
     if (open_requests == 0U) // All request schedulers are done.
     {
+        std::uint16_t core_id = mx::system::topology::core_id();
+        if (core_id != 0)
+        {
+            this->_open_requests++;
+            auto *stop_task = mx::tasking::runtime::new_task<StopMeasurementTask>(0U, *this);
+            stop_task->annotate(static_cast<mx::tasking::TaskInterface::channel>(0));
+            mx::tasking::runtime::spawn(*stop_task, core_id);
+            return;
+        }
+
         // Stop and print time (and performance counter).
+        //Genode::log("Stopping timer");
         const auto result = this->_chronometer.stop(this->_workload.size());
         mx::tasking::runtime::stop();
 
@@ -126,7 +135,7 @@ void Benchmark::requests_finished()
         //std::cout << result << std::endl;
         //if (mx::system::topology::core_id() == 0)
         //std::cout << result << "\t " << (_end - _start) << " cycles" << std::endl;
-        std::cout << result.to_json().dump() << std::endl;
+        std::cout << "core: " << mx::system::topology::core_id() << result.to_json().dump() << std::endl;
         
 
           //  std::cout << result << std::endl;
