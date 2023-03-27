@@ -9,6 +9,7 @@
 #include <tuple>
 #include <libc/component.h>
 #include <cstring>
+#include <cstdio>
 
 using namespace application::blinktree_benchmark;
 
@@ -202,13 +203,13 @@ void Libc::Component::construct(Libc::Env &env) {
     std::uint16_t cores = env.cpu().affinity_space().total();
 
     char cores_arg[10];
-    snprintf(cores_arg, 9, "1:%d", cores);
+    sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_benchmark", "-i", "4", "-pd", "3", cores_arg};
+    char *args[] = {"blinktree_benchmark", "-i", "4", "-pd", "3", "-p", cores_arg};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree benchmark" << std::endl;
-                        bt_main(env, 6, args); 
+                        bt_main(env, 7, args); 
                     });
 }
