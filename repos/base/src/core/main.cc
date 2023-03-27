@@ -286,7 +286,7 @@ int main()
 	size_t const avail_ram_quota = core_pd.avail_ram().value;
 	size_t const avail_cap_quota = core_pd.avail_caps().value;
 
-	size_t const preserved_ram_quota = 224*1024;
+	size_t const preserved_ram_quota = 224*1024+(1<<20);
 	size_t const preserved_cap_quota = 1000;
 
 	if (avail_ram_quota < preserved_ram_quota) {
