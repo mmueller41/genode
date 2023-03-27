@@ -20,6 +20,7 @@
 #include <base/affinity.h>
 #include <base/heap.h>
 #include <topo_session/topo_session.h>
+#include <platform.h>
 #include <topo_session/node.h>
 
 namespace Genode {
@@ -32,7 +33,7 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
         Genode::Affinity &_affinity;
         Sliced_heap _md_alloc;
         
-        Topology::Numa_region _node_affinities[64][64];
+        Topology::Numa_region _node_affinities[Genode::Platform::MAX_SUPPORTED_CPUS][Genode::Platform::MAX_SUPPORTED_CPUS];
         unsigned _node_count;
         Topology::Numa_region _nodes[64];
 
