@@ -82,6 +82,5 @@ Genode::uint64_t Genode::Trace::Performance_counter::read(unsigned counter)
     if ((rc = Nova::hpc_read(sel, type, value)) != Nova::NOVA_OK)
         throw  Genode::Trace::Pfc_access_error(rc);
 
-    Genode::log("Performance_counter::read = ", value);
     return static_cast<Genode::uint64_t>(value);
 }

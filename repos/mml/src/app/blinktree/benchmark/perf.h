@@ -56,7 +56,6 @@ public:
         try {
             Genode::Trace::Performance_counter::start(_counter);
             _prev.value = static_cast<std::uint64_t>(Genode::Trace::Performance_counter::read(_counter));
-            std::cout << "PMC " << _name << " prev.value=" << _prev.value << std::endl;
         }
         catch (Genode::Trace::Pfc_access_error &e)
         {
@@ -71,7 +70,6 @@ public:
             _data.value = Genode::Trace::Performance_counter::read(_counter);
             Genode::Trace::Performance_counter::stop(_counter);
             Genode::Trace::Performance_counter::reset(_counter);
-            std::cout << "PMC " << _name << " data.value=" << _data.value << std::endl;
         }
         catch (Genode::Trace::Pfc_access_error &e)
         {
@@ -84,7 +82,6 @@ public:
 
     [[nodiscard]] double read() const
     {
-        std::cout << "PMC " << _name << " value: " << (_data.value - _prev.value) << std::endl;
         return static_cast<double>(_data.value - _prev.value);
     }
 
