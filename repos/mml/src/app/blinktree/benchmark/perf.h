@@ -1,12 +1,11 @@
 #pragma once
 #include <algorithm>
-#include <asm/unistd.h>
 #include <cstring>
-#include <linux/perf_event.h> // TODO: Find Genode equivalent
+#include <iostream>
 #include <string>
-#include <sys/ioctl.h>
-#include <unistd.h>
 #include <vector>
+#include <base/trace/perf.h>
+
 
 /*
  * For more Performance Counter take a look into the Manual from Intel:
@@ -28,46 +27,62 @@ namespace benchmark {
 class PerfCounter
 {
 public:
-    PerfCounter(std::string &&name, const std::uint64_t type, const std::uint64_t event_id) : _name(std::move(name))
+    PerfCounter(std::string &&name, const Genode::Trace::Performance_counter::Type type, const std::uint64_t event_id, const std::uint64_t mask) : _name(std::move(name)), _type(type), _event_id(static_cast<Genode::uint64_t>(event_id)), _mask(static_cast<Genode::uint64_t>(mask))
     {
-        /*std::memset(&_perf_event_attribute, 0, sizeof(perf_event_attr));
-        _perf_event_attribute.type = type;
-        _perf_event_attribute.size = sizeof(perf_event_attr);
-        _perf_event_attribute.config = event_id;
-        _perf_event_attribute.disabled = true;
-        _perf_event_attribute.inherit = 1;
-        _perf_event_attribute.exclude_kernel = false;
-        _perf_event_attribute.exclude_hv = false;
-        _perf_event_attribute.read_format = PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING;*/
+        
     }
 
     ~PerfCounter() = default;
 
     bool open()
     {
-        /*_file_descriptor = syscall(__NR_perf_event_open, &_perf_event_attribute, 0, -1, -1, 0);*/
-        return _file_descriptor >= 0;
+        try {
+            _counter = Genode::Trace::Performance_counter::acquire(_type);
+        } catch (Genode::Trace::Pfc_no_avail) {
+            std::cerr << "Failed to open performance counters." << std::endl;
+        }
+
+        try {
+            Genode::Trace::Performance_counter::setup(_counter, _event_id, _mask, (_type == Genode::Trace::Performance_counter::Type::CORE ? 0x30000 : 0x550f000000000000));
+        } catch (Genode::Trace::Pfc_access_error &e) {
+            std::cerr << "Error while setting up performance counter: " << e.error_code() << std::endl;
+        }
+
+        return _counter >= 0;
     }
 
     bool start()
     {
-        //ioctl(_file_descriptor, PERF_EVENT_IOC_RESET, 0);
-        //ioctl(_file_descriptor, PERF_EVENT_IOC_ENABLE, 0);
-        return ::read(_file_descriptor, &_prev, sizeof(read_format)) == sizeof(read_format);
+        try {
+            Genode::Trace::Performance_counter::start(_counter);
+            _prev.value = static_cast<std::uint64_t>(Genode::Trace::Performance_counter::read(_counter));
+        }
+        catch (Genode::Trace::Pfc_access_error &e)
+        {
+            std::cerr << "Failed to start counter: " << e.error_code() << std::endl;
+        }
+        return _prev.value >= 0;
     }
 
     bool stop()
     {
-        //const auto is_read = ::read(_file_descriptor, &_data, sizeof(read_format)) == sizeof(read_format);
-        //ioctl(_file_descriptor, PERF_EVENT_IOC_DISABLE, 0);
-        return false; // is_read;
+        try {
+            _data.value = Genode::Trace::Performance_counter::read(_counter);
+            Genode::Trace::Performance_counter::stop(_counter);
+            Genode::Trace::Performance_counter::reset(_counter);
+        }
+        catch (Genode::Trace::Pfc_access_error &e)
+        {
+            std::cerr << "Failed to stop counter: " << e.error_code() << std::endl;
+        }
+        // const auto is_read = ::read(_file_descriptor, &_data, sizeof(read_format)) == sizeof(read_format);
+        // ioctl(_file_descriptor, PERF_EVENT_IOC_DISABLE, 0);
+        return _data.value >= 0; // is_read;
     }
 
     [[nodiscard]] double read() const
     {
-        const auto multiplexing_correction = static_cast<double>(_data.time_enabled - _prev.time_enabled) /
-                                             static_cast<double>(_data.time_running - _prev.time_running);
-        return static_cast<double>(_data.value - _prev.value) * multiplexing_correction;
+        return static_cast<double>(_data.value - _prev.value);
     }
 
     [[nodiscard]] const std::string &name() const { return _name; }
@@ -84,8 +99,10 @@ private:
     };
 
     const std::string _name;
-    std::int32_t _file_descriptor = -1;
-    //perf_event_attr _perf_event_attribute{};
+    Genode::Trace::Performance_counter::Type _type;
+    Genode::uint64_t _event_id;
+    Genode::uint64_t _mask;
+    Genode::Trace::Performance_counter::Counter _counter;
     read_format _prev{};
     read_format _data{};
 };
@@ -101,11 +118,11 @@ public:
     [[maybe_unused]] static PerfCounter L1_MISSES;
     [[maybe_unused]] [[maybe_unused]] static PerfCounter LLC_MISSES;
     [[maybe_unused]] static PerfCounter LLC_REFERENCES;
-    [[maybe_unused]] static PerfCounter STALLED_CYCLES_BACKEND;
-    [[maybe_unused]] static PerfCounter STALLS_MEM_ANY;
+    //[[maybe_unused]] static PerfCounter STALLED_CYCLES_BACKEND;
+    //[[maybe_unused]] static PerfCounter STALLS_MEM_ANY;
     [[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_NTA;
-    [[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_T0;
-    [[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_T1_T2;
+    //[[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_T0;
+    //[[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_T1_T2;
     [[maybe_unused]] static PerfCounter SW_PREFETCH_ACCESS_WRITE;
 
     Perf() noexcept = default;

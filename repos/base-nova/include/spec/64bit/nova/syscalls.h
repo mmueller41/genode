@@ -253,6 +253,36 @@ namespace Nova {
 		return util_time(NOVA_EC_CTRL, ec, Ec_op::EC_TIME, time);
 	}
 
+	ALWAYS_INLINE
+	inline uint8_t hpc_ctrl(Hpc_op op, mword_t sel, mword_t type, mword_t &p1, mword_t &p2, mword_t &p3)
+	{
+		uint8_t res = syscall_6(NOVA_EC_CTRL, op, sel, type, p1, p2, p3);
+		return res;
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_read(mword_t sel, mword_t type, mword_t &value)
+	{
+		return syscall_5(NOVA_EC_CTRL, HPC_READ, sel, type, value);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_start(mword_t sel, mword_t type)
+	{
+		return syscall_1(NOVA_EC_CTRL, HPC_START, sel, type);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_stop(mword_t sel, mword_t type)
+	{
+		return syscall_1(NOVA_EC_CTRL, HPC_STOP, sel, type);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_reset(mword_t sel, mword_t type, mword_t val)
+	{
+		return syscall_2(NOVA_EC_CTRL, HPC_RESET, sel, type, val);
+	}
 
 	ALWAYS_INLINE
 	inline uint8_t create_sc(mword_t sc, mword_t pd, mword_t ec, Qpd qpd)
