@@ -55,13 +55,13 @@ append config {
 append_platform_drv_config
 
 append config {
-    <start name="gpgpu">
+    <start name="gpgpu" priority="0">
 		<provides> <service name="gpgpu"/> </provides>
-        <resource name="RAM" quantum="8192M"/>
+        <resource name="RAM" quantum="8G"/>
     </start>
 	<start name="hello_gpgpu1">
 		<binary name="hello_gpgpu"/>
-		<resource name="RAM" quantum="2048M"/>
+		<resource name="RAM" quantum="512M"/>
 		<config bench="1">
 			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
@@ -69,8 +69,40 @@ append config {
 	</start>
 	<start name="hello_gpgpu2">
 		<binary name="hello_gpgpu"/>
-		<resource name="RAM" quantum="2048M"/>
-		<config bench="2">
+		<resource name="RAM" quantum="512M"/>
+		<config bench="1">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="hello_gpgpu3">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="512M"/>
+		<config bench="1">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="hello_gpgpu4">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="512M"/>
+		<config bench="1">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="hello_gpgpu5">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="512M"/>
+		<config bench="1">
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="hello_gpgpu6">
+		<binary name="hello_gpgpu"/>
+		<resource name="RAM" quantum="512M"/>
+		<config bench="1">
 			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
 		</config>

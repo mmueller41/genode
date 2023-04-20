@@ -50,7 +50,7 @@ append_platform_drv_config
 append config {
     <start name="gpgpu">
 		<provides> <service name="gpgpu"/> </provides>
-        <resource name="RAM" quantum="32M"/>
+        <resource name="RAM" quantum="512M"/>
     </start>
 </config>}
 
@@ -64,5 +64,5 @@ append_platform_drv_boot_modules
 build_boot_image $boot_modules
 
 # qemu stuff
-append qemu_args "-nographic -m 256"
+append qemu_args "-nographic -m 1G"
 run_genode_until {This is the UOS Intel GPGPU End!.*\n} 10
