@@ -84,12 +84,6 @@ public:
     /**
      * @brief 
      * 
-     */
-    void testRPC();
-
-    /**
-     * @brief 
-     * 
      * @param kconf 
      */
     void enqueue_task(struct kernel_config* kconf);

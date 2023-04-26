@@ -18,19 +18,10 @@ extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 namespace gpgpu_virt {
 
-int Session_component::say_hello(int& i)
-{
-	Genode::log("Hello from uos-intel-gpgpu!");
-	Genode::log("Here is your number: ", i);
-	i = 64; // change it by ref
-	Genode::log("I changed it into ", i);
-	return 42;
-}
-
 void Session_component::print_vgpu_bench(unsigned long i)
 {
 	vgpu.print_vgpu_bench(i);
-};
+}
 
 void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {

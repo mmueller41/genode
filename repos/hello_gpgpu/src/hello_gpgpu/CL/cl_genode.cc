@@ -33,14 +33,6 @@ void cl_genode::free(void* addr)
     allocator.free(addr);
 }
 
-void cl_genode::testRPC()
-{
-	int i = 42;
-	Genode::log("send number ref with RPC: ", i);
-	int ret = backend_driver.say_hello(i);
-	Genode::log("got number back from RPC: ", ret, "; number ref: ", i);
-}
-
 void cl_genode::enqueue_task(struct kernel_config* kconf)
 {
     // convert virt vm addr to offset
@@ -64,9 +56,7 @@ void cl_genode::wait(struct kernel_config* kconf)
     }
 }
 
-
 void cl_genode::print_vgpu_bench(unsigned long i)
 {
     backend_driver.print_vgpu_bench(i);
 }
-

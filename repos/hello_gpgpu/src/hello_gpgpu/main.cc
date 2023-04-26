@@ -46,10 +46,6 @@ struct hello_gpgpu
 		cl_genode clg(env, size);
 		clInitGenode(clg);
 
-		// test RPCs
-		Genode::log("===Test RPC===");
-		clg.testRPC();
-		
 		// run the test and hope the best
 		Genode::log("===Test GPU===");
 		{

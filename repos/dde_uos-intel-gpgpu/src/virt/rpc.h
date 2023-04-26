@@ -21,8 +21,6 @@ struct Session_component : Genode::Rpc_object<Session>
 
 	~Session_component();
 
-	int say_hello(int& i) override;
-
 	void register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override;
 
 	void start_task(unsigned long kconf) override;
