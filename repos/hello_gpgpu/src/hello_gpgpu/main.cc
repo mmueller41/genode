@@ -42,7 +42,7 @@ struct hello_gpgpu
 	{
 		// init CL env
 		Genode::log("===Init VM===");
-		const unsigned long size = 0x10000000;
+		const unsigned long size = 0x40000000;
 		cl_genode clg(env, size);
 		clInitGenode(clg);
 

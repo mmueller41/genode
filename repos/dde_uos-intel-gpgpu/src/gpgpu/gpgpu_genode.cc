@@ -24,7 +24,7 @@ void gpgpu_genode::handleInterrupt()
 gpgpu_genode::gpgpu_genode(Env& e) : env(e), heap{ e.ram(), e.rm() }, alloc(&heap), ram_cap(), mapped_base(0), base(0), pci(e), dev(), prev_dev(), irq(nullptr), dispatcher(env.ep(), *this, &gpgpu_genode::handleInterrupt)
 {
     // size of avaible memory for allocator
-    const unsigned long size = 0x1000 * 0x1000 * 4;
+    const unsigned long size = 0x10000000;
 
     // allocate chunk of ram
     size_t donate = size;
