@@ -1,7 +1,7 @@
 #include "gpgpu_genode.h"
 
 #define GENODE // use genodes stdint header
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include <driver/gpgpu_driver.h>
 
 #include "../virt/scheduler.h"
 extern gpgpu_virt::GPGPUScheduler* _global_sched;

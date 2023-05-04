@@ -12,8 +12,8 @@
 
 // driver
 #define GENODE
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
-#include "../uos-intel-gpgpu/driver/ppgtt32.h"
+#include <driver/gpgpu_driver.h>
+#include <driver/ppgtt32.h>
 
 namespace gpgpu_virt {
 

@@ -4,7 +4,7 @@
 #include "strategies/util/wf_queue.h"
 
 #define GENODE
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include <driver/gpgpu_driver.h>
 #include <base/fixed_stdint.h>
 
 namespace gpgpu_virt {

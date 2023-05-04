@@ -14,7 +14,7 @@ extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 // driver
 #define GENODE // use genodes stdint header
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include <driver/gpgpu_driver.h>
 
 namespace gpgpu_virt {
 

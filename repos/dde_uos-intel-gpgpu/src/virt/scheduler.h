@@ -19,7 +19,7 @@ extern gpgpu::gpgpu_genode* _global_gpgpu_genode;
 
 // driver
 #define GENODE
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include <driver/gpgpu_driver.h>
 
 namespace gpgpu_virt {
 

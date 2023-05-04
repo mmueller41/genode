@@ -4,12 +4,12 @@
 #include "../virt/scheduler.h"
 
 #define GENODE // use genodes stdint header
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
+#include <driver/gpgpu_driver.h>
 #include "gpgpu_genode.h"
 
 //#define TEST // test stubs only (works with qemu)
 #ifdef TEST
-#include "../uos-intel-gpgpu/stubs.h"
+#include <stubs.h>
 #else
 #include "test.h"
 #endif // TEST

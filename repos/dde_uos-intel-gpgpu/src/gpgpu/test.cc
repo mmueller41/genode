@@ -1,6 +1,6 @@
 #define GENODE // use genodes stdint header
-#include "../uos-intel-gpgpu/driver/gpgpu_driver.h"
-#include "../uos-intel-gpgpu/stubs.h"
+#include <driver/gpgpu_driver.h>
+#include <stubs.h>
 
 #define ELEMENTS 4096
 
