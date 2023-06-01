@@ -20,6 +20,7 @@
 #include <core_mem_alloc.h>
 #include <address_space.h>
 #include <base/allocator.h>
+#include <nova/syscall-generic.h>
 
 namespace Genode {
 
@@ -51,8 +52,12 @@ namespace Genode {
 
 			/* map of virtual cpu ids in Genode to kernel cpu ids */
 			uint8_t map_cpu_ids[MAX_SUPPORTED_CPUS];
+
+			/* map of virtual cpu ids in Genode to kernel NUMA ids */
 			uint8_t cpu_numa_map[MAX_SUPPORTED_CPUS];
+			/* map of kernel NUMA region to Genode memory ranges */
 			Genode::Range_allocator::Range numa_mem_ranges[MAX_SUPPORTED_CPUS]; // TODO: Add new macro for max of numa regions
+
 
 			addr_t _map_pages(addr_t phys_page, addr_t pages,
 			                  bool guard_page = false);
@@ -163,6 +168,17 @@ namespace Genode {
 						fn(location);
 					}
 				}
+			}
+
+			/**
+			 * @brief Return NUMA-interal vendor code for CPU
+			 * 
+			 */
+			Nova::Hip::Cpu_desc::Vendor cpu_vendor() {
+				extern addr_t __initial_sp;
+				Nova::Hip const &hip = *(Nova::Hip *)__initial_sp;
+
+				return static_cast<Nova::Hip::Cpu_desc::Vendor>(hip.cpu_desc_of_cpu(0)->vendor);
 			}
 	};
 }

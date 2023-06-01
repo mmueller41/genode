@@ -82,6 +82,11 @@ class Genode::Ram_dataspace_factory : public Ram_allocator,
 		 */
 		void _clear_ds(Dataspace_component &ds);
 
+		/**
+		 * Remove core-local mappings of dataspace
+		 */
+		void _unmap_ds_from_core(Dataspace_component &ds);
+
 	public:
 
 		Ram_dataspace_factory(Rpc_entrypoint  &ep,

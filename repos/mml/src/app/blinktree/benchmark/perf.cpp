@@ -6,29 +6,27 @@ using namespace benchmark;
  * Counter "Instructions Retired"
  * Counts when the last uop of an instruction retires.
  */
-[[maybe_unused]] PerfCounter Perf::INSTRUCTIONS = {"instr", PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS};
+[[maybe_unused]] PerfCounter Perf::INSTRUCTIONS = {"instr", Genode::Trace::Performance_counter::Type::CORE, 0xc0, 0x0};
 
 /**
  */
-[[maybe_unused]] PerfCounter Perf::CYCLES = {"cycles", PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES};
+[[maybe_unused]] PerfCounter Perf::CYCLES = {"cycles", Genode::Trace::Performance_counter::Type::CORE, 0x76, 0x0};
 
 /**
  */
-[[maybe_unused]] PerfCounter Perf::L1_MISSES = {"l1-miss", PERF_TYPE_HW_CACHE,
-                                                PERF_COUNT_HW_CACHE_L1D | (PERF_COUNT_HW_CACHE_OP_READ << 8) |
-                                                    (PERF_COUNT_HW_CACHE_RESULT_MISS << 16)};
+[[maybe_unused]] PerfCounter Perf::L1_MISSES = {"l1-miss", Genode::Trace::Performance_counter::Type::CORE, 0x43, 0x5b};
 
 /**
  * Counter "LLC Misses"
  * Accesses to the LLC in which the data is not present(miss).
  */
-[[maybe_unused]] PerfCounter Perf::LLC_MISSES = {"llc-miss", PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_MISSES};
+[[maybe_unused]] PerfCounter Perf::LLC_MISSES = {"llc-miss", Genode::Trace::Performance_counter::Type::CACHE, 0x6, 0xff};
 
 /**
  * Counter "LLC Reference"
  * Accesses to the LLC, in which the data is present(hit) or not present(miss)
  */
-[[maybe_unused]] PerfCounter Perf::LLC_REFERENCES = {"llc-ref", PERF_TYPE_HARDWARE, PERF_COUNT_HW_CACHE_REFERENCES};
+[[maybe_unused]] PerfCounter Perf::LLC_REFERENCES = {"llc-ref", Genode::Trace::Performance_counter::Type::CACHE, 0x4, 0xff};
 
 /**
  * Micro architecture "Skylake"
@@ -36,7 +34,7 @@ using namespace benchmark;
  * EventSel=A3H,UMask=14H, CMask=20
  * Execution stalls while memory subsystem has an outstanding load.
  */
-PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
+//PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
 
 /**
  * Micro architecture "Skylake"
@@ -44,7 +42,7 @@ PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
  * EventSel=32H,UMask=01H
  * Number of PREFETCHNTA instructions executed.
  */
-[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_NTA = {"sw-prefetch-nta", PERF_TYPE_RAW, 0x530132};
+[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_NTA = {"sw-prefetch-nta", Genode::Trace::Performance_counter::Type::CORE, 0x4b, 0x4};
 
 /**
  * Micro architecture "Skylake"
@@ -52,7 +50,7 @@ PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
  * EventSel=32H,UMask=02H
  * Number of PREFETCHT0 instructions executed.
  */
-[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_T0 = {"sw-prefetch-t0", PERF_TYPE_RAW, 0x530232};
+//[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_T0 = {"sw-prefetch-t0", Genode::Trace::Performance_counter::Type::CORE, 0x4b, };
 
 /**
  * Micro architecture "Skylake"
@@ -60,7 +58,7 @@ PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
  * EventSel=32H,UMask=04H
  * Number of PREFETCHT1 or PREFETCHT2 instructions executed.
  */
-[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_T1_T2 = {"sw-prefetch-t1t2", PERF_TYPE_RAW, 0x530432};
+//[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_T1_T2 = {"sw-prefetch-t1t2", PERF_TYPE_RAW, 0x530432};
 
 /**
  * Micro architecture "Skylake"
@@ -68,4 +66,4 @@ PerfCounter Perf::STALLS_MEM_ANY = {"memory-stall", PERF_TYPE_RAW, 0x145314a3};
  * EventSel=32H,UMask=08H
  * Number of PREFETCHW instructions executed.
  */
-[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_WRITE = {"sw-prefetch-w", PERF_TYPE_RAW, 0x530832};
+[[maybe_unused]] PerfCounter Perf::SW_PREFETCH_ACCESS_WRITE = {"sw-prefetch-w", Genode::Trace::Performance_counter::Type::CORE, 0x4b, 0x2};

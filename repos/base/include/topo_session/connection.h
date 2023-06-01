@@ -27,7 +27,7 @@ struct Genode::Topo_connection : Connection<Topo_session>, Topo_session_client
 {
     enum
     {
-        RAM_QUOTA = 262144
+        RAM_QUOTA = 2097152UL
     };
 
     Topo_connection(Env &env, const char *label = "", Affinity const &affinity = Affinity()) 

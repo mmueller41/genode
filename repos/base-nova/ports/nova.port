@@ -4,7 +4,7 @@ DOWNLOADS := nova.git
 
 # feature/numa branch
 URL(nova) := https://github.com/mmueller41/NOVA.git
-REV(nova) := 6479677bd61db47bcdcb4bd796566f83b9f655ef
+REV(nova) := 4707840843206d63f72ba9238756355d16b52be3
 DIR(nova) := src/kernel/nova
 
 PATCHES   := $(sort $(wildcard $(REP_DIR)/patches/*.patch))

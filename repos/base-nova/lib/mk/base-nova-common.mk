@@ -14,3 +14,4 @@ SRC_CC += stack_area_addr.cc
 SRC_CC += cap_map.cc
 SRC_CC += capability.cc
 SRC_CC += signal_transmitter.cc
+SRC_CC += perf.cc

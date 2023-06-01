@@ -1,0 +1,13 @@
+LICENSE := PD
+DOWNLOADS := libpfm4.git
+VERSION := git
+
+URL(libpfm4) := https://github.com/wcohen/libpfm4.git
+REV(libpfm4) := 8aaaf1747e96031a47ed6bd9337ff61a21f8cc64
+DIR(libpfm4) := src/lib/libpfm4
+
+DIRS += include
+DIRS += include/perfmon
+
+DIR_CONTENT(include) += src/lib/libpfm4/include/perfmon
+DIR_CONTENT(include/perfmon) += src/lib/libpfm4/include/perfmon/*.h 
