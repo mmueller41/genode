@@ -1,0 +1,214 @@
+<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+ <xs:include schemaLocation="base_types.xsd"/>
+
+ <xs:complexType name="template_service">
+  <xs:choice minOccurs="1" maxOccurs="3">
+   <xs:element name="parent"/>
+   <xs:element name="any-child"/>
+   <xs:element name="child">
+    <xs:complexType>
+     <xs:attribute name="name"  type="xs:string" />
+     <xs:attribute name="label" type="Session_label" />
+    </xs:complexType>
+   </xs:element>
+  </xs:choice>
+  <xs:attribute name="name"           type="xs:string" />
+  <xs:attribute name="label"          type="Session_label" />
+  <xs:attribute name="label_prefix"   type="Session_label" />
+  <xs:attribute name="label_suffix"   type="Session_label" />
+  <xs:attribute name="label_last"     type="Session_label" />
+  <xs:attribute name="unscoped_label" type="Session_label" />
+ </xs:complexType>
+
+ <xs:complexType name="template_route">
+  <xs:choice minOccurs="0" maxOccurs="unbounded">
+   <xs:element name="service"     type="template_service"/>
+   <xs:element name="any-service" type="template_service"/>
+  </xs:choice>
+ </xs:complexType>
+
+ <xs:element name="config">
+  <xs:complexType>
+   <xs:choice minOccurs="0" maxOccurs="unbounded">
+
+    <xs:element name="service">
+     <xs:complexType>
+      <xs:choice minOccurs="1" maxOccurs="unbounded">
+
+       <xs:element name="default-policy">
+        <xs:complexType>
+         <xs:choice minOccurs="1" maxOccurs="1">
+
+          <xs:element name="child">
+           <xs:complexType>
+            <xs:attribute name="name"  type="xs:string" />
+            <xs:attribute name="label" type="Session_label" />
+           </xs:complexType>
+          </xs:element><!-- child -->
+
+         </xs:choice>
+        </xs:complexType>
+       </xs:element><!-- default-policy -->
+
+       <xs:element name="policy">
+        <xs:complexType>
+         <xs:choice minOccurs="1" maxOccurs="1">
+
+          <xs:element name="child">
+           <xs:complexType>
+            <xs:attribute name="name"  type="xs:string" />
+            <xs:attribute name="label" type="Session_label" />
+           </xs:complexType>
+          </xs:element><!-- child -->
+
+         </xs:choice>
+         <xs:attribute name="label"          type="Session_label" />
+         <xs:attribute name="label_prefix"   type="Session_label" />
+         <xs:attribute name="label_suffix"   type="Session_label" />
+         <xs:attribute name="label_last"     type="Session_label" />
+         <xs:attribute name="unscoped_label" type="Session_label" />
+        </xs:complexType>
+       </xs:element><!-- policy -->
+
+      </xs:choice>
+      <xs:attribute name="name" type="xs:string" />
+     </xs:complexType>
+    </xs:element><!-- "service" -->
+
+    <xs:element name="affinity-space">
+     <xs:complexType>
+      <xs:attribute name="width"  type="xs:int" />
+      <xs:attribute name="height" type="xs:int" />
+     </xs:complexType>
+    </xs:element> <!-- "affinity-space" -->
+
+    <xs:element name="parent-provides">
+     <xs:complexType>
+      <xs:sequence>
+       <xs:element name="service" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+         <xs:attribute name="name" type="xs:string" />
+        </xs:complexType>
+       </xs:element>
+      </xs:sequence>
+     </xs:complexType>
+    </xs:element> <!-- "parent-provides" -->
+
+    <xs:element name="alias">
+     <xs:complexType>
+      <xs:attribute name="name"  type="xs:string" />
+      <xs:attribute name="child" type="xs:string" />
+     </xs:complexType>
+    </xs:element> <!-- "alias" -->
+
+    <xs:element name="default-route" type="template_route"/>
+
+    <xs:element name="default">
+     <xs:complexType>
+      <xs:attribute name="caps" type="xs:int" />
+     </xs:complexType>
+    </xs:element> <!-- "default" -->
+
+    <xs:element name="report">
+     <xs:complexType>
+      <xs:attribute name="ids"          type="Boolean" />
+      <xs:attribute name="requested"    type="Boolean" />
+      <xs:attribute name="provided"     type="Boolean" />
+      <xs:attribute name="session_args" type="Boolean" />
+      <xs:attribute name="child_caps"   type="Boolean" />
+      <xs:attribute name="child_ram"    type="Boolean" />
+      <xs:attribute name="init_caps"    type="Boolean" />
+      <xs:attribute name="init_ram"     type="Boolean" />
+      <xs:attribute name="delay_ms"     type="xs:int" />
+      <xs:attribute name="buffer"       type="Number_of_bytes" />
+     </xs:complexType>
+    </xs:element> <!-- "report" -->
+
+    <xs:element name="heartbeat">
+     <xs:complexType>
+      <xs:attribute name="rate_ms" type="xs:int" />
+     </xs:complexType>
+    </xs:element> <!-- "heartbeat" -->
+
+    <xs:element name="resource">
+     <xs:complexType>
+      <xs:attribute name="name"     type="xs:string" />
+      <xs:attribute name="preserve" type="Number_of_bytes" />
+     </xs:complexType>
+    </xs:element> <!-- "resource" -->
+
+    <xs:element name="start" minOccurs="1" maxOccurs="unbounded">
+     <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+
+       <xs:element name="binary">
+        <xs:complexType>
+         <xs:attribute name="name" type="xs:string" />
+        </xs:complexType>
+       </xs:element> <!-- "binary" -->
+
+       <xs:element name="heartbeat" />
+
+       <xs:element name="affinity">
+        <xs:complexType>
+         <xs:attribute name="xpos"   type="xs:int" />
+         <xs:attribute name="ypos"   type="xs:int" />
+         <xs:attribute name="width"  type="xs:int" />
+         <xs:attribute name="height" type="xs:int" />
+        </xs:complexType>
+       </xs:element> <!-- "affinity" -->
+
+       <xs:element name="resource">
+        <xs:complexType>
+         <xs:attribute name="name"           type="xs:string" />
+         <xs:attribute name="quantum"        type="Number_of_bytes" />
+        </xs:complexType>
+       </xs:element> <!-- "resource" -->
+
+       <xs:element name="exit">
+        <xs:complexType>
+         <xs:attribute name="propagate" type="Boolean" />
+        </xs:complexType>
+       </xs:element> <!-- "exit" -->
+
+       <xs:element name="provides">
+        <xs:complexType>
+         <xs:choice maxOccurs="unbounded">
+          <xs:element name="service">
+           <xs:complexType>
+            <xs:attribute name="name" type="xs:string" />
+           </xs:complexType>
+          </xs:element>
+         </xs:choice>
+        </xs:complexType>
+       </xs:element> <!-- "provides" -->
+
+       <xs:element name="route" type="template_route"/>
+
+       <xs:element name="config">
+        <xs:complexType>
+         <xs:sequence>
+          <xs:any minOccurs="0" maxOccurs="unbounded" processContents="skip" />
+         </xs:sequence>
+         <xs:anyAttribute processContents="skip"/>
+        </xs:complexType>
+       </xs:element> <!-- "config" -->
+
+      </xs:choice>
+      <xs:attribute name="name"            type="xs:string" />
+      <xs:attribute name="ld"              type="Boolean" />
+      <xs:attribute name="caps"            type="xs:int" />
+      <xs:attribute name="priority"        type="xs:int" />
+      <xs:attribute name="managing_system" type="Boolean" />
+     </xs:complexType>
+    </xs:element> <!-- "start" -->
+
+   </xs:choice>
+   <xs:attribute name="prio_levels" type="xs:int" />
+   <xs:attribute name="verbose"     type="Boolean" />
+   <xs:attribute name="ld_verbose"  type="Boolean" />
+  </xs:complexType>
+ </xs:element> <!-- "config" -->
+</xs:schema>
