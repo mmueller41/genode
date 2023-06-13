@@ -21,7 +21,7 @@
 #include <base/heap.h>
 
 namespace Genode { class Sandbox; }
-
+namespace Sandbox { class Library; }
 
 class Genode::Sandbox : Noncopyable
 {
@@ -50,9 +50,7 @@ class Genode::Sandbox : Noncopyable
 
 		Heap _heap;
 
-		class Library;
-
-		Library &_library;
+		::Sandbox::Library &_library;
 
 		Registry<Local_service_base> _local_services { };
 
@@ -60,7 +58,9 @@ class Genode::Sandbox : Noncopyable
 
 		Sandbox(Env &, State_handler &);
 
-		void apply_config(Xml_node const &);
+		virtual ~Sandbox() = default;
+
+		virtual void apply_config(Xml_node const &);
 
 		/**
 		 * Generate state report as configured by the <report> config node

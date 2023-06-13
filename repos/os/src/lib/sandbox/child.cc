@@ -15,7 +15,7 @@
 #include <vm_session/vm_session.h>
 
 /* local includes */
-#include <child.h>
+#include <sandbox/child.h>
 
 
 void Sandbox::Child::destroy_services()
