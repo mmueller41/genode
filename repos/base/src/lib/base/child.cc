@@ -45,6 +45,15 @@ void Child::yield(Resource_args const &args)
 		Signal_transmitter(_yield_sigh).submit();
 }
 
+void Child::accept(Resource_args const &args)
+{
+	Mutex::Guard guard{_resource_gain_mutex};
+
+	_gained_resources = args;
+
+	if (_resource_avail_sigh.valid())
+		Signal_transmitter(_resource_avail_sigh).submit();
+}
 
 void Child::notify_resource_avail() const
 {
@@ -691,6 +700,12 @@ Parent::Resource_args Child::yield_request()
 	return _yield_request_args;
 }
 
+Parent::Resource_args Child::gained_resources()
+{
+	Mutex::Guard guard(_resource_gain_mutex);
+
+	return _gained_resources;
+}
 
 void Child::yield_response() { _policy.yield_response(); }
 

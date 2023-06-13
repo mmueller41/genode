@@ -67,6 +67,8 @@ struct Genode::Parent_client : Rpc_client<Parent>
 		call<Rpc_yield_sigh>(sigh); }
 
 	Resource_args yield_request() override { return call<Rpc_yield_request>(); }
+	
+	Resource_args gained_resources() override { return call<Rpc_gained_resources>(); }
 
 	void yield_response() override { call<Rpc_yield_response>(); }
 

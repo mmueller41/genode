@@ -300,6 +300,8 @@ class Genode::Child : protected Rpc_object<Parent>,
 		/* arguments fetched by the child in response to a yield signal */
 		Mutex         _yield_request_mutex { };
 		Resource_args _yield_request_args  { };
+		Mutex         _resource_gain_mutex { };
+		Resource_args _gained_resources  { };
 
 		/* number of unanswered heartbeat signals */
 		unsigned _outstanding_heartbeats = 0;
@@ -783,6 +785,14 @@ class Genode::Child : protected Rpc_object<Parent>,
 		void yield(Resource_args const &args);
 
 		/**
+		 * Bestow resources on the child
+		 * 
+		 * By calling this method, the child will be notified about
+		 * the having gained the specified amount of resources.
+		 */
+		void accept(Resource_args const &args);
+
+		/**
 		 * Notify the child about newly available resources
 		 */
 		void notify_resource_avail() const;
@@ -818,6 +828,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		void resource_request(Resource_args const &) override;
 		void yield_sigh(Signal_context_capability) override;
 		Resource_args yield_request() override;
+		Resource_args gained_resources() override;
 		void yield_response() override;
 		void heartbeat_sigh(Signal_context_capability) override;
 		void heartbeat_response() override;
