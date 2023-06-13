@@ -1,0 +1,94 @@
+set build_components {
+    core init hoitaja timer app/yield_bench
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+
+build $build_components
+
+create_boot_directory
+
+set config {
+    <config>
+        <affinity-space width="64" height="1"/> 
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="CAP"/>
+            <service name="RM"/>
+            <service name="SIGNAL"/>
+            <service name="TOPO"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+                <start name="timer">
+                    <resource name="RAM" quantum="16M"/>
+                    <provides><service name="Timer"/></provides>
+                    <route>
+                        <any-service><parent/><any-child/></any-service>
+                    </route>
+                </start>
+        <start name="hoitaja" caps="62000">
+            <resource name="RAM" quantum="250G"/>
+            <affinity xpos="0" ypos="0" width="64" height="1"/>
+            <config>
+                <affinity-space width="64" height="1"/> 
+                <parent-provides>
+                    <service name="LOG"/>
+                    <service name="PD"/>
+                    <service name="CPU"/>
+                    <service name="ROM"/>
+                    <service name="RAM"/>
+                    <service name="IRQ"/>
+                    <service name="IO_MEM"/>
+                    <service name="IO_PORT"/>
+                    <service name="CAP"/>
+                    <service name="RM"/>
+                    <service name="SIGNAL"/>
+                    <service name="TOPO"/>
+                    <service name="Timer"/>
+                </parent-provides>
+                <default-route>
+                    <any-service><parent/><any-child/></any-service>
+                </default-route>
+                <default caps="200"/> 
+                <start name="parent">
+                    <affinity xpos="1" ypos="0" width="1" height="1"/>
+                    <binary name="benchmark_resource_yield"/>
+                    <resource name="RAM" quantum="64M"/>
+                    <config child="false">
+                    </config>
+                    <route>
+                        <any-service><parent/><any-child/></any-service>
+                    </route>
+                </start>
+            </config>
+            <route>
+                <service name="Timer"> <child name="timer"/> </service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+    </config>
+    }
+
+    install_config $config
+
+    set boot_modules {
+    core init hoitaja timer vfs.lib.so ld.lib.so benchmark_resource_yield
+}
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+append qemu_args "-nographic "
+
+run_genode_until forever
