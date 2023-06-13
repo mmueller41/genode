@@ -261,6 +261,7 @@ _ZN6Genode5Child23initiate_env_pd_sessionEv T
 _ZN6Genode5Child4exitEi T
 _ZN6Genode5Child5closeENS_8Id_spaceINS_6Parent6ClientEE2IdE T
 _ZN6Genode5Child5yieldERKNS_6StringILm160EEE T
+_ZN6Genode5Child6acceptERKNS_6StringILm160EEE T
 _ZN6Genode5Child7sessionENS_8Id_spaceINS_6Parent6ClientEE2IdERKNS_13Rpc_in_bufferILm64EEERKNS6_ILm160EEERKNS_8AffinityE T
 _ZN6Genode5Child7upgradeENS_8Id_spaceINS_6Parent6ClientEE2IdERKNS_13Rpc_in_bufferILm160EEE T
 _ZN6Genode5Child8announceERKNS_13Rpc_in_bufferILm64EEE T
@@ -424,7 +425,7 @@ _ZTVN6Genode18Allocator_avl_baseE D 128
 _ZTVN6Genode4HeapE D 72
 _ZTVN6Genode4SlabE D 72
 _ZTVN6Genode5Child14Initial_threadE D 48
-_ZTVN6Genode5ChildE D 440
+_ZTVN6Genode5ChildE D 456
 _ZTVN6Genode6OutputE D 48
 _ZTVN6Genode6ThreadE D 48
 _ZTVN6Genode7ConsoleE D 48
