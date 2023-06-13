@@ -1,0 +1,12 @@
+set build_components {
+    core init timer hoitaja app/blinktree app/hello_mxtask app/hpc_test app/yield_bench test/resource_yield app/grant_bench app/top server/cpu_balancer app/cpu_burner
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+build $build_components
+
+create_boot_directory
+
+
+
