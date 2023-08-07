@@ -7,7 +7,7 @@
 #
 
 ifndef VERBOSE
-MAKEFLAGS += --no-print-directory
+MAKEFLAGS += --print-directory
 endif
 
 export GENODE_DIR := $(realpath $(dir $(MAKEFILE_LIST))/../..)
