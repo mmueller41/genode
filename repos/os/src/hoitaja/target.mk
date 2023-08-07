@@ -1,5 +1,5 @@
 TARGET   = hoitaja
-SRC_CC   = main.cc
+SRC_CC   = main.cc habitat.cc suoritin/component.cc
 LIBS     = base
 INC_DIR += $(PRG_DIR)
 
