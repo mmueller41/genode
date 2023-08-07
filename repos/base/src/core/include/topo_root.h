@@ -19,6 +19,8 @@
 
 #include <topo_session_component.h>
 
+#include <base/log.h>
+
 namespace Genode {
 
     class Topo_root : public Root_component<Topo_session_component>
@@ -35,8 +37,10 @@ namespace Genode {
                 if (ram_quota < Trace::Control_area::SIZE)
                     throw Insufficient_ram_quota();
 
-                if (!affinity.valid())
+                if (!affinity.valid()) {
+                    log("Location ", affinity.location(), " not within space ", affinity.space());
                     throw Service_denied();
+                }
 
                 return new (md_alloc())
                     Topo_session_component(*this->ep(),

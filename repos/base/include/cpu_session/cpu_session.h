@@ -139,6 +139,12 @@ struct Genode::Cpu_session : Session
 	virtual Affinity::Space affinity_space() const = 0;
 
 	/**
+	 * @brief Update affinity location of this CPU session
+	 * 
+	 */
+	virtual void move(const Genode::Affinity::Location ) = 0;
+
+	/**
 	 * Translate generic priority value to kernel-specific priority levels
 	 *
 	 * \param pf_prio_limit  maximum priority used for the kernel, must
@@ -249,6 +255,7 @@ struct Genode::Cpu_session : Session
 	GENODE_RPC(Rpc_migrate_thread, void, migrate_thread, Thread_capability, Affinity::Location);
 	GENODE_RPC(Rpc_exception_sigh, void, exception_sigh, Signal_context_capability);
 	GENODE_RPC(Rpc_affinity_space, Affinity::Space, affinity_space);
+	GENODE_RPC(Rpc_move, void, move, Affinity::Location);
 	GENODE_RPC(Rpc_trace_control, Dataspace_capability, trace_control);
 	GENODE_RPC(Rpc_ref_account, int, ref_account, Cpu_session_capability);
 	GENODE_RPC(Rpc_transfer_quota, int, transfer_quota, Cpu_session_capability, size_t);
@@ -257,7 +264,7 @@ struct Genode::Cpu_session : Session
 
 	GENODE_RPC_INTERFACE(Rpc_create_thread, Rpc_kill_thread, Rpc_exception_sigh,
 	                     Rpc_affinity_space, Rpc_trace_control, Rpc_ref_account,
-	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu, Rpc_migrate_thread);
+	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu, Rpc_migrate_thread, Rpc_move);
 };
 
 

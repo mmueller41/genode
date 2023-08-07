@@ -41,4 +41,9 @@ struct Genode::Topo_session_client : Rpc_client<Topo_session>
     unsigned node_count() override {
         return call<Rpc_node_count>();
     }
+
+    void reconstruct(const Affinity affinity) override
+    {
+        call<Rpc_reconstruct>(affinity);
+    }
 };

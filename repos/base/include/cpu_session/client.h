@@ -42,6 +42,10 @@ struct Genode::Cpu_session_client : Rpc_client<Cpu_session>
 	Affinity::Space affinity_space() const override {
 		return call<Rpc_affinity_space>(); }
 
+	void move(const Affinity::Location loc) override {
+		call<Rpc_move>(loc);
+	}
+
 	Dataspace_capability trace_control() override {
 		return call<Rpc_trace_control>(); }
 

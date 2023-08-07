@@ -49,10 +49,12 @@ struct Genode::Topo_session : Session
     virtual Topology::Numa_region node_affinity_of(Affinity::Location const &) = 0;
     virtual Topology::Numa_region node_at_id(unsigned node_id) = 0;
     virtual unsigned node_count() = 0;
+    virtual void reconstruct(const Affinity) = 0;
 
     GENODE_RPC(Rpc_node_affinity, Topology::Numa_region, node_affinity_of, Affinity::Location const &);
     GENODE_RPC(Rpc_node_id, Topology::Numa_region, node_at_id, unsigned);
     GENODE_RPC(Rpc_node_count, unsigned, node_count);
+    GENODE_RPC(Rpc_reconstruct, void, reconstruct, Affinity);
 
-    GENODE_RPC_INTERFACE(Rpc_node_affinity, Rpc_node_id, Rpc_node_count);
+    GENODE_RPC_INTERFACE(Rpc_node_affinity, Rpc_node_id, Rpc_node_count, Rpc_reconstruct);
 };
