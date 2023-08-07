@@ -205,7 +205,7 @@ void Libc::Component::construct(Libc::Env &env) {
     char cores_arg[10];
     sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_benchmark", "-i", "4", "-pd", "3", "-p", cores_arg};
+    char *args[] = {"blinktree_benchmark", "-i", "6", "-pd", "3", "-p", cores_arg};
 
     Libc::with_libc([&]()
                     { 
