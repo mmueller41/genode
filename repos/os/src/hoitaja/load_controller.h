@@ -11,6 +11,7 @@
  * This file is part of EalánOS, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
+#pragma once
 
 #include <trace_session/connection.h>
 #include <base/affinity.h>
