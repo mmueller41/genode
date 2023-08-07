@@ -59,7 +59,7 @@ public:
         }
         catch (Genode::Trace::Pfc_access_error &e)
         {
-            std::cerr << "Failed to start counter: " << e.error_code() << std::endl;
+            std::cerr << "Failed to start counter " << _counter << " " << _name << ": " << static_cast<uint16_t>(e.error_code()) << std::endl;
         }
         return _prev.value >= 0;
     }
@@ -115,7 +115,8 @@ class Perf
 public:
     [[maybe_unused]] static PerfCounter INSTRUCTIONS;
     [[maybe_unused]] static PerfCounter CYCLES;
-    [[maybe_unused]] static PerfCounter L1_MISSES;
+    [[maybe_unused]] static PerfCounter L1_DTLB_MISSES;
+    [[maybe_unused]] static PerfCounter L1_ITLB_MISSES;
     [[maybe_unused]] [[maybe_unused]] static PerfCounter LLC_MISSES;
     [[maybe_unused]] static PerfCounter LLC_REFERENCES;
     //[[maybe_unused]] static PerfCounter STALLED_CYCLES_BACKEND;

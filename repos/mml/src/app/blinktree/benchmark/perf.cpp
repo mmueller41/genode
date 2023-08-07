@@ -14,7 +14,8 @@ using namespace benchmark;
 
 /**
  */
-[[maybe_unused]] PerfCounter Perf::L1_MISSES = {"l1-miss", Genode::Trace::Performance_counter::Type::CORE, 0x43, 0x5b};
+[[maybe_unused]] PerfCounter Perf::L1_DTLB_MISSES = {"l1-dtlb-miss", Genode::Trace::Performance_counter::Type::CORE, 0x45, 0xff};
+[[maybe_unused]] PerfCounter Perf::L1_ITLB_MISSES = {"l1-itlb-miss", Genode::Trace::Performance_counter::Type::CORE, 0x85, 0x0};
 
 /**
  * Counter "LLC Misses"

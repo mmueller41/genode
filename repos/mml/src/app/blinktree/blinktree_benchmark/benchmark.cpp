@@ -26,9 +26,15 @@ Benchmark::Benchmark(Libc::Env &env, benchmark::Cores &&cores, const std::uint16
     {
         this->_chronometer.add(benchmark::Perf::CYCLES);
         this->_chronometer.add(benchmark::Perf::INSTRUCTIONS);
+        this->_chronometer.add(benchmark::Perf::L1_ITLB_MISSES);
+        this->_chronometer.add(benchmark::Perf::L1_DTLB_MISSES);
+        //this->_chronometer.add(benchmark::Perf::LLC_MISSES);
+
+
         //this->_chronometer.add(benchmark::Perf::STALLS_MEM_ANY);
-        this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_NTA);
-        this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_WRITE);
+        
+        //this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_NTA);
+        //this->_chronometer.add(benchmark::Perf::SW_PREFETCH_ACCESS_WRITE);
     }
     std::cout << "core configuration: \n" << this->_cores.dump(2) << std::endl;
 
