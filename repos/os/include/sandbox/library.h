@@ -13,6 +13,7 @@
 #include <base/registry.h>
 #include <base/service.h>
 
+#pragma once
 namespace Sandbox {
     class Library;
 }
@@ -200,7 +201,7 @@ public:
 	void _update_parent_services_from_config(Xml_node const &);
 	void _update_children_config(Xml_node const &);
 	void _destroy_abandoned_parent_services();
-	void _destroy_abandoned_children();
+	virtual void _destroy_abandoned_children();
 
 	Server _server { _env, _heap, _child_services, _state_reporter };
 

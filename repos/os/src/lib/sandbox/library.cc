@@ -97,7 +97,7 @@ bool Sandbox::Library::ready_to_create_child(Start_model::Name    const &name,
 			Child(_env, _heap, *_verbose,
 			      Child::Id { ++_child_cnt }, _state_reporter,
 			      start_node, *this, *this, _children, *this, *this, *this, *this,
-			      _prio_levels, _effective_affinity_space(),
+			      _prio_levels, _effective_affinity_space(), Affinity::Location(-1, -1, 0, 0),
 			      _parent_services, _child_services, _local_services);
 		_children.insert(&child);
 
