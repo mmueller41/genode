@@ -11,7 +11,7 @@ create_boot_directory
 
 set config {
     <config>
-        <affinity-space width="64" height="1"/> 
+        <!--<affinity-space width="64" height="1"/>-->
         <parent-provides>
             <service name="LOG"/>
             <service name="PD"/>
@@ -39,8 +39,8 @@ set config {
                 </start>
         <start name="hoitaja" caps="62000">
             <resource name="RAM" quantum="250G"/>
-            <affinity xpos="0" ypos="0" width="64" height="1"/>
-            <config>
+            <!--<affinity xpos="0" ypos="0" width="64" height="1"/>-->
+            <config prio_levels="32">
                 <affinity-space width="64" height="1"/> 
                 <parent-provides>
                     <service name="LOG"/>
@@ -63,6 +63,26 @@ set config {
                 <default caps="200"/> 
                 <start name="parent">
                     <affinity xpos="1" ypos="0" width="1" height="1"/>
+                    <binary name="benchmark_resource_yield"/>
+                    <resource name="RAM" quantum="64M"/>
+                    <config child="false">
+                    </config>
+                    <route>
+                        <any-service><parent/><any-child/></any-service>
+                    </route>
+                </start>
+                <start name="child" priority="-2">
+                    <affinity xpos="2" ypos="0" width="1" height="1"/>
+                    <binary name="benchmark_resource_yield"/>
+                    <resource name="RAM" quantum="64M"/>
+                    <config child="false">
+                    </config>
+                    <route>
+                        <any-service><parent/><any-child/></any-service>
+                    </route>
+                </start>
+                <start name="child2" priority="-2">
+                    <affinity xpos="2" ypos="0" width="1" height="1"/>
                     <binary name="benchmark_resource_yield"/>
                     <resource name="RAM" quantum="64M"/>
                     <config child="false">
