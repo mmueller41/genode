@@ -11,24 +11,36 @@
 #include <base/service.h>
 #include <base/heap.h>
 
+#include <util/reconstructible.h>
+
+/* Hoitaja includes */
+#include <core_allocator.h>
+#include <cell.h>
+#include <state_handler.h>
+
+#pragma once
 namespace Hoitaja {
     class Habitat;
     using namespace Genode;
 }
-class Hoitaja::Habitat : Sandbox::Library
+struct Hoitaja::Habitat : public Sandbox::Library
 {
-    
-    private:
+    public:
+
         friend class Genode::Sandbox::Local_service_base;
 
+        State_handler &_habitat_handler;
+
         Heap _heap;
+
+        Genode::Constructible<Hoitaja::Core_allocator> _core_allocator;
 
         Registry<Genode::Sandbox::Local_service_base>
             _local_services{};
 
-    public:
         void apply_config(Xml_node const &config) override {
             log("Hoitaja is applying new config.");
+
             Sandbox::Library::apply_config(config);
         }
 
@@ -39,8 +51,19 @@ class Hoitaja::Habitat : Sandbox::Library
 
         void maintain_cells();
 
-        Habitat(Env &env, Genode::Sandbox::State_handler &handler)
-            : Sandbox::Library(env, _heap, _local_services, handler), _heap(env.ram(), env.rm())
+        /**
+         * @brief Update cell's resource allocations
+         * 
+         * @param cell whose resource allocations needs updating
+         */
+        void update(Cell &cell);
+
+        Habitat(Env &env, State_handler &habitat_handler, Genode::Sandbox::State_handler &handler)
+            : Sandbox::Library(env, _heap, _local_services, handler), _habitat_handler(habitat_handler), _heap(env.ram(), env.rm()), _core_allocator()
         {
         }
+
+        Sandbox::Child &create_child(Xml_node const &) override;
+
+        void _destroy_abandoned_children() override;
 };
