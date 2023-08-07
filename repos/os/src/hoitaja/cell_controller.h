@@ -12,6 +12,7 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+#pragma once
 #include <sandbox/child.h>
 
 namespace Hoitaja
