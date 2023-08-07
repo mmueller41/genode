@@ -28,6 +28,8 @@
 #include "numa_controller.h"
 /* Core Allocator */
 #include "core_allocator.h"
+/* State Handler */
+#include "state_handler.h"
 
 namespace Hoitaja {
 
@@ -37,11 +39,11 @@ namespace Hoitaja {
 }
 
 
-struct Hoitaja::Main : Genode::Sandbox::State_handler
+struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 {
 	Env &_env;
 
-	Habitat _sandbox { _env, *this };
+	Habitat _sandbox { _env, *this, *this };
 
 	Timer::Connection _timer{_env};
 
@@ -90,8 +92,8 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler
 	{
 		//log("Hoitaja's entering its maintance cycle");
 		// For now just print all cells created by Hoitaja
-		//_sandbox.maintain_cells();
-		_timer.trigger_once(1000 * 1000);
+		//_handle_config();
+		//_timer.trigger_once(1000 * 1000);
 	}
 
 	Signal_handler<Main> _timeout_handler{
@@ -102,7 +104,8 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler
 	 */
 	void handle_sandbox_state() override
 	{
-
+		Genode::log("Habitat state changed");
+		/*
 		try {
 			Reporter::Xml_generator xml(*_reporter, [&] () {
 				_sandbox.generate_state_report(xml); });
@@ -111,13 +114,19 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler
 
 			error("state report exceeds maximum size");
 
-			/* try to reflect the error condition as state report */
+			 try to reflect the error condition as state report
 			try {
 				Reporter::Xml_generator xml(*_reporter, [&] () {
 					xml.attribute("error", "report buffer exceeded"); });
 			}
 			catch (...) { }
-		}
+		}*/
+	}
+
+	void handle_habitat_state(Cell &cell) override
+	{
+		Genode::log("Habitat changed");
+		_sandbox.update(cell);
 	}
 
 	Main(Env &env) : _env(env)
@@ -132,13 +141,6 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler
 		_handle_config();
 	}
 };
-
-void Hoitaja::Habitat::maintain_cells()
-{
-	log("My current children are:");
-	_children.for_each_child([&](Child &child)
-							 { log(child.name(), " ram: ", child.ram_quota()); });
-}
 
 void Component::construct(Genode::Env &env) { static Hoitaja::Main main(env); }
 
