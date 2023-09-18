@@ -184,8 +184,8 @@ void run_gpgpu_test()
     kconf.finish_callback = cleanUp;
 
     // allocate buffers
-    in = (uint32_t*)uos_aligned_alloc(0x1000, kconf.range[0] * sizeof(uint32_t));
-    out = (uint32_t*)uos_aligned_alloc(0x1000, kconf.range[0] * sizeof(uint32_t));
+    in = (uint32_t*)uos_aligned_alloc(0x10000, kconf.range[0] * sizeof(uint32_t));
+    out = (uint32_t*)uos_aligned_alloc(0x10000, kconf.range[0] * sizeof(uint32_t));
 
     // config buffers
     kconf.buffCount = 2;
