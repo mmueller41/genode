@@ -59,6 +59,10 @@ void* gpgpu_genode::aligned_alloc(uint32_t alignment, uint32_t size)
     {
         alignment = 12;
     }
+    else if(alignment == 0x10000)
+    {
+        alignment = 16;
+    }
     else if(alignment != 0x0)
     {
         Genode::error("[GPU] Unsupported alignment: ", alignment);
