@@ -53,7 +53,7 @@ class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_compone
 			 */
 			addr_t const start = 0x1000;
 			addr_t const end   = (sizeof(long) == 4) /* 32bit arch ? */
-			                   ? 0xbfffffffUL : 0xffffffffUL;
+			                   ? 0xbfffffffUL : 0xFFffffffffUL; // 0xffffffffUL; // mld: THIS IS IT! => allow 39 bit address for iGPU
 
 			return Ram_dataspace_factory::Phys_range { start, end };
 		}
