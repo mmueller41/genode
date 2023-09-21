@@ -342,7 +342,7 @@ clCreateBuffer(cl_context   context,
     cl_mem clmem = (cl_mem)g_cl_genode->alloc(sizeof(struct _cl_mem));
     if(host_ptr == NULL)
     {
-        host_ptr = g_cl_genode->aligned_alloc(0x1000, size);
+        host_ptr = g_cl_genode->aligned_alloc(0x10000, size); // without LARGE_PAGES 0x1000 alignment is enough
     }
     else
     {
