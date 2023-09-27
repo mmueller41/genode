@@ -23,19 +23,57 @@
 #include <sandbox/sandbox.h>
 
 /* local includes */
-#include <types.h>
-#include <verbose.h>
-#include <report.h>
-#include <name_registry.h>
-#include <service.h>
-#include <utils.h>
-#include <route_model.h>
+#include <sandbox/types.h>
+#include <sandbox/verbose.h>
+#include <sandbox/report.h>
+#include <sandbox/name_registry.h>
+#include <sandbox/service.h>
+#include <sandbox/utils.h>
+#include <sandbox/route_model.h>
 
 namespace Sandbox { class Child; }
 
 class Sandbox::Child : Child_policy, Routed_service::Wakeup
 {
 	public:
+		/**
+		 * Resources assigned to the child
+		 */
+		struct Resources
+		{
+			long      prio_levels_log2;
+			long      priority;
+			Affinity  affinity;
+			Ram_quota assigned_ram_quota;
+			Cap_quota assigned_cap_quota;
+			Cpu_quota assigned_cpu_quota;
+
+			Ram_quota effective_ram_quota() const
+			{
+				return Genode::Child::effective_quota(assigned_ram_quota);
+			}
+
+			Cap_quota effective_cap_quota() const
+			{
+				/* capabilities consumed by 'Genode::Child' */
+				Cap_quota const effective =
+					Genode::Child::effective_quota(assigned_cap_quota);
+
+				/* capabilities additionally consumed by init */
+				enum {
+					STATIC_COSTS = 1  /* possible heap backing-store
+					                     allocation for session object */
+					             + 1  /* buffered XML start node */
+					             + 2  /* dynamic ROM for config */
+					             + 2  /* dynamic ROM for session requester */
+				};
+
+				if (effective.value < STATIC_COSTS)
+					return Cap_quota{0};
+
+				return Cap_quota{effective.value - STATIC_COSTS};
+			}
+		};
 
 		typedef String<80> Version;
 
@@ -73,7 +111,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		enum class Sample_state_result { CHANGED, UNCHANGED };
 
-	private:
+	protected:
 
 		friend class Child_registry;
 
@@ -109,7 +147,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			 * The child is no longer referenced by config model and can
 			 * safely be destructed.
 			 */
-			ABANDONED
+			ABANDONED,
+
 		};
 
 		State _state = State::INITIAL;
@@ -202,48 +241,11 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			return _heartbeat_enabled && (_state == State::ALIVE);
 		}
 
-		/**
-		 * Resources assigned to the child
-		 */
-		struct Resources
-		{
-			long      prio_levels_log2;
-			long      priority;
-			Affinity  affinity;
-			Ram_quota assigned_ram_quota;
-			Cap_quota assigned_cap_quota;
-			Cpu_quota assigned_cpu_quota;
-
-			Ram_quota effective_ram_quota() const
-			{
-				return Genode::Child::effective_quota(assigned_ram_quota);
-			}
-
-			Cap_quota effective_cap_quota() const
-			{
-				/* capabilities consumed by 'Genode::Child' */
-				Cap_quota const effective =
-					Genode::Child::effective_quota(assigned_cap_quota);
-
-				/* capabilities additionally consumed by init */
-				enum {
-					STATIC_COSTS = 1  /* possible heap backing-store
-					                     allocation for session object */
-					             + 1  /* buffered XML start node */
-					             + 2  /* dynamic ROM for config */
-					             + 2  /* dynamic ROM for session requester */
-				};
-
-				if (effective.value < STATIC_COSTS)
-					return Cap_quota{0};
-
-				return Cap_quota{effective.value - STATIC_COSTS};
-			}
-		};
 
 		static
 		Resources _resources_from_start_node(Xml_node start_node, Prio_levels prio_levels,
 		                                     Affinity::Space const &affinity_space,
+											 Affinity::Location const &location,
 		                                     Cap_quota default_cap_quota)
 		{
 			unsigned cpu_percent = 0;
@@ -269,7 +271,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			return Resources { log2(prio_levels.value),
 			                   priority_from_xml(start_node, prio_levels),
 			                   Affinity(affinity_space,
-			                            affinity_location_from_xml(affinity_space, start_node)),
+							   (location.xpos() == -1 ? affinity_location_from_xml(affinity_space, start_node) : location)),
+			                            //affinity_location_from_xml(affinity_space, start_node)),
 			                   Ram_quota { ram_bytes },
 			                   Cap_quota { caps },
 			                   Cpu_quota { cpu_percent } };
@@ -555,6 +558,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		      Cpu_quota_transfer       &cpu_quota_transfer,
 		      Prio_levels               prio_levels,
 		      Affinity::Space const    &affinity_space,
+			  Affinity::Location const &location,
 		      Registry<Parent_service> &parent_services,
 		      Registry<Routed_service> &child_services,
 		      Registry<Local_service>  &local_services);
@@ -672,6 +676,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		void report_state(Xml_generator &, Report_detail const &) const;
 
 		Sample_state_result sample_state();
+
 
 
 		/****************************

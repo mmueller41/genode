@@ -18,7 +18,7 @@
 #include <base/child.h>
 
 /* local includes */
-#include <types.h>
+#include <sandbox/types.h>
 
 namespace Sandbox { struct Name_registry; }
 

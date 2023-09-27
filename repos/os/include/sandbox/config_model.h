@@ -18,7 +18,7 @@
 #include <util/list_model.h>
 
 /* local includes */
-#include <heartbeat.h>
+#include <sandbox/heartbeat.h>
 
 namespace Sandbox {
 

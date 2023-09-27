@@ -15,8 +15,8 @@
 #define _LIB__SANDBOX__HEARTBEAT_H_
 
 /* local includes */
-#include <state_reporter.h>
-#include <child_registry.h>
+#include <sandbox/state_reporter.h>
+#include <sandbox/child_registry.h>
 #include <util/noncopyable.h>
 
 namespace Sandbox { class Heartbeat; }

@@ -19,10 +19,10 @@
 #include <os/buffered_xml.h>
 
 /* local includes */
-#include <types.h>
-#include <service.h>
-#include <state_reporter.h>
-#include <config_model.h>
+#include <sandbox/types.h>
+#include <sandbox/service.h>
+#include <sandbox/state_reporter.h>
+#include <sandbox/config_model.h>
 
 namespace Sandbox { class Server; }
 

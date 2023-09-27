@@ -171,6 +171,10 @@ Affinity::Space Cpu_session_component::affinity_space() const
 	return Affinity::Space(_location.width(), _location.height());
 }
 
+void Cpu_session_component::move(const Affinity::Location destination)
+{
+	_location = destination;
+}
 
 Dataspace_capability Cpu_session_component::trace_control()
 {

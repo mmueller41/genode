@@ -15,10 +15,10 @@
 #define _LIB__SANDBOX__CHILD_REGISTRY_H_
 
 /* local includes */
-#include <child.h>
-#include <name_registry.h>
-#include <alias.h>
-#include <report.h>
+#include <sandbox/child.h>
+#include <sandbox/name_registry.h>
+#include <sandbox/alias.h>
+#include <sandbox/report.h>
 
 namespace Sandbox { struct Child_registry; }
 

@@ -19,8 +19,8 @@
 #include <sandbox/sandbox.h>
 
 /* local includes */
-#include "report.h"
-#include "child.h"
+#include <sandbox/report.h>
+#include <sandbox/child.h>
 
 namespace Sandbox { class State_reporter; }
 

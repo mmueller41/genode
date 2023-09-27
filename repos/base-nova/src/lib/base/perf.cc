@@ -46,7 +46,7 @@ void Genode::Trace::Performance_counter::start(unsigned counter)
 {
     Nova::uint8_t rc;
     Nova::mword_t type = (counter >> 4);
-    Nova::mword_t sel = type == Performance_counter::CORE ? counter : counter >>4;
+    Nova::mword_t sel = type == Performance_counter::CORE ? counter : counter & 0xf;
 
     if ((rc = Nova::hpc_start(sel, type)) != Nova::NOVA_OK)
         throw  Genode::Trace::Pfc_access_error(rc);

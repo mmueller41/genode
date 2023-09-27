@@ -15,7 +15,7 @@
 #define _LIB__SANDBOX__ALIAS_H_
 
 /* local includes */
-#include <types.h>
+#include <sandbox/types.h>
 
 namespace Sandbox { struct Alias; }
 

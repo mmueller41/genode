@@ -25,11 +25,11 @@ namespace Init {
 }
 
 
-struct Init::Main : Sandbox::State_handler
+struct Init::Main : Genode::Sandbox::State_handler
 {
 	Env &_env;
 
-	Sandbox _sandbox { _env, *this };
+	Genode::Sandbox _sandbox { _env, *this };
 
 	Attached_rom_dataspace _config { _env, "config" };
 

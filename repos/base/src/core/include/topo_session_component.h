@@ -30,7 +30,7 @@ namespace Genode {
 class Genode::Topo_session_component : public Session_object<Topo_session>
 {
     private:
-        Genode::Affinity &_affinity;
+        Genode::Affinity _affinity;
         Sliced_heap _md_alloc;
         
         Topology::Numa_region _node_affinities[Genode::Platform::MAX_SUPPORTED_CPUS][Genode::Platform::MAX_SUPPORTED_CPUS];
@@ -44,9 +44,10 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
                                Diag const &diag,
                                Ram_allocator &ram_alloc,
                                Region_map &local_rm,
-                               Affinity &affinity
+                               Affinity affinity
                                );
 
+        void construct();
 
         /**
          * @brief Topology session interface
@@ -65,5 +66,11 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
         unsigned node_count() override
         {
             return _node_count;
-        }   
+        }
+
+        void reconstruct(Affinity affinity) override
+        {
+            _affinity = affinity;
+            construct();
+        }
 };

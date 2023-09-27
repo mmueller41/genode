@@ -25,19 +25,24 @@ Topo_session_component::Topo_session_component(Rpc_entrypoint &session_ep,
                                                Diag const &diag,
                                                Ram_allocator &ram_alloc,
                                                Region_map &local_rm,
-                                               Affinity &affinity)
+                                               Affinity affinity)
     : Session_object(session_ep, resources, label, diag),
       _affinity(affinity),
       _md_alloc(ram_alloc, local_rm),
       _node_count(0)
 {
-    Affinity::Location location = affinity.location();
+    construct();
+}
+
+void Topo_session_component::construct()
+{
+    Affinity::Location location = _affinity.location();
     const unsigned height = location.height();
     unsigned width = location.width();
     unsigned curr_node_id = 0;
     Topology::Numa_region *node_created = new (_md_alloc) Topology::Numa_region[64]();
 
-    Genode::log("[", label, "] Creating new topology model of size ", width, "x", height);
+    Genode::log("[", label(), "] Creating new topology model of size ", width, "x", height);
 
     for (unsigned x = 0; x < width; x++)
     {
@@ -53,14 +58,14 @@ Topo_session_component::Topo_session_component(Rpc_entrypoint &session_ep,
             unsigned cpu_id = platform_specific().kernel_cpu_id(loc);
             unsigned native_id = platform_specific().domain_of_cpu(cpu_id);
 
-            log("[", label, "] CPU (", x, "x", y, ") is native CPU ", cpu_id, " on node ", native_id);
+            log("[", label(), "] CPU (", x, "x", y, ") is native CPU ", cpu_id, " on node ", native_id);
 
             if (node_created[native_id].core_count() == 0)
             {
                 _nodes[curr_node_id] = _node_affinities[x][y] = Topology::Numa_region(curr_node_id, native_id);
                 _node_affinities[x][y].increment_core_count();
                 node_created[native_id] = _node_affinities[x][y];
-                log("[", label, "] Found new native NUMA region ", native_id, " for CPU (", x, "x", y, ")");
+                log("[", label(), "] Found new native NUMA region ", native_id, " for CPU (", x, "x", y, ")");
                 _node_count++;
                 curr_node_id++;
             }
@@ -71,4 +76,5 @@ Topo_session_component::Topo_session_component(Rpc_entrypoint &session_ep,
             }
         }
     }
+
 }

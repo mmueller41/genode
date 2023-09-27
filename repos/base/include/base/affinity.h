@@ -93,6 +93,7 @@ class Genode::Affinity
 					return Affinity::Space(node.attribute_value("width",  0U),
 					                       node.attribute_value("height", 0U));
 				}
+
 		};
 
 
@@ -235,6 +236,30 @@ class Genode::Affinity
 			                max(scaled_y2 - scaled_y1, 1));
 		}
 };
+
+namespace Genode {
+	static inline void print(Output &out, const Affinity::Space &space) 
+	{
+			Genode::print(out, "(");
+			Genode::print(out, space.width());
+			Genode::print(out, ",");
+			Genode::print(out, space.height());
+			Genode::print(out, ")");
+	}
+
+	static inline void print(Output &out, const Affinity::Location &loc)
+	{
+			Genode::print(out, "(");
+			Genode::print(out, loc.xpos());
+			Genode::print(out, ",");
+			Genode::print(out, loc.ypos());
+			Genode::print(out, ",");
+			Genode::print(out, loc.width());
+			Genode::print(out, "×");
+			Genode::print(out, loc.height());
+			Genode::print(out, ")");
+	}
+}
 
 
 Genode::Affinity::Location Genode::Affinity::Space::location_of_index(int index) const

@@ -9,7 +9,7 @@ VERBOSE ?= @
 ECHO    := echo -e
 HASHSUM := sha1sum
 
-MAKEFLAGS += --no-print-directory
+MAKEFLAGS += --print-directory
 
 BRIGHT_COL  ?= \x1b[01;33m
 DARK_COL    ?= \x1b[00;33m

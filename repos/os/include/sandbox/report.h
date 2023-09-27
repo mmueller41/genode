@@ -19,7 +19,7 @@
 #include <util/xml_node.h>
 
 /* local includes */
-#include <types.h>
+#include <sandbox/types.h>
 
 namespace Sandbox {
 	struct Report_update_trigger;
