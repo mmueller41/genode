@@ -1,3 +1,16 @@
+/*
+ * \brief  Suoritin - Task-based CPU session component and root component 
+ * \author Michael Müller
+ * \date   2023-10-10
+ */
+
+/*
+ * Copyright (C) 2010-2020 Genode Labs GmbH
+ * Copyright (C) 2023 Michael Müller, Osnabrück University
+ *
+ * This file is part of EalánOS, which is distributed
+ * under the terms of the GNU Affero General Public License version 3.
+ */
 #pragma once
 /* Genode includes */
 #include <base/session_object.h>
