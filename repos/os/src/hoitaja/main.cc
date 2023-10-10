@@ -30,6 +30,8 @@
 #include "core_allocator.h"
 /* State Handler */
 #include "state_handler.h"
+/* Tasking Service Suoritin */
+#include <suoritin/component.h>
 
 namespace Hoitaja {
 
@@ -44,6 +46,8 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 	Env &_env;
 
 	Habitat _sandbox { _env, *this, *this };
+
+	Entrypoint suoritin_ep{_env, 4 * 4096, "suoritin", Affinity::Location()};
 
 	Timer::Connection _timer{_env};
 
@@ -136,9 +140,15 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 
 		/* prevent init to block for resource upgrades (never satisfied by core) */
 		_env.parent().resource_avail_sigh(_resource_avail_handler);
-
-		_timer.trigger_once(1000 * 1000);
 		_handle_config();
+		
+		Genode::log("Starting TASKING service");
+		static Genode::Sliced_heap sliced_heap{env.ram(), env.rm()};
+		static Tukija::Suoritin::Root_component suoritin(env, sliced_heap);
+        env.parent().announce(suoritin_ep.manage(suoritin));
+    
+
+		//_timer.trigger_once(1000 * 1000);
 	}
 };
 
