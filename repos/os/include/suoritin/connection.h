@@ -26,11 +26,13 @@ struct Tukija::Suoritin::Connection : Genode::Connection<Tukija::Suoritin::Sessi
 {
     enum
     {
-        RAM_QUOTA = 32768UL
+        RAM_QUOTA = 32UL /* in kilobytes */
     };
 
     Connection(Genode::Env &env, const char *label="", Genode::Affinity const &affinity = Genode::Affinity())
-    : Genode::Connection<Tukija::Suoritin::Session>(env, session(env.parent(), affinity, "ram_quota=%u, cap_quota=%u, label=\"%s\"", RAM_QUOTA, CAP_QUOTA, label)), Tukija::Suoritin::Client(cap()) {}
+    : Genode::Connection<Tukija::Suoritin::Session>(env, session(env.parent(), affinity, "ram_quota=%uK, cap_quota=%u, label=\"%s\"", RAM_QUOTA, CAP_QUOTA, label)), Tukija::Suoritin::Client(cap()) {
+        Genode::log("Connecting to TASKING service ...");
+    }
 
     void create_channel() override {
         Tukija::Suoritin::Client::create_channel();
