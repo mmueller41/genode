@@ -26,35 +26,59 @@ namespace Tukija {
 
         struct Channel;
         struct Worker;
-        typedef Genode::Registry<Genode::Registered<Channel>> Channel_list;
-        typedef Genode::Registry<Genode::Registered<Worker>> Worker_registry;
+        struct Event_channel;
     }
 }
 
-class Tukija::Suoritin::Capability 
-{
-    private: 
-        Genode::Ram_dataspace_capability _worker_space;
-        Genode::Ram_dataspace_capability _channel_space;
-
-    public:
-        Capability(Genode::Ram_dataspace_capability worker_space, Genode::Ram_dataspace_capability channel_space) :  _worker_space(worker_space), _channel_space(channel_space) {}
-
-        Genode::Ram_dataspace_capability worker_interface() { return _worker_space; }
-        Genode::Ram_dataspace_capability channel_space() { return _channel_space; }
-};
 
 struct Tukija::Suoritin::Worker : Genode::Interface
 {
-    Genode::Thread_capability _cap{};
-    Genode::Thread::Name _name{};
+    Genode::Thread_capability _cap;
+    Genode::Thread::Name _name;
+    unsigned long _id;
+
+    inline Genode::Thread_capability cap() { return _cap; }
+    inline Genode::Thread::Name name() { return _name; }
+    inline unsigned long id() { return _id; }
+
+    Worker(Genode::Thread_capability cap, Genode::Thread::Name &name)
+    :
+        _cap(cap), _name(name), _id(0) {}
 };
 
 struct Tukija::Suoritin::Channel : Genode::Interface
 {
+    typedef unsigned long Length;
+    typedef unsigned long Occupancy;
+
     unsigned long _id{0};
-    unsigned long _length{0};
-    unsigned long _occupancy{0};
+    alignas(64) volatile unsigned long _length{0};
+    alignas(64) volatile unsigned long _occupancy{0};
+    alignas(64) unsigned long _worker{0};
+
+    void length(Length increment) { __atomic_add_fetch(&_length, increment, __ATOMIC_RELAXED); }
+    void occupancy(Occupancy new_occupancy) { __atomic_store_n(&_occupancy, new_occupancy, __ATOMIC_RELEASE); }
+    inline Length length() { return __atomic_load_n(&_length, __ATOMIC_ACQUIRE); }
+    inline Occupancy occupancy() { return __atomic_load_n(&_occupancy, __ATOMIC_ACQUIRE); }
+
+    Channel(Worker &worker) : _worker(worker.id()) {
+        log("My worker is ", worker.name(), " at ", _worker);
+    }
+};
+
+struct Tukija::Suoritin::Event_channel : Genode::Interface
+{
+    enum
+    {
+        PARENT_REQUEST,
+        PARENT_RESPONSE,
+        CHILD_REQUEST,
+        CHILD_RESPONSE
+    };
+    alignas(64) volatile bool parent_flag;
+    alignas(64) volatile bool child_flag;
+    alignas(64) Genode::Parent::Resource_args parent_args;
+    alignas(64) Genode::Parent::Resource_args child_args;
 };
 
 struct Tukija::Suoritin::Session : Genode::Session
@@ -66,36 +90,22 @@ struct Tukija::Suoritin::Session : Genode::Session
         CAP_QUOTA = 6
     };
 
-    /**
-     * @brief List of all channels, i.e. worker queues, of the client cell
-     * 
-     */
-    Channel_list _channels{};
-
-    /**
-     * @brief List of worker threads for this client
-     * 
-     */
-    Worker_registry _workers{};
-
     virtual ~Session() { }
     
-    /************************
-     ** internal interface **
-     ************************/
-    Channel_list &channels() { return _channels; }
-    Worker_registry &workers() { return _workers; }
-
     /********************************
      ** Suoritin session interface **
      ********************************/
-    virtual void create_channel() = 0;
+    virtual void create_channel(Worker const &worker) = 0;
     virtual void register_worker(Genode::Thread::Name const &name, Genode::Thread_capability cap) = 0;
-    virtual Capability interface_cap() = 0;
+    virtual Genode::Dataspace_capability worker_if() = 0;
+    virtual Genode::Dataspace_capability channel_if() = 0;
+    virtual Genode::Dataspace_capability event_channel() = 0;
 
-    GENODE_RPC(Rpc_create_channel, void, create_channel);
+    GENODE_RPC(Rpc_create_channel, void, create_channel, Worker const&);
     GENODE_RPC(Rpc_register_worker, void, register_worker, Genode::Thread::Name const&, Genode::Thread_capability);
-    GENODE_RPC(Rpc_suoritin_cap, Tukija::Suoritin::Capability, interface_cap);
+    GENODE_RPC(Rpc_suoritin_worker_if, Genode::Dataspace_capability, worker_if);
+    GENODE_RPC(Rpc_suoritin_channel_if, Genode::Dataspace_capability, channel_if);
+    GENODE_RPC(Rpc_suoritin_event_if, Genode::Dataspace_capability, event_channel);
 
-    GENODE_RPC_INTERFACE(Rpc_create_channel, Rpc_register_worker, Rpc_suoritin_cap);
+    GENODE_RPC_INTERFACE(Rpc_create_channel, Rpc_register_worker, Rpc_suoritin_worker_if, Rpc_suoritin_channel_if, Rpc_suoritin_event_if);
 };

@@ -34,15 +34,23 @@ struct Tukija::Suoritin::Connection : Genode::Connection<Tukija::Suoritin::Sessi
         Genode::log("Connecting to TASKING service ...");
     }
 
-    void create_channel() override {
-        Tukija::Suoritin::Client::create_channel();
+    void create_channel(Tukija::Suoritin::Worker const &worker) override {
+        Tukija::Suoritin::Client::create_channel(worker);
     }
 
     void register_worker(Genode::Thread::Name const &name, Genode::Thread_capability cap) override {
         Tukija::Suoritin::Client::register_worker(name, cap);
     }
 
-    Tukija::Suoritin::Capability interface_cap() override {
-        return Tukija::Suoritin::Client::interface_cap();
+    Genode::Dataspace_capability worker_if() override {
+        return Tukija::Suoritin::Client::worker_if();
+    }
+
+    Genode::Dataspace_capability channel_if() override {
+        return Tukija::Suoritin::Client::channel_if();
+    }
+
+    Genode::Dataspace_capability event_channel() override {
+        return Tukija::Suoritin::Client::event_channel();
     }
 };

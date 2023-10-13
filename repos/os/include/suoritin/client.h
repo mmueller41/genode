@@ -22,9 +22,9 @@ struct Tukija::Suoritin::Client : Genode::Rpc_client<Tukija::Suoritin::Session>
     explicit Client(Genode::Capability<Tukija::Suoritin::Session> session)
     : Rpc_client<Tukija::Suoritin::Session>(session) { }
 
-    void create_channel() override 
+    void create_channel(Tukija::Suoritin::Worker const &worker) override 
     {
-        call<Rpc_create_channel>();
+        call<Rpc_create_channel>(worker);
     }
 
     void register_worker(Genode::Thread::Name const &name, Genode::Thread_capability cap) override
@@ -32,7 +32,18 @@ struct Tukija::Suoritin::Client : Genode::Rpc_client<Tukija::Suoritin::Session>
         call<Rpc_register_worker>(name, cap);
     }
 
-    Capability interface_cap() override {
-        return call<Rpc_suoritin_cap>();
+    Genode::Dataspace_capability worker_if() override
+    {
+        return call<Rpc_suoritin_worker_if>();
+    }
+
+    Genode::Dataspace_capability channel_if() override
+    {
+        return call<Rpc_suoritin_channel_if>();
+    }
+
+    Genode::Dataspace_capability event_channel() override
+    {
+        return call<Rpc_suoritin_event_if>();
     }
 };
