@@ -102,6 +102,17 @@ void Hoitaja::Habitat::maintain_cells()
                                 log(child.name(), " ram: ", child.ram_quota());
                                 Cell &cell = static_cast<Cell&>(child);
                                 _core_allocator->update(cell, &xpos); });
+	suoritin.for_each([&](Tukija::Suoritin::Session_component &client)
+					  { Genode::log("Cell ", client.label(), "\n------------");
+		for (unsigned long channel_id = 0; channel_id < client.channels(); channel_id++) {
+			Tukija::Suoritin::Channel &channel = client.channels_if()[channel_id];
+			Genode::log("\t", "Channel ", channel_id, ": length=", channel.length(), " worker=", client.worker(channel._worker).name(), ",", client.worker(channel._worker).cap() );
+			if (channel.length() > 0xFFFF) {
+				Genode::Parent::Resource_args grant_args("cpu_quota=10");
+				client.send_request(grant_args);
+			}
+		}
+					   });
 }
 
 void Hoitaja::Habitat::update(Cell &cell)

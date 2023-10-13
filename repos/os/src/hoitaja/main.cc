@@ -45,9 +45,9 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 {
 	Env &_env;
 
-	Habitat _sandbox { _env, *this, *this };
+	Entrypoint timer_ep{_env, 4 * 4096, "hoitaja_timer", Affinity::Location()};
 
-	Entrypoint suoritin_ep{_env, 4 * 4096, "suoritin", Affinity::Location()};
+	Habitat _sandbox { _env, *this, *this };
 
 	Timer::Connection _timer{_env};
 
@@ -94,14 +94,15 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 
 	void _handle_timeout()
 	{
-		//log("Hoitaja's entering its maintance cycle");
+		log("Hoitaja's entering its maintance cycle");
 		// For now just print all cells created by Hoitaja
 		//_handle_config();
-		//_timer.trigger_once(1000 * 1000);
+		_sandbox.maintain_cells();
+		_timer.trigger_once(10*1000 * 1000);
 	}
 
 	Signal_handler<Main> _timeout_handler{
-		_env.ep(), *this, &Main::_handle_timeout};
+		timer_ep, *this, &Main::_handle_timeout};
 
 	/**
 	 * Sandbox::State_handler interface
@@ -143,12 +144,9 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 		_handle_config();
 		
 		Genode::log("Starting TASKING service");
-		static Genode::Sliced_heap sliced_heap{env.ram(), env.rm()};
-		static Tukija::Suoritin::Root_component suoritin(env, sliced_heap);
-        env.parent().announce(suoritin_ep.manage(suoritin));
     
 
-		//_timer.trigger_once(1000 * 1000);
+		_timer.trigger_once(1000 * 1000);
 	}
 };
 
