@@ -65,6 +65,10 @@ namespace Nova {
 		NOVA_ASSIGN_PCI = 0xd,
 		NOVA_ASSIGN_GSI = 0xe,
 		NOVA_PD_CTRL    = 0xf,
+		NOVA_YIELD		= 0x10,
+		NOVA_CREATE_CELL= 0x11,
+		NOVA_ALLOC_CORES= 0x12,
+		NOVA_CORE_ALLOC = 0x13,
 	};
 
 	/**

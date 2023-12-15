@@ -36,6 +36,7 @@
 
 #include <nova/stdint.h>
 #include <nova/syscall-generic.h>
+#include <base/trace/types.h>
 
 #define ALWAYS_INLINE __attribute__((always_inline))
 
@@ -44,7 +45,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline mword_t rdi(Syscall s, uint8_t flags, mword_t sel)
 	{
-		return sel << 8 | (flags & 0xf) << 4 | s;
+		return sel << 12 | (flags & 0xf) << 8 | s;
 	}
 
 
@@ -263,7 +264,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline uint8_t hpc_read(mword_t sel, mword_t type, mword_t &value)
 	{
-		return syscall_5(NOVA_EC_CTRL, HPC_READ, sel, type, value);
+			return syscall_5(NOVA_EC_CTRL, HPC_READ, sel, type, value);
 	}
 
 	ALWAYS_INLINE
@@ -437,6 +438,30 @@ namespace Nova {
 		msi_addr = dev;
 		msi_data = cpu;
 		return syscall_5(NOVA_ASSIGN_GSI, flags.value(), sm, msi_addr, msi_data, si);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t yield()
+	{
+		return syscall_0(NOVA_YIELD, 0, 0);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t mxinit(mword_t rip, mword_t id, mword_t channel)
+	{
+		return syscall_2(NOVA_CREATE_CELL, 0, id, rip, channel);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t alloc_cores(mword_t count)
+	{
+		return syscall_1(NOVA_ALLOC_CORES, 0, 0, count);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t core_allocation(mword_t &allocation)
+	{
+		return syscall_5(NOVA_CORE_ALLOC, 0, 0, allocation, allocation);
 	}
 }
 #endif /* _INCLUDE__SPEC__64BIT__NOVA__SYSCALLS_H_ */
