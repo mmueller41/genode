@@ -17,7 +17,7 @@
 #include <sandbox/route_model.h>
 
 #include <state_handler.h>
-
+#include <nova/syscalls.h>
 namespace Hoitaja {
     class Cell;
 }
@@ -26,6 +26,7 @@ class Hoitaja::Cell : public ::Sandbox::Child
 {
     private:
         State_handler &_state_handler;
+        long _priority{0};
 
     public:
         friend class Habitat;
@@ -51,19 +52,25 @@ class Hoitaja::Cell : public ::Sandbox::Child
              Genode::Registry<::Sandbox::Child::Local_service> &local_services,
              State_handler &state_handler)
             : ::Sandbox::Child(env, alloc, verbose, id, report_update_trigger, start_node, default_route_accessor, default_caps_accessor, name_registry, ram_limit_accessor, cap_limit_accessor, cpu_limit_accessor, cpu_quota_transfer, prio_levels, affinity_space, location, parent_services, child_services, local_services), _state_handler(state_handler)
-        { }
+        { 
+            _priority = ::Sandbox::priority_from_xml(start_node, prio_levels);
+            _priority = (_priority == 0) ? 1 : _priority;
 
-		virtual ~Cell() { };
+            env.pd().create_cell(_priority, location);
+        }
+
+        virtual ~Cell() { };
 
         struct Resources &resources() { return _resources; }
 
         void update_affinity(Genode::Affinity affinity) {
-            Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
+            //Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
             _resources.affinity = affinity;
-            Genode::log("Moving CPU session ", _env.cpu_session_cap());
+            //Genode::log("Moving CPU session ", _env.cpu_session_cap());
             _env.cpu().move(affinity.location());
             if (_child.active()) {
                 _child.cpu().move(affinity.location());
+                // TODO: Change topology representation
                 _child.topo().reconstruct(affinity);
             }
         }
@@ -74,7 +81,11 @@ class Hoitaja::Cell : public ::Sandbox::Child
             _state_handler.handle_habitat_state(*this);
         }
 
-        void yield(Genode::Parent::Resource_args &args) {
-            _child.yield(args);
+        void shrink_cores(Genode::Affinity::Location &cores) {
+            _env.pd().shrink_cell(cores);
+        }
+
+        void grow_cores(Genode::Affinity::Location &cores) {
+            _env.pd().grow_cell(cores);
         }
 };
