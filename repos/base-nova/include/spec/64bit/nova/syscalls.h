@@ -449,7 +449,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline uint8_t mxinit(mword_t rip, mword_t id, mword_t channel)
 	{
-		return syscall_2(NOVA_CREATE_CELL, 0, id, rip, channel);
+		return syscall_2(NOVA_MXINIT, 0, id, rip, channel);
 	}
 
 	ALWAYS_INLINE
@@ -462,6 +462,24 @@ namespace Nova {
 	inline uint8_t core_allocation(mword_t &allocation)
 	{
 		return syscall_5(NOVA_CORE_ALLOC, 0, 0, allocation, allocation);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t create_cell(mword_t pd, mword_t prio, mword_t start, mword_t end)
+	{
+		return syscall_2(NOVA_CREATE_CELL, static_cast<Nova::uint8_t>(prio), pd, start, end);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t grow_cell(mword_t pd, mword_t start, mword_t end)
+	{
+		return syscall_2(NOVA_CELL_CTRL, Cell_op::GROW, pd, start, end);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t shrink_cell(mword_t pd, mword_t start, mword_t end)
+	{
+		return syscall_2(NOVA_CELL_CTRL, Cell_op::SHRINK, pd, start, end);
 	}
 }
 #endif /* _INCLUDE__SPEC__64BIT__NOVA__SYSCALLS_H_ */

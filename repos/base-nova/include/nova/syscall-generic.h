@@ -66,9 +66,11 @@ namespace Nova {
 		NOVA_ASSIGN_GSI = 0xe,
 		NOVA_PD_CTRL    = 0xf,
 		NOVA_YIELD		= 0x10,
-		NOVA_CREATE_CELL= 0x11,
+		NOVA_MXINIT     = 0x11,
 		NOVA_ALLOC_CORES= 0x12,
 		NOVA_CORE_ALLOC = 0x13,
+		NOVA_CREATE_CELL= 0x14,
+		NOVA_CELL_CTRL  = 0x15,
 	};
 
 	/**
@@ -279,6 +281,15 @@ namespace Nova {
 		HPC_STOP = 8U,
 		HPC_RESET = 9U,
 		HPC_READ = 10U,
+	};
+
+	/**
+	 * Cell operations
+	*/
+	enum Cell_op
+	{
+		SHRINK = 0,
+		GROW = 1,
 	};
 
 	/**
