@@ -39,15 +39,6 @@ class Hoitaja::Core_allocator
 
         double _resource_coeff; // Coefficient used for calculating resource shares
 
-        void _shrink(Cell &cell, unsigned int cores)
-        {
-                char yield_args_str[10];
-                Genode::snprintf(yield_args_str, 7, "cores=%d", cores);
-                Genode::Parent::Resource_args yield_args(yield_args_str);
-
-                cell.yield(yield_args);
-        } 
-
     public:
         inline unsigned int _calculate_resource_share(long priority) {
             double ref_share = static_cast<double>(_affinity_space.total()) / _resource_coeff;
@@ -68,7 +59,6 @@ class Hoitaja::Core_allocator
 
             unsigned int cores_share = _calculate_resource_share(priority);
             
-            Genode::log("Child ", start_node.attribute_value("name", Genode::String<8>("unknown")), "'s share is ", cores_share, " of ", _affinity_space.total(), " cores, coeff=", _resource_coeff, " priority=", priority);
          
             return Genode::Affinity::Location( _affinity_space.total()-cores_share, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
         }
@@ -85,6 +75,8 @@ class Hoitaja::Core_allocator
          * 
          */
         void update(Hoitaja::Cell &cell, int *xpos) {
+            if (cell.abandoned())
+                return;
             Cell::Resources resources = cell.resources();
             long priority = (resources.priority == 0)? 1 : resources.priority;
 
@@ -93,16 +85,27 @@ class Hoitaja::Core_allocator
 
             cores_to_reclaim = (static_cast<int>(cores_to_reclaim) < 0) ? 0 : cores_to_reclaim;
 
+            if (*xpos - cores_share == 0) {
+                cores_share--; // Save one core for Hoitaja
+            }
+
             Genode::Affinity::Location location(*xpos - cores_share, resources.affinity.location().ypos(), cores_share, resources.affinity.location().height());
-            cell.update_affinity(Genode::Affinity(resources.affinity.space(), location));
+            
+            if (resources.affinity.location() != location) { // Only update, if location has actually changed
+                cell.update_affinity(Genode::Affinity(resources.affinity.space(), location));
+            }
+
+            if (location.width() > resources.affinity.location().width()) {
+                cell.grow_cores(location);
+            }
 
             *xpos = location.xpos();
             // TODO: Update affinity of existing sessions for cell
             // TODO: Send yield request to cell
-            log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
+            //log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
 
             if (cores_to_reclaim > 0) {
-                _shrink(cell, cores_to_reclaim);
+                cell.shrink_cores(location);
             }
         }
 
