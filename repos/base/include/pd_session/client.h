@@ -105,6 +105,21 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 
 	Attach_dma_result attach_dma(Dataspace_capability ds, addr_t at) override {
 		return call<Rpc_attach_dma>(ds, at); }
+
+	void create_cell(long prioritiy, const Affinity::Location &loc) override
+	{
+		call<Rpc_create_cell>(prioritiy, loc);
+	}
+	
+	void grow_cell(const Affinity::Location &loc) override
+	{
+		call<Rpc_grow_cell>(loc);
+	}
+	
+	void shrink_cell(const Affinity::Location &loc) override
+	{
+		call<Rpc_shrink_cell>(loc);
+	}
 };
 
 #endif /* _INCLUDE__PD_SESSION__CLIENT_H_ */

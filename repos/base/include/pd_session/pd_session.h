@@ -21,14 +21,13 @@
 #include <session/session.h>
 #include <region_map/region_map.h>
 #include <base/ram_allocator.h>
-
+#include <base/affinity.h>
 namespace Genode {
 	struct Pd_session;
 	struct Pd_session_client;
 	struct Parent;
 	struct Signal_context;
 }
-
 
 struct Genode::Pd_session : Session, Ram_allocator
 {
@@ -347,6 +346,14 @@ struct Genode::Pd_session : Session, Ram_allocator
 	 */
 	virtual Attach_dma_result attach_dma(Dataspace_capability, addr_t at) = 0;
 
+	/*
+	 * Create a new cell at the kernel for this protection domain
+	*/
+	virtual void create_cell(long prioritiy, const Affinity::Location &loc) = 0;
+
+	virtual void shrink_cell(const Affinity::Location &loc) = 0;
+
+	virtual void grow_cell(const Affinity::Location &loc) = 0;
 
 	/*********************
 	 ** RPC declaration **
@@ -402,6 +409,11 @@ struct Genode::Pd_session : Session, Ram_allocator
 	GENODE_RPC(Rpc_attach_dma, Attach_dma_result, attach_dma,
 	           Dataspace_capability, addr_t);
 
+	GENODE_RPC(Rpc_create_cell, void, create_cell, long, Affinity::Location const &);
+
+	GENODE_RPC(Rpc_shrink_cell, void, shrink_cell, Affinity::Location const &);
+	GENODE_RPC(Rpc_grow_cell, void, grow_cell, Affinity::Location const &);
+
 	GENODE_RPC_INTERFACE(Rpc_assign_parent, Rpc_assign_pci, Rpc_map,
 	                     Rpc_alloc_signal_source, Rpc_free_signal_source,
 	                     Rpc_alloc_context, Rpc_free_context, Rpc_submit,
@@ -411,7 +423,8 @@ struct Genode::Pd_session : Session, Ram_allocator
 	                     Rpc_try_alloc, Rpc_try_alloc_numa, Rpc_free,
 	                     Rpc_transfer_ram_quota, Rpc_ram_quota, Rpc_used_ram,
 	                     Rpc_native_pd, Rpc_managing_system,
-	                     Rpc_dma_addr, Rpc_attach_dma);
+	                     Rpc_dma_addr, Rpc_attach_dma,
+						 Rpc_create_cell, Rpc_grow_cell, Rpc_shrink_cell);
 };
 
 #endif /* _INCLUDE__PD_SESSION__PD_SESSION_H_ */

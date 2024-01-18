@@ -346,6 +346,14 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		addr_t dma_addr(Ram_dataspace_capability) override;
 
 		Attach_dma_result attach_dma(Dataspace_capability, addr_t) override;
+
+		/******************************************
+		 ** Support for EalánOS cells            **
+		 ******************************************/
+		void create_cell(long prioritiy, const Affinity::Location &loc) override;
+
+		void grow_cell(const Affinity::Location &loc) override;
+		void shrink_cell(const Affinity::Location &loc) override;
 };
 
 #endif /* _CORE__INCLUDE__PD_SESSION_COMPONENT_H_ */

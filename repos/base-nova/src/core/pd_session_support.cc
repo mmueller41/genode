@@ -106,6 +106,29 @@ void Pd_session_component::map(addr_t virt, addr_t size)
 	}
 }
 
+void Pd_session_component::create_cell(long prioritiy, const Affinity::Location &loc)
+{
+	Nova::uint8_t err = Nova::NOVA_OK;
+	if ((err = Nova::create_cell(_pd->pd_sel(), prioritiy, loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
+		error("Could not create new cell: ", err);
+	}
+}
+
+void Pd_session_component::grow_cell(const Affinity::Location &loc)
+{
+	Nova::uint8_t err = Nova::NOVA_OK;
+	if ((err = Nova::grow_cell(_pd->pd_sel(), loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
+		error("Could not enlarge cell: ", err);
+	}
+}
+
+void Pd_session_component::shrink_cell(const Affinity::Location &loc)
+{
+	Nova::uint8_t err = Nova::NOVA_OK;
+	if ((err = Nova::shrink_cell(_pd->pd_sel(), loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
+		error("Could not shrink down cell: ", err);
+	}
+}
 
 using State = Genode::Pd_session::Managing_system_state;
 
