@@ -352,8 +352,7 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		 ******************************************/
 		void create_cell(long prioritiy, const Affinity::Location &loc) override;
 
-		void grow_cell(const Affinity::Location &loc) override;
-		void shrink_cell(const Affinity::Location &loc) override;
+		void update_cell(const Affinity::Location &loc) override;
 };
 
 #endif /* _CORE__INCLUDE__PD_SESSION_COMPONENT_H_ */
