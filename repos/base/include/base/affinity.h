@@ -167,6 +167,13 @@ class Genode::Affinity
 					                node.attribute_value("height", default_height));
 				}
 
+				bool operator==(Location const &rhs) {
+					return this->_xpos == rhs._xpos && this->_ypos == rhs._ypos && this->height() == rhs.height() && this->width() == rhs.width();
+				}
+
+				bool operator!=(Location const &rhs) {
+					return !(*this == rhs);
+				}
 		};
 
 	private:
