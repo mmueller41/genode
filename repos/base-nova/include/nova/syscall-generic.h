@@ -36,6 +36,7 @@
 #define _INCLUDE__NOVA__SYSCALL_GENERIC_H_
 
 #include <nova/stdint.h>
+#include <base/log.h>
 
 namespace Nova {
 
@@ -71,6 +72,7 @@ namespace Nova {
 		NOVA_CORE_ALLOC = 0x13,
 		NOVA_CREATE_CELL= 0x14,
 		NOVA_CELL_CTRL  = 0x15,
+		NOVA_CONS_CTRL  = 0x16,
 	};
 
 	/**
@@ -189,12 +191,28 @@ namespace Nova {
 			return desc ? desc->flags & 0x1 : false;
 		}
 
+		unsigned numa_nodes() const {
+			unsigned node_num = 1;
+			unsigned long nodes = 0x0;
+			unsigned long last_node = 0;
+
+			for (unsigned cpu = 0; cpu < cpu_max(); cpu++) {
+				Cpu_desc const *c = cpu_desc_of_cpu(cpu);
+				if (c->numa_id != last_node && !(nodes & (1<<c->numa_id))) {
+					node_num++;
+					nodes |= (1 << c->numa_id);
+				}
+			}
+			return node_num;
+		}
+
 		/**
 		 * Map kernel cpu ids to virtual cpu ids.
 		 */
 		bool remap_cpu_ids(uint8_t *map_cpus, uint8_t *cpu_numa_map, unsigned const boot_cpu) const {
 			unsigned const num_cpus = cpus();
 			unsigned cpu_i = 0;
+			unsigned const num_nodes = numa_nodes();
 
 			/* assign boot cpu ever the virtual cpu id 0 */
 			Cpu_desc const * const boot = cpu_desc_of_cpu(boot_cpu);
@@ -205,30 +223,23 @@ namespace Nova {
 			if (cpu_i >= num_cpus)
 				return true;
 
-			/* assign remaining cores and afterwards all threads to the ids */
-			for (uint8_t package = 0; package < 255; package++) {
-				for (uint8_t core = 0; core < 255; core++) {
-					for (uint8_t thread = 0; thread < 255; thread++) {
-						for (unsigned i = 0; i < cpu_max(); i++) {
-							if (i == boot_cpu || !is_cpu_enabled(i)) 
-								continue;
+			for (uint8_t node = 0; node < num_nodes; node++) {
+				for (unsigned i = 0; i < num_cpus; i++) {
+					if (i == boot_cpu || !is_cpu_enabled(i))
+						continue;
 
-							Cpu_desc const * const c = cpu_desc_of_cpu(i);
-							if (!c) 
-								continue;
+					Cpu_desc const *c = cpu_desc_of_cpu(i);
+					if (!(c->numa_id == node))
+						continue;
 
-							if (!(c->package == package && c->core == core &&
-							      c->thread == thread))
-								continue;
+					cpu_numa_map[i] = c->numa_id;
+					map_cpus[cpu_i++] = (uint8_t)i;
 
-							cpu_numa_map[i] = c->numa_id;
-							map_cpus[cpu_i++] = (uint8_t)i;
-							if (cpu_i >= num_cpus)
-								return true;
-						}
-					}
+					if (cpu_i >= num_cpus)
+						return true;
 				}
 			}
+
 			return false;
 		}
 
@@ -857,5 +868,13 @@ namespace Nova {
 		SM_SEL_EC         = 0x1d,  /* convention on Genode */
 	};
 
+	/**
+	 * Console operations
+	*/
+	enum Cons_op
+	{
+		LOCK = 0,
+		UNLOCK = 1,
+	};
 }
 #endif /* _INCLUDE__NOVA__SYSCALL_GENERIC_H_ */
