@@ -31,6 +31,10 @@ namespace Genode {
 
 struct Genode::Core_log
 {
+	void acquire();
+
+	void release();
+
 	void out(char const c);
 
 	void output(char const * str);

@@ -18,6 +18,9 @@
 #include <bios_data_area.h>
 #include <drivers/uart/x86_pc.h>
 
+/* NOVA includes */
+#include <nova/syscalls.h>
+
 void Genode::Core_log::out(char const c)
 {
 	enum { CLOCK = 0, BAUDRATE = 115200 };
@@ -27,4 +30,14 @@ void Genode::Core_log::out(char const c)
 	if (c == '\n')
 		uart.put_char('\r');
 	uart.put_char(c);
+}
+
+void Genode::Core_log::acquire()
+{
+	Nova::acquire_console();
+}
+
+void Genode::Core_log::release()
+{
+	Nova::release_console();
 }
