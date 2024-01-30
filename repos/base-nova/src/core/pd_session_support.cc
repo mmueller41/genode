@@ -106,27 +106,56 @@ void Pd_session_component::map(addr_t virt, addr_t size)
 	}
 }
 
+void _calculate_mask_for_location(Nova::mword_t *core_mask, const Affinity::Location &loc)
+{
+	for (unsigned y = loc.ypos(); y < loc.ypos() + loc.height(); y++)
+	{
+		for (unsigned x = loc.xpos(); x < loc.xpos()+loc.width(); x++)
+		{
+			unsigned kernel_cpu = platform_specific().kernel_cpu_id(Affinity::Location(x, y, loc.width(), loc.height()));
+			unsigned i = kernel_cpu / (sizeof(Nova::mword_t) * 8);
+			unsigned b = kernel_cpu % (sizeof(Nova::mword_t) * 8);
+			core_mask[i] |= (1UL << b);
+
+			Genode::log("core_mask[", i, "]=", core_mask[i], " i=", i, "b=", b, "kernel_cpu=", kernel_cpu);
+		}
+	}
+}
+
+
 void Pd_session_component::create_cell(long prioritiy, const Affinity::Location &loc)
 {
 	Nova::uint8_t err = Nova::NOVA_OK;
-	if ((err = Nova::create_cell(_pd->pd_sel(), prioritiy, loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
-		error("Could not create new cell: ", err);
+	unsigned num_cpus = platform_specific().MAX_SUPPORTED_CPUS;
+	unsigned num_vect = num_cpus / (sizeof(Nova::mword_t) * 8);
+	Nova::mword_t core_mask[num_vect];
+
+	Genode::memset(core_mask, 0, sizeof(core_mask));
+
+	_calculate_mask_for_location(core_mask, loc);
+
+	log("Requested to create new cell for <", this->label(), "> of priority ", prioritiy, " at ", loc);
+	for (unsigned i = 0; i < num_vect; i++) {
+		if ((err = Nova::create_cell(_pd->pd_sel(), prioritiy, core_mask[i], i, 1) != Nova::NOVA_OK))
+		{
+			error("Could not create new cell: ", err);
+		}
 	}
 }
 
-void Pd_session_component::grow_cell(const Affinity::Location &loc)
+void Pd_session_component::update_cell(const Affinity::Location &loc) 
 {
 	Nova::uint8_t err = Nova::NOVA_OK;
-	if ((err = Nova::grow_cell(_pd->pd_sel(), loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
-		error("Could not enlarge cell: ", err);
-	}
-}
+	unsigned num_cpus = platform_specific().affinity_space().total();
+	unsigned num_vect = num_cpus / (sizeof(Nova::mword_t) * 8);
+	Nova::mword_t core_mask[num_vect];
 
-void Pd_session_component::shrink_cell(const Affinity::Location &loc)
-{
-	Nova::uint8_t err = Nova::NOVA_OK;
-	if ((err = Nova::shrink_cell(_pd->pd_sel(), loc.xpos(), loc.xpos()+loc.width())) != Nova::NOVA_OK) {
-		error("Could not shrink down cell: ", err);
+	_calculate_mask_for_location(core_mask, loc);
+
+	for (unsigned i = 0; i < num_vect; i++) {
+		if ((err = Nova::update_cell(_pd->pd_sel(), core_mask[i], i))) {
+			error("Failed to update cell <", label(), ">: ", err);
+		}
 	}
 }
 

@@ -111,14 +111,9 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 		call<Rpc_create_cell>(prioritiy, loc);
 	}
 	
-	void grow_cell(const Affinity::Location &loc) override
+	void update_cell(const Affinity::Location &loc) override
 	{
-		call<Rpc_grow_cell>(loc);
-	}
-	
-	void shrink_cell(const Affinity::Location &loc) override
-	{
-		call<Rpc_shrink_cell>(loc);
+		call<Rpc_update_cell>(loc);
 	}
 };
 

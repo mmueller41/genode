@@ -351,9 +351,7 @@ struct Genode::Pd_session : Session, Ram_allocator
 	*/
 	virtual void create_cell(long prioritiy, const Affinity::Location &loc) = 0;
 
-	virtual void shrink_cell(const Affinity::Location &loc) = 0;
-
-	virtual void grow_cell(const Affinity::Location &loc) = 0;
+	virtual void update_cell(const Affinity::Location &loc) = 0;
 
 	/*********************
 	 ** RPC declaration **
@@ -411,8 +409,7 @@ struct Genode::Pd_session : Session, Ram_allocator
 
 	GENODE_RPC(Rpc_create_cell, void, create_cell, long, Affinity::Location const &);
 
-	GENODE_RPC(Rpc_shrink_cell, void, shrink_cell, Affinity::Location const &);
-	GENODE_RPC(Rpc_grow_cell, void, grow_cell, Affinity::Location const &);
+	GENODE_RPC(Rpc_update_cell, void, update_cell, Affinity::Location const &);
 
 	GENODE_RPC_INTERFACE(Rpc_assign_parent, Rpc_assign_pci, Rpc_map,
 	                     Rpc_alloc_signal_source, Rpc_free_signal_source,
@@ -424,7 +421,7 @@ struct Genode::Pd_session : Session, Ram_allocator
 	                     Rpc_transfer_ram_quota, Rpc_ram_quota, Rpc_used_ram,
 	                     Rpc_native_pd, Rpc_managing_system,
 	                     Rpc_dma_addr, Rpc_attach_dma,
-						 Rpc_create_cell, Rpc_grow_cell, Rpc_shrink_cell);
+						 Rpc_create_cell, Rpc_update_cell);
 };
 
 #endif /* _INCLUDE__PD_SESSION__PD_SESSION_H_ */
