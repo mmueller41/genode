@@ -441,9 +441,9 @@ namespace Nova {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t yield()
+	inline uint8_t yield(bool release_core = true)
 	{
-		return syscall_0(NOVA_YIELD, 0, 0);
+		return syscall_0(NOVA_YIELD, release_core, 0);
 	}
 
 	ALWAYS_INLINE
@@ -465,21 +465,27 @@ namespace Nova {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t create_cell(mword_t pd, mword_t prio, mword_t start, mword_t end)
+	inline uint8_t create_cell(mword_t pd, mword_t prio, mword_t mask, mword_t start, mword_t count)
 	{
-		return syscall_2(NOVA_CREATE_CELL, static_cast<Nova::uint8_t>(prio), pd, start, end);
+		return syscall_5(NOVA_CREATE_CELL, static_cast<Nova::uint8_t>(prio), pd, mask, start, count);
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t grow_cell(mword_t pd, mword_t start, mword_t end)
+	inline uint8_t update_cell(mword_t pd, mword_t mask, mword_t index)
 	{
-		return syscall_2(NOVA_CELL_CTRL, Cell_op::GROW, pd, start, end);
+		return syscall_2(NOVA_CELL_CTRL, Cell_op::GROW, pd, mask, index);
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t shrink_cell(mword_t pd, mword_t start, mword_t end)
+	inline uint8_t acquire_console()
 	{
-		return syscall_2(NOVA_CELL_CTRL, Cell_op::SHRINK, pd, start, end);
+		return syscall_0(NOVA_CONS_CTRL, Nova::Cons_op::LOCK);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t release_console()
+	{
+		return syscall_0(NOVA_CONS_CTRL, Nova::Cons_op::UNLOCK);
 	}
 }
 #endif /* _INCLUDE__SPEC__64BIT__NOVA__SYSCALLS_H_ */
