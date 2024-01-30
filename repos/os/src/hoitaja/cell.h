@@ -55,8 +55,7 @@ class Hoitaja::Cell : public ::Sandbox::Child
         { 
             _priority = ::Sandbox::priority_from_xml(start_node, prio_levels);
             _priority = (_priority == 0) ? 1 : _priority;
-
-            env.pd().create_cell(_priority, location);
+            Genode::log("Creating new cell at Hoitaja <", name(), ">");
         }
 
         virtual ~Cell() { };
@@ -75,6 +74,12 @@ class Hoitaja::Cell : public ::Sandbox::Child
             }
         }
 
+        void create_at_tukija()
+        {
+            Genode::log("Creating new cell <", name(), "> at Tukija at ", _resources.affinity.location());
+            _child.pd().create_cell(_priority, _resources.affinity.location());
+        }
+
         void exit(int exit_value) override
         {
             ::Sandbox::Child::exit(exit_value);
@@ -82,10 +87,20 @@ class Hoitaja::Cell : public ::Sandbox::Child
         }
 
         void shrink_cores(Genode::Affinity::Location &cores) {
-            _env.pd().shrink_cell(cores);
+            if (_child.active())
+                _child.pd().update_cell(cores);
         }
 
         void grow_cores(Genode::Affinity::Location &cores) {
-            _env.pd().grow_cell(cores);
+            if (_child.active())
+                _child.pd().update_cell(cores);
+        }
+
+        void try_start() override
+        {
+            ::Sandbox::Child::try_start();
+            while (!(_child.active()))
+                __builtin_ia32_pause();
+            create_at_tukija();
         }
 };

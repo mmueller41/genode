@@ -576,7 +576,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		Cap_quota cap_quota() const { return _resources.assigned_cap_quota; }
 		Cpu_quota cpu_quota() const { return _effective_cpu_quota; }
 
-		void try_start()
+		virtual void try_start()
 		{
 			if (_state == State::INITIAL) {
 				_child.initiate_env_pd_session();
