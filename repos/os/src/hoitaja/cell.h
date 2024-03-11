@@ -55,7 +55,7 @@ class Hoitaja::Cell : public ::Sandbox::Child
         { 
             _priority = ::Sandbox::priority_from_xml(start_node, prio_levels);
             _priority = (_priority == 0) ? 1 : _priority;
-            Genode::log("Creating new cell at Hoitaja <", name(), ">");
+            Genode::log("Creating new cell at Hoitaja <", name(), "> at ", location, " in ", affinity_space);
         }
 
         virtual ~Cell() { };
