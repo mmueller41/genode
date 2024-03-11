@@ -73,6 +73,9 @@ namespace Nova {
 		NOVA_CREATE_CELL= 0x14,
 		NOVA_CELL_CTRL  = 0x15,
 		NOVA_CONS_CTRL  = 0x16,
+		NOVA_CPUID		= 0x17,
+		NOVA_RESERVE_CPU= 0x18,
+		NOVA_CREATE_HAB = 0x19,
 	};
 
 	/**
@@ -591,7 +594,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)

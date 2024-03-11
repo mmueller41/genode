@@ -155,7 +155,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline uint8_t call(mword_t pt)
 	{
-		return syscall_1(NOVA_CALL, 0, pt, 0);
+		return syscall_1(NOVA_CALL, 0, 0, pt);
 	}
 
 
@@ -441,9 +441,10 @@ namespace Nova {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t yield(bool release_core = true)
+	inline uint8_t yield(bool release_core = true, bool block = true)
 	{
-		return syscall_0(NOVA_YIELD, release_core, 0);
+		Nova::uint8_t flags = block ? release_core : 3;
+		return syscall_0(NOVA_YIELD, flags, 0);
 	}
 
 	ALWAYS_INLINE
@@ -453,15 +454,27 @@ namespace Nova {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t alloc_cores(mword_t count)
+	inline uint8_t alloc_cores(mword_t count, mword_t &allocated)
 	{
-		return syscall_1(NOVA_ALLOC_CORES, 0, 0, count);
+		return syscall_5(NOVA_ALLOC_CORES, 0, 0, count, allocated);
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t core_allocation(mword_t &allocation)
+	inline uint8_t wake_core(mword_t core)
 	{
-		return syscall_5(NOVA_CORE_ALLOC, 0, 0, allocation, allocation);
+		return syscall_1(NOVA_RESERVE_CPU, 0, 0, core);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t core_allocation(mword_t &allocation, bool mask = false)
+	{
+		return syscall_5(NOVA_CORE_ALLOC, static_cast<Nova::uint8_t>(mask), 0, allocation, allocation);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t cpu_id(mword_t &cpuid)
+	{
+		return syscall_5(NOVA_CPUID, 0, 0, cpuid, cpuid);
 	}
 
 	ALWAYS_INLINE
@@ -474,6 +487,12 @@ namespace Nova {
 	inline uint8_t update_cell(mword_t pd, mword_t mask, mword_t index)
 	{
 		return syscall_2(NOVA_CELL_CTRL, Cell_op::GROW, pd, mask, index);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t create_habitat(mword_t start_cpu, mword_t size)
+	{
+		return syscall_2(NOVA_CREATE_HAB, 0, 0, start_cpu, size);
 	}
 
 	ALWAYS_INLINE
