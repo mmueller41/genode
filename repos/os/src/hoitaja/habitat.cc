@@ -136,5 +136,4 @@ void Hoitaja::Habitat::update(Cell &cell)
 void Hoitaja::Core_allocation_request::handle(Hoitaja::Cell&, Hoitaja::Habitat&) 
 {
 	Genode::Parent::Resource_args grant_args("cpu_quota=10");
-	client().send_request(grant_args);
 }

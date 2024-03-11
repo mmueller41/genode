@@ -30,8 +30,6 @@
 #include "core_allocator.h"
 /* State Handler */
 #include "state_handler.h"
-/* Tasking Service Suoritin */
-#include <suoritin/component.h>
 
 namespace Hoitaja {
 
@@ -40,17 +38,15 @@ namespace Hoitaja {
 	struct Main;
 }
 
-
 struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 {
+
+
 	Env &_env;
 
-	Entrypoint timer_ep{_env, 4 * 4096, "hoitaja_timer", Affinity::Location()};
-
 	Habitat _sandbox { _env, *this, *this };
-
 	Timer::Connection _timer{_env};
-
+	
 	Attached_rom_dataspace _config { _env, "config" };
 
 	void _handle_resource_avail() { }
@@ -64,6 +60,7 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 
 	void _handle_config()
 	{
+		try {
 		_config.update();
 
 		Xml_node const config = _config.xml();
@@ -87,22 +84,25 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 			_reporter->enabled(reporter_enabled);
 
 		_sandbox.apply_config(config);
+		} catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded&)
+		{
+			Genode::error("Caps exceeded while handling configuration change.");
+		}
 	}
 
 	Signal_handler<Main> _config_handler {
 		_env.ep(), *this, &Main::_handle_config };
 
-	void _handle_timeout()
+	void handle_timeout(Genode::Duration) 
 	{
-		log("Hoitaja's entering its maintance cycle");
-		// For now just print all cells created by Hoitaja
-		//_handle_config();
+		//Genode::log("Hoitaja woke up after ", (now - last) / 2000, " us");
+
 		_sandbox.maintain_cells();
-		_timer.trigger_once(10*1000 * 1000);
+				
+		_timeout.schedule(Genode::Microseconds{20});
 	}
 
-	Signal_handler<Main> _timeout_handler{
-		timer_ep, *this, &Main::_handle_timeout};
+	Timer::One_shot_timeout<Main> _timeout{_timer, *this, &Main::handle_timeout};
 
 	/**
 	 * Sandbox::State_handler interface
@@ -131,22 +131,25 @@ struct Hoitaja::Main : Genode::Sandbox::State_handler, Hoitaja::State_handler
 	void handle_habitat_state(Cell &cell) override
 	{
 		Genode::log("Habitat changed");
-		_sandbox.update(cell);
+		try {
+			_sandbox.update(cell);
+		} catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded) {
+			Genode::log("CAP quota exceeded in state handler");
+			_env.parent().exit(1);
+		}
 	}
 
 	Main(Env &env) : _env(env)
 	{
 		_config.sigh(_config_handler);
-		_timer.sigh(_timeout_handler);
 
 		/* prevent init to block for resource upgrades (never satisfied by core) */
-		_env.parent().resource_avail_sigh(_resource_avail_handler);
+		//_env.parent().resource_avail_sigh(_resource_avail_handler);
 		_handle_config();
 		
-		Genode::log("Starting TASKING service");
-    
+		Genode::log("Affinity space: ", env.cpu().affinity_space());
 
-		_timer.trigger_once(1000 * 1000);
+		_timeout.schedule(Genode::Microseconds{20});
 	}
 };
 

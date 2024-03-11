@@ -17,7 +17,6 @@
 #include <core_allocator.h>
 #include <cell.h>
 #include <state_handler.h>
-#include <suoritin/component.h>
 
 #pragma once
 namespace Hoitaja {
@@ -35,11 +34,9 @@ struct Hoitaja::Habitat : public Sandbox::Library
         Heap _heap;
         Sliced_heap suoritin_heap;
 
-	    Entrypoint suoritin_ep{_env, 4 * 4096, "suoritin", Affinity::Location()};
 
         Genode::Constructible<Hoitaja::Core_allocator> _core_allocator;
 
-        Tukija::Suoritin::Root_component suoritin;
 
         Registry<Genode::Sandbox::Local_service_base>
             _local_services{};
@@ -66,9 +63,8 @@ struct Hoitaja::Habitat : public Sandbox::Library
 
         Habitat(Env &env, State_handler &habitat_handler, Genode::Sandbox::State_handler &handler)
             : Sandbox::Library(env, _heap, _local_services, handler), _habitat_handler(habitat_handler), _heap(env.ram(), env.rm()),
-            suoritin_heap(env.ram(), env.rm()), _core_allocator(), suoritin(env, suoritin_heap)
+            suoritin_heap(env.ram(), env.rm()), _core_allocator()
         {
-            env.parent().announce(suoritin_ep.manage(suoritin));
         }
 
         Sandbox::Child &create_child(Xml_node const &) override;
