@@ -20,6 +20,8 @@
 #include <sandbox/types.h>
 #include <util/string.h>
 
+#include <nova/syscalls.h>
+
 /** Hoitaja includes **/
 #include "load_controller.h"
 #include "cell_controller.h"
@@ -48,6 +50,7 @@ class Hoitaja::Core_allocator
         Core_allocator(Genode::Affinity::Space &affinity_space, ::Sandbox::Prio_levels prio_levels) : _affinity_space(affinity_space), _prio_levels(prio_levels), _resource_coeff(0.0)
         {
             Genode::log("Created core allocator for ", affinity_space.total(), " cores and ", prio_levels.value, " priorities.");
+            Nova::create_habitat(0, affinity_space.total());
         }
 
         Genode::Affinity::Location allocate_cores_for_cell(Genode::Xml_node const &start_node)
@@ -102,9 +105,9 @@ class Hoitaja::Core_allocator
             *xpos = location.xpos();
             // TODO: Update affinity of existing sessions for cell
             // TODO: Send yield request to cell
-            //log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
 
             if (cores_to_reclaim > 0) {
+                log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
                 cell.shrink_cores(location);
             }
         }
