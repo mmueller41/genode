@@ -1,12 +1,13 @@
 #include "habitat.h"
 #include <sandbox/utils.h>
+#include <suoritin/request_task.h>
 
 ::Sandbox::Child &Hoitaja::Habitat::create_child(Genode::Xml_node const &start_node)
 {
     if (_affinity_space.constructed() && !_core_allocator.constructed())
         _core_allocator.construct(*_affinity_space, _prio_levels);
 
-    Genode::Affinity::Location allocation =  _core_allocator->allocate_cores_for_cell(start_node);
+    Genode::Affinity::Location allocation = _core_allocator->allocate_cores_for_cell(start_node);
 
 
 
@@ -23,7 +24,7 @@
 			Hoitaja::Cell(_env, _heap, *_verbose,
 			      Child::Id { ++_child_cnt }, _state_reporter,
 			      start_node, *this, *this, _children, *this, *this, *this, *this,
-			      _prio_levels, _effective_affinity_space(), allocation,
+			      _prio_levels, _env.topo().global_affinity_space(), allocation,
 			      _parent_services, _child_services, _local_services, _habitat_handler);
         _children.insert(static_cast<::Sandbox::Child *>(&child));
     
@@ -60,6 +61,7 @@
 		warning("failed to create session during child construction"); }
 
 	throw ::Sandbox::Start_model::Factory::Creation_failed();
+	
 }
 
 void Hoitaja::Habitat::_destroy_abandoned_children()
@@ -91,28 +93,30 @@ void Hoitaja::Habitat::_destroy_abandoned_children()
 	});
 	
 	/* We might have formerly occupied resources again now, so redistribute them */
-	maintain_cells();
+	//maintain_cells();
 }
 
 void Hoitaja::Habitat::maintain_cells()
 {
 	int xpos = _affinity_space->total();
 	_children.for_each_child([&](Child &child)
-							 { 
-                                log(child.name(), " ram: ", child.ram_quota());
+							 {
+                                //log(child.name(), " ram: ", child.ram_quota());
                                 Cell &cell = static_cast<Cell&>(child);
                                 _core_allocator->update(cell, &xpos); });
-	suoritin.for_each([&](Tukija::Suoritin::Session_component &client)
+	/*suoritin.for_each([&](Tukija::Suoritin::Session_component &client)
 					  { Genode::log("Cell ", client.label(), "\n------------");
-		for (unsigned long channel_id = 0; channel_id < client.channels(); channel_id++) {
+		for (unsigned long channel_id = 0; channel_id < client.channels(); channel_id++) 
+		{
 			Tukija::Suoritin::Channel &channel = client.channels_if()[channel_id];
+
 			Genode::log("\t", "Channel ", channel_id, ": length=", channel.length(), " worker=", client.worker(channel._worker).name(), ",", client.worker(channel._worker).cap() );
 			if (channel.length() > 0xFFFF) {
 				Genode::Parent::Resource_args grant_args("cpu_quota=10");
 				client.send_request(grant_args);
 			}
 		}
-					   });
+					   });*/
 }
 
 void Hoitaja::Habitat::update(Cell &cell)
@@ -127,4 +131,10 @@ void Hoitaja::Habitat::update(Cell &cell)
 		/* Update resource allocations, as there are new resources available */	
 		maintain_cells();
 	}
+}
+
+void Hoitaja::Core_allocation_request::handle(Hoitaja::Cell&, Hoitaja::Habitat&) 
+{
+	Genode::Parent::Resource_args grant_args("cpu_quota=10");
+	client().send_request(grant_args);
 }
