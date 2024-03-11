@@ -73,4 +73,14 @@ class Genode::Topo_session_component : public Session_object<Topo_session>
             _affinity = affinity;
             construct();
         }
+
+        unsigned phys_id(const Affinity::Location &loc) override
+        {
+            return platform_specific().kernel_cpu_id(loc);
+        }
+
+        Affinity::Space const global_affinity_space() override
+        {
+            return platform_specific().affinity_space();
+        }
 };

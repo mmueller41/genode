@@ -46,4 +46,14 @@ struct Genode::Topo_session_client : Rpc_client<Topo_session>
     {
         call<Rpc_reconstruct>(affinity);
     }
+
+    unsigned phys_id(const Affinity::Location &loc) override
+    {
+        return call<Rpc_phys_id>(loc);
+    }
+
+    Affinity::Space const global_affinity_space() override
+    {
+        return call<Rpc_total_core_count>();
+    }
 };
