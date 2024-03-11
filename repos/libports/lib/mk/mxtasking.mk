@@ -6,6 +6,8 @@ vpath %.cpp $(MXTASKING_DIR)/src/mx
 
 INC_DIR += $(MXTASKING_DIR)/src $(MXTASKING_DIR)/lib
 vpath %.h ${INC_DIR}
+INC_DIR += $(call select_from_repositories,src/lib/libc)
+INC_DIR += $(call select_from_repositories,src/lib/libc)/spec/x86_64
 
 CUSTOM_CXX = /usr/local/genode/tool/bin/clang++
 CUSTOM_CC = /usr/local/genode/tool/bin/clang
