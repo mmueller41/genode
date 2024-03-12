@@ -1,6 +1,5 @@
 #include "habitat.h"
 #include <sandbox/utils.h>
-#include <suoritin/request_task.h>
 
 ::Sandbox::Child &Hoitaja::Habitat::create_child(Genode::Xml_node const &start_node)
 {
@@ -131,9 +130,4 @@ void Hoitaja::Habitat::update(Cell &cell)
 		/* Update resource allocations, as there are new resources available */	
 		maintain_cells();
 	}
-}
-
-void Hoitaja::Core_allocation_request::handle(Hoitaja::Cell&, Hoitaja::Habitat&) 
-{
-	Genode::Parent::Resource_args grant_args("cpu_quota=10");
 }
