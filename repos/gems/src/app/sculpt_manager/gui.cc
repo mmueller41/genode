@@ -18,6 +18,37 @@
 #include <gui_session/connection.h>
 #include <base/heap.h>
 
+
+static bool click(Input::Event const &event)
+{
+	bool result = false;
+
+	if (event.key_press(Input::BTN_LEFT))
+		result = true;
+
+	event.handle_touch([&] (Input::Touch_id id, float, float) {
+		if (id.value == 0)
+			result = true; });
+
+	return result;
+}
+
+
+static bool clack(Input::Event const &event)
+{
+	bool result = false;
+
+	if (event.key_release(Input::BTN_LEFT))
+		result = true;
+
+	event.handle_touch_release([&] (Input::Touch_id id) {
+		if (id.value == 0)
+			result = true; });
+
+	return result;
+}
+
+
 struct Gui::Session_component : Rpc_object<Gui::Session>
 {
 	Env &_env;
@@ -26,25 +57,33 @@ struct Gui::Session_component : Rpc_object<Gui::Session>
 
 	Input::Seq_number &_global_input_seq_number;
 
-	Gui::Connection _connection;
+	Genode::Connection<Gui::Session> _connection;
+
+	Gui::Session_client _gui_session { _connection.cap() };
+
+	Input::Session_client _gui_input { _env.rm(), _gui_session.input() };
 
 	Input::Session_component _input_component { _env, _env.ram() };
 
 	Signal_handler<Session_component> _input_handler {
 		_env.ep(), *this, &Session_component::_handle_input };
 
+	bool _clicked = false;
+
 	void _handle_input()
 	{
-		_connection.input()->for_each_event([&] (Input::Event ev) {
+		_gui_input.for_each_event([&] (Input::Event ev) {
 
 			/*
-			 * Augment input stream with sequence numbers to correlate
-			 * clicks with hover reports.
+			 * Assign new event sequence number, pass seq event to menu view
+			 * to ensure freshness of hover information.
 			 */
-			bool const advance_seq_number = ev.key_press(Input::BTN_LEFT)
-			                             || ev.key_release(Input::BTN_LEFT)
-			                             || ev.touch();
-			if (advance_seq_number) {
+			bool const orig_clicked = _clicked;
+
+			if (click(ev)) _clicked = true;
+			if (clack(ev)) _clicked = false;
+
+			if (orig_clicked != _clicked) {
 				_global_input_seq_number.value++;
 				_input_component.submit(_global_input_seq_number);
 			}
@@ -62,9 +101,9 @@ struct Gui::Session_component : Rpc_object<Gui::Session>
 	:
 		_env(env), _event_handler(event_handler),
 		_global_input_seq_number(global_input_seq_number),
-		_connection(env, session_label_from_args(args).string())
+		_connection(env, session_label_from_args(args), Ram_quota { 36*1024 }, { })
 	{
-		_connection.input()->sigh(_input_handler);
+		_gui_input.sigh(_input_handler);
 		_env.ep().manage(_input_component);
 		_input_component.event_queue().enabled(true);
 	}
@@ -76,50 +115,47 @@ struct Gui::Session_component : Rpc_object<Gui::Session>
 		_connection.upgrade(resources);
 	}
 
-	Framebuffer::Session_capability framebuffer_session() override {
-		return _connection.framebuffer_session(); }
+	Framebuffer::Session_capability framebuffer() override {
+		return _gui_session.framebuffer(); }
 
-	Input::Session_capability input_session() override {
+	Input::Session_capability input() override {
 		return _input_component.cap(); }
 
-	View_handle create_view(View_handle parent) override {
-		return _connection.create_view(parent); }
+	View_result view(View_id id, View_attr const &attr) override {
+		return _gui_session.view(id, attr); }
 
-	void destroy_view(View_handle view) override {
-		_connection.destroy_view(view); }
+	Child_view_result child_view(View_id id, View_id parent, View_attr const &attr) override {
+		return _gui_session.child_view(id, parent, attr); }
 
-	View_handle view_handle(View_capability view_cap, View_handle handle) override {
-		return _connection.view_handle(view_cap, handle); }
+	void destroy_view(View_id view) override {
+		_gui_session.destroy_view(view); }
 
-	View_capability view_capability(View_handle view) override {
-		return _connection.view_capability(view); }
+	Associate_result associate(View_id id, View_capability view_cap) override {
+		return _gui_session.associate(id, view_cap); }
 
-	void release_view_handle(View_handle view) override {
-		_connection.release_view_handle(view); }
+	View_capability_result view_capability(View_id view) override {
+		return _gui_session.view_capability(view); }
+
+	void release_view_id(View_id view) override {
+		_gui_session.release_view_id(view); }
 
 	Dataspace_capability command_dataspace() override {
-		return _connection.command_dataspace(); }
+		return _gui_session.command_dataspace(); }
 
 	void execute() override {
-		_connection.execute(); }
+		_gui_session.execute(); }
 
 	Framebuffer::Mode mode() override {
-		return _connection.mode(); }
+		return _gui_session.mode(); }
 
 	void mode_sigh(Signal_context_capability sigh) override {
-		_connection.mode_sigh(sigh); }
+		_gui_session.mode_sigh(sigh); }
 
-	void buffer(Framebuffer::Mode mode, bool use_alpha) override
-	{
-		/*
-		 * Do not call 'Connection::buffer' to avoid paying session quota
-		 * from our own budget.
-		 */
-		_connection.Client::buffer(mode, use_alpha);
-	}
+	Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) override {
+		return _gui_session.buffer(mode, use_alpha); }
 
 	void focus(Capability<Gui::Session> session) override {
-		_connection.focus(session); }
+		_gui_session.focus(session); }
 };
 
 

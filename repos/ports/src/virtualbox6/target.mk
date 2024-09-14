@@ -2,8 +2,7 @@ REQUIRES = x86_64
 
 TARGET = virtualbox6
 
-# fake build pass for lib .inc
-called_from_lib_mk := yes
+included_from_target_mk := yes
 include $(REP_DIR)/lib/mk/virtualbox6-common.inc
 
 CC_WARN += -Wall
@@ -53,7 +52,7 @@ INC_DIR += $(VIRTUALBOX_DIR)/VBoxAPIWrap
 INC_DIR += $(VIRTUALBOX_DIR)/include/VBox/Graphics
 
 # search path to 'scan_code_set_1.h'
-INC_DIR += $(call select_from_repositories,src/drivers/ps2)
+INC_DIR += $(call select_from_repositories,src/driver/ps2)
 
 # export VirtualBox symbols to shared objects (e.g., VBoxSharedClipboard.so)
 LD_OPT = --export-dynamic

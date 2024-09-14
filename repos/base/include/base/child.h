@@ -26,6 +26,7 @@
 #include <cpu_session/connection.h>
 #include <log_session/connection.h>
 #include <rom_session/connection.h>
+#include <cpu_thread/client.h>
 #include <parent/capability.h>
 
 namespace Genode {
@@ -44,9 +45,9 @@ namespace Genode {
  */
 struct Genode::Child_policy
 {
-	typedef String<64> Name;
-	typedef String<64> Binary_name;
-	typedef String<64> Linker_name;
+	using Name        = String<64>;
+	using Binary_name = String<64>;
+	using Linker_name = String<64>;
 
 	virtual ~Child_policy() { }
 
@@ -126,6 +127,11 @@ struct Genode::Child_policy
 	virtual Pd_session_capability ref_pd_cap() const = 0;
 
 	/**
+	 * RAM allocator used as backing store for '_session_md_alloc'
+	 */
+	virtual Ram_allocator &session_md_ram() { return ref_pd(); }
+
+	/**
 	 * Respond to the release of resources by the child
 	 *
 	 * This method is called when the child confirms the release of
@@ -156,14 +162,10 @@ struct Genode::Child_policy
 	 */
 	virtual void init(Pd_session &, Capability<Pd_session>) { }
 
-	class Nonexistent_id_space : Exception { };
-
 	/**
 	 * ID space for sessions provided by the child
-	 *
-	 * \throw Nonexistent_id_space
 	 */
-	virtual Id_space<Parent::Server> &server_id_space() { throw Nonexistent_id_space(); }
+	virtual Id_space<Parent::Server> &server_id_space() = 0;
 
 	/**
 	 * Notification hook invoked each time a session state is modified
@@ -188,22 +190,47 @@ struct Genode::Child_policy
 	 */
 	virtual bool initiate_env_sessions() const { return true; }
 
+	struct With_address_space_fn : Interface
+	{
+		virtual void call(Region_map &) const = 0;
+	};
+
+	virtual void _with_address_space(Pd_session &pd, With_address_space_fn const &fn)
+	{
+		Region_map_client region_map(pd.address_space());
+		fn.call(region_map);
+	}
+
 	/**
-	 * Return region map for the child's address space
+	 * Call functor 'fn' with the child's address-space region map as argument
 	 *
-	 * \param pd  the child's PD session capability
-	 *
-	 * By default, the function returns a 'nullptr'. In this case, the 'Child'
-	 * interacts with the address space of the child's PD session via RPC calls
-	 * to the 'Pd_session::address_space'.
-	 *
-	 * By overriding the default, those RPC calls can be omitted, which is
-	 * useful if the child's PD session (including the PD's address space) is
-	 * virtualized by the parent. If the virtual PD session is served by the
-	 * same entrypoint as the child's parent interface, an RPC call to 'pd'
-	 * would otherwise produce a deadlock.
+	 * In the common case where the child's PD is provided by core, the address
+	 * space is accessed via the 'Region_map' RPC interface. However, in cases
+	 * where the child's PD session interface is locally implemented - as is
+	 * the case for a debug monitor - the address space must be accessed by
+	 * component-local method calls instead.
 	 */
-	virtual Region_map *address_space(Pd_session &) { return nullptr; }
+	void with_address_space(Pd_session &pd, auto const &fn)
+	{
+		using FN = decltype(fn);
+
+		struct Impl : With_address_space_fn
+		{
+			FN const &_fn;
+			Impl(FN const &fn) : _fn(fn) { };
+			void call(Region_map &rm) const override { _fn(rm); }
+		};
+
+		_with_address_space(pd, Impl(fn));
+	}
+
+	/**
+	 * Start initial thread of the child at instruction pointer 'ip'
+	 */
+	virtual void start_initial_thread(Capability<Cpu_thread> thread, addr_t ip)
+	{
+		Cpu_thread_client(thread).start(ip, 0);
+	}
 
 	/**
 	 * Return true if ELF loading should be inhibited
@@ -242,10 +269,18 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 		struct Initial_thread_base : Interface
 		{
+			struct Start : Interface
+			{
+				virtual void start_initial_thread(Capability<Cpu_thread>, addr_t ip) = 0;
+			};
+
 			/**
 			 * Start execution at specified instruction pointer
+			 *
+			 * The 'Child_policy' allows for the overriding of the default
+			 * RPC-based implementation of 'start_initial_thread'.
 			 */
-			virtual void start(addr_t ip) = 0;
+			virtual void start(addr_t ip, Start &) = 0;
 
 			/**
 			 * Return capability of the initial thread
@@ -262,19 +297,20 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 			public:
 
-				typedef Cpu_session::Name Name;
+				using Initial_thread_base::Start;
+
+				using Name = Cpu_session::Name;
 
 				/**
 				 * Constructor
 				 *
-				 * \throw Cpu_session::Thread_creation_failed
 				 * \throw Out_of_ram
 				 * \throw Out_of_caps
 				 */
 				Initial_thread(Cpu_session &, Pd_session_capability, Name const &);
 				~Initial_thread();
 
-				void start(addr_t) override;
+				void start(addr_t, Start &) override;
 
 				Capability<Cpu_thread> cap() const override { return _cap; }
 		};
@@ -283,8 +319,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Child_policy &_policy;
 
 		/* print error message with the child's name prepended */
-		template <typename... ARGS>
-		void _error(ARGS &&... args) { error(_policy.name(), ": ", args...); }
+		void _error(auto &&... args) { error(_policy.name(), ": ", args...); }
 
 		Region_map &_local_rm;
 
@@ -307,7 +342,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Id_space<Client> _id_space { };
 
 		/* allocator used for dynamically created session state objects */
-		Sliced_heap _session_md_alloc { _policy.ref_pd(), _local_rm };
+		Sliced_heap _session_md_alloc { _policy.session_md_ram(), _local_rm };
 
 		Session_state::Factory::Batch_size const
 			_session_batch_size { _policy.session_alloc_batch_size() };
@@ -316,7 +351,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Session_state::Factory _session_factory { _session_md_alloc,
 		                                          _session_batch_size };
 
-		typedef Session_state::Args Args;
+		using Args = Session_state::Args;
 
 		/*
 		 * Members that are initialized not before the child's environment is
@@ -327,75 +362,41 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 		Constructible<Initial_thread> _initial_thread { };
 
-		struct Process
+		struct Initial_thread_start : Initial_thread::Start
 		{
-			class Missing_dynamic_linker : Exception { };
-			class Invalid_executable     : Exception { };
+			Child_policy &_policy;
 
-			enum Type { TYPE_LOADED, TYPE_FORKED };
-
-			struct Loaded_executable
+			void start_initial_thread(Capability<Cpu_thread> cap, addr_t ip) override
 			{
-				/**
-				 * Initial instruction pointer of the new process, as defined
-				 * in the header of the executable.
-				 */
-				addr_t entry { 0 };
+				_policy.start_initial_thread(cap, ip);
+			}
 
-				/**
-				 * Constructor parses the executable and sets up segment
-				 * dataspaces
-				 *
-				 * \param local_rm  local address space, needed to make the
-				 *                  segment dataspaces temporarily visible in
-				 *                  the local address space to initialize their
-				 *                  content with the data from the 'elf_ds'
-				 *
-				 * \throw Region_map::Region_conflict
-				 * \throw Region_map::Invalid_dataspace
-				 * \throw Invalid_executable
-				 * \throw Missing_dynamic_linker
-				 * \throw Out_of_ram
-				 * \throw Out_of_caps
-				 */
-				Loaded_executable(Type type,
-				                  Dataspace_capability ldso_ds,
-				                  Ram_allocator &ram,
-				                  Region_map &local_rm,
-				                  Region_map &remote_rm,
-				                  Parent_capability parent_cap);
-			} loaded_executable;
+			Initial_thread_start(Child_policy &policy) : _policy(policy) { }
 
-			/**
-			 * Constructor
-			 *
-			 * \throw Missing_dynamic_linker
-			 * \throw Invalid_executable
-			 * \throw Region_map::Region_conflict
-			 * \throw Region_map::Invalid_dataspace
-			 * \throw Out_of_ram
-			 * \throw Out_of_caps
-			 *
-			 * On construction of a protection domain, the initial thread is
-			 * started immediately.
-			 *
-			 * The 'type' 'TYPE_FORKED' creates an empty process. In this case,
-			 * all process initialization steps except for the creation of the
-			 * initial thread must be done manually, i.e., as done for
-			 * implementing fork.
-			 */
-			Process(Type                 type,
-			        Dataspace_capability ldso_ds,
-			        Pd_session          &pd,
-			        Initial_thread_base &initial_thread,
-			        Region_map          &local_rm,
-			        Region_map          &remote_rm,
-			        Parent_capability    parent);
+		} _initial_thread_start { _policy };
 
-			~Process();
-		};
+		struct Entry { addr_t ip; };
 
-		Constructible<Process> _process { };
+		enum class Load_error { INVALID, OUT_OF_RAM, OUT_OF_CAPS };
+		using Load_result = Attempt<Entry, Load_error>;
+
+		static Load_result _load_static_elf(Dataspace_capability elf_ds,
+		                                    Ram_allocator       &ram,
+		                                    Region_map          &local_rm,
+		                                    Region_map          &remote_rm,
+		                                    Parent_capability    parent_cap);
+
+		enum class Start_result { UNKNOWN, OK, OUT_OF_RAM, OUT_OF_CAPS, INVALID };
+
+		static Start_result _start_process(Dataspace_capability   ldso_ds,
+		                                   Pd_session            &pd,
+		                                   Initial_thread_base   &,
+		                                   Initial_thread::Start &,
+		                                   Region_map            &local_rm,
+		                                   Region_map            &remote_rm,
+		                                   Parent_capability      parent);
+
+		Start_result _start_result { };
 
 		/*
 		 * The child's environment sessions
@@ -408,7 +409,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 			Id_space<Parent::Client>::Id const _client_id;
 
-			typedef String<64> Label;
+			using Label = String<64>;
 
 			Args const _args;
 
@@ -488,13 +489,16 @@ class Genode::Child : protected Rpc_object<Parent>,
 					_child._try_construct_env_dependent_members();
 				}
 
+				using Transfer_ram_quota_result = Pd_session::Transfer_ram_quota_result;
+				using Transfer_cap_quota_result = Pd_session::Transfer_ram_quota_result;
+
 				/**
 				 * Service (Ram_transfer::Account) interface
 				 */
-				void transfer(Pd_session_capability to, Ram_quota amount) override
+				Ram_transfer_result transfer(Pd_session_capability to, Ram_quota amount) override
 				{
 					Ram_transfer::Account &from = _service;
-					from.transfer(to, amount);
+					return from.transfer(to, amount);
 				}
 
 				/**
@@ -509,10 +513,10 @@ class Genode::Child : protected Rpc_object<Parent>,
 				/**
 				 * Service (Cap_transfer::Account) interface
 				 */
-				void transfer(Pd_session_capability to, Cap_quota amount) override
+				Cap_transfer_result transfer(Pd_session_capability to, Cap_quota amount) override
 				{
 					Cap_transfer::Account &from = _service;
-					from.transfer(to, amount);
+					return from.transfer(to, amount);
 				}
 
 				/**
@@ -591,7 +595,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 					      "environment session denied (", _args.string(), ")"); }
 			}
 
-			typedef typename CONNECTION::Session_type SESSION;
+			using SESSION = typename CONNECTION::Session_type;
 
 			SESSION       &session()       { return _connection->session(); }
 			SESSION const &session() const { return _connection->session(); }
@@ -680,7 +684,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		 * environment sessions could not be established, e.g., the ROM session
 		 * of the binary could not be obtained.
 		 */
-		bool active() const { return _process.constructed(); }
+		bool active() const { return _start_result == Start_result::OK; }
 
 		/**
 		 * Initialize the child's PD session
@@ -732,8 +736,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 		void close_all_sessions();
 
-		template <typename FN>
-		void for_each_session(FN const &fn) const
+		void for_each_session(auto const &fn) const
 		{
 			_id_space.for_each<Session_state const>(fn);
 		}
@@ -802,9 +805,9 @@ class Genode::Child : protected Rpc_object<Parent>,
 
 		void announce(Service_name const &) override;
 		void session_sigh(Signal_context_capability) override;
-		Session_capability session(Client::Id, Service_name const &,
-		                           Session_args const &, Affinity const &) override;
-		Session_capability session_cap(Client::Id) override;
+		Session_result session(Client::Id, Service_name const &,
+		                       Session_args const &, Affinity const &) override;
+		Session_cap_result session_cap(Client::Id) override;
 		Upgrade_result upgrade(Client::Id, Upgrade_args const &) override;
 		Close_result close(Client::Id) override;
 		void exit(int) override;

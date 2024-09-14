@@ -16,18 +16,18 @@
 
 /* Genode includes */
 #include <base/exception.h>
-#include <base/log.h>
 
-/* core-local includes */
+/* core includes */
+#include <types.h>
 #include <sel4_boot_info.h>
 
 /* seL4 includes */
 #include <sel4/sel4.h>
 
-namespace Genode { class Initial_untyped_pool; }
+namespace Core { class Initial_untyped_pool; }
 
 
-class Genode::Initial_untyped_pool
+class Core::Initial_untyped_pool
 {
 	private:
 
@@ -72,7 +72,7 @@ class Genode::Initial_untyped_pool
 		/**
 		 * Calculate free index after allocation
 		 */
-		addr_t _align_offset(Range &range, unsigned size_log2)
+		addr_t _align_offset(Range const &range, unsigned size_log2)
 		{
 			/*
 			 * The seL4 kernel naturally aligns allocations within untuped
@@ -90,13 +90,12 @@ class Genode::Initial_untyped_pool
 		 *
 		 * The functor is called with 'Range &' as argument.
 		 */
-		template <typename FUNC>
-		void for_each_range(FUNC const &func)
+		void for_each_range(auto const &fn)
 		{
 			seL4_BootInfo const &bi = sel4_boot_info();
 			for (addr_t sel = bi.untyped.start; sel < bi.untyped.end; sel++) {
 				Range range(*this, (unsigned)sel);
-				func(range);
+				fn(range);
 			}
 		}
 
@@ -124,7 +123,7 @@ class Genode::Initial_untyped_pool
 			 * Go through the known initial untyped memory ranges to find
 			 * a range that is able to host a kernel object of 'size'.
 			 */
-			for_each_range([&] (Range &range) {
+			for_each_range([&] (Range const &range) {
 				/* ignore device memory */
 				if (range.device)
 					return;
@@ -176,13 +175,12 @@ class Genode::Initial_untyped_pool
 		 * Convert (remainder) of the initial untyped memory into untyped
 		 * objects of size_log2 and up to a maximum as specified by max_memory
 		 */
-		template <typename FUNC>
 		void turn_into_untyped_object(addr_t  const node_index,
-		                              FUNC    const & func,
-		                              uint8_t const size_log2 = get_page_size_log2(),
+		                              auto    const &fn,
+		                              size_t  const size_log2 = get_page_size_log2(),
 		                              addr_t  max_memory = 0UL - 0x1000UL)
 		{
-			for_each_range([&] (Range &range) {
+			for_each_range([&] (Range const &range) {
 
 				/*
 				 * The kernel limits the maximum number of kernel objects to
@@ -193,7 +191,7 @@ class Genode::Initial_untyped_pool
 				for (;;) {
 
 					addr_t const page_aligned_free_offset =
-						align_addr(range.free_offset, size_log2);
+						align_addr(range.free_offset, (int)size_log2);
 
 					/* back out if no further page can be allocated */
 					if (page_aligned_free_offset + (1UL << size_log2) > range.size)
@@ -205,9 +203,6 @@ class Genode::Initial_untyped_pool
 					size_t const remaining_size    = range.size - page_aligned_free_offset;
 					size_t const retype_size_limit = get_page_size()*256;
 					size_t const batch_size        = min(min(remaining_size, retype_size_limit), max_memory);
-
-					/* mark consumed untyped memory range as allocated */
-					range.free_offset += batch_size;
 
 					addr_t const phys_addr = range.phys + page_aligned_free_offset;
 					size_t const num_pages = batch_size / (1UL << size_log2);
@@ -228,6 +223,13 @@ class Genode::Initial_untyped_pool
 						return;
 					}
 
+					/* invoke callback about the range */
+					bool const used = fn(phys_addr, num_pages << size_log2,
+					                     range.device);
+
+					if (!used)
+						return;
+
 					long const ret = seL4_Untyped_Retype(service,
 					                                     type,
 					                                     size_bits,
@@ -243,17 +245,11 @@ class Genode::Initial_untyped_pool
 						return;
 					}
 
+					/* mark consumed untyped memory range as allocated */
+					range.free_offset += batch_size;
+
 					/* track memory left to be converted */
 					max_memory -= batch_size;
-
-					/* convert device memory directly into page frames */
-					if (range.device) {
-						size_t const num_pages = batch_size >> get_page_size_log2();
-						Untyped_memory::convert_to_page_frames(phys_addr, num_pages);
-					}
-
-					/* invoke callback about the range */
-					func(phys_addr, num_pages << size_log2, range.device);
 				}
 			});
 		}

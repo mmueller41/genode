@@ -31,7 +31,7 @@ class Genode::Reporter
 {
 	public:
 
-		typedef String<100> Name;
+		using Name = String<100>;
 
 	private:
 
@@ -124,13 +124,12 @@ class Genode::Reporter
 		 */
 		struct Xml_generator : public Genode::Xml_generator
 		{
-			template <typename FUNC>
-			Xml_generator(Reporter &reporter, FUNC const &func)
+			Xml_generator(Reporter &reporter, auto const &fn)
 			:
 				Genode::Xml_generator(reporter._base(),
 				                      reporter._size(),
 				                      reporter._xml_name.string(),
-				                      func)
+				                      fn)
 			{
 				if (reporter.enabled())
 					reporter._conn->report.submit(used());
@@ -153,8 +152,8 @@ class Genode::Expanding_reporter
 {
 	public:
 
-		typedef Session_label Label;
-		typedef String<64>    Node_type;
+		using Label     = Session_label;
+		using Node_type = String<64>;
 
 		struct Initial_buffer_size { size_t value; };
 
@@ -188,8 +187,7 @@ class Genode::Expanding_reporter
 		: _env(env), _type(type), _label(label), _buffer_size(size.value)
 		{ _construct(); }
 
-		template <typename FN>
-		void generate(FN const &fn)
+		void generate(auto const &fn)
 		{
 			retry<Xml_generator::Buffer_exceeded>(
 

@@ -7,17 +7,16 @@
 proc ip_stack { } { return lwip }
 
 proc socket_fs_plugin { } {
-	set result "<[ip_stack]"
+	return "<[ip_stack] dhcp=\"yes\"/>"
+}
 
+proc nic_router_uplink { } {
+	# static IP config on Linux
 	if {[have_spec linux]} {
-		append result { ip_addr="10.0.2.55" netmask="255.255.255.0"}
-		append result { gateway="10.0.2.1" nameserver="1.1.1.1"}
+		return {<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">}
 	} else {
-		append result { dhcp="yes"}
+		return {<domain name="uplink">}
 	}
-
-	append result {/>}
-	return $result
 }
 
 create_boot_directory
@@ -31,6 +30,7 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/openssl \
                   [depot_user]/src/posix \
                   [depot_user]/src/vfs \
+                  [depot_user]/src/vfs_jitterentropy \
                   [depot_user]/src/vfs_[ip_stack] \
                   [depot_user]/src/zlib
 
@@ -56,7 +56,7 @@ install_config {
 		<provides><service name="Timer"/></provides>
 	</start>
 
-	<start name="nic_drv" caps="1000" managing_system="yes">
+	<start name="nic" caps="1000" managing_system="yes">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -76,9 +76,9 @@ install_config {
 		<config verbose_domain_state="yes">
 
 			<policy label_prefix="lighttpd" domain="downlink"/>
-			<policy label_prefix="nic_drv"  domain="uplink"/>
+			<policy label_prefix="nic"      domain="uplink"/>
 
-			<domain name="uplink">
+			} [nic_router_uplink] {
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -115,7 +115,7 @@ install_config {
 			<vfs>
 				<dir name="dev">
 					<log/> <null/> <inline name="rtc">2000-01-01 00:00</inline>
-					<inline name="random">0123456789012345678901234567890123456789</inline>
+					<jitterentropy name="random"/>
 				</dir>
 				<dir name="socket"> } [socket_fs_plugin] { </dir>
 				<dir name="etc">
@@ -128,6 +128,7 @@ server.event-handler   = "select"
 server.network-backend = "write"
 server.upload-dirs     = ( "/tmp" )
 server.modules         = ("mod_openssl")
+server.modules += ( "mod_webdav" )
 index-file.names     = (
   "index.xhtml", "index.html", "index.htm"
 )
@@ -135,6 +136,9 @@ mimetype.assign      = (
   ".html"         =>      "text/html",
   ".htm"          =>      "text/html"
 )
+  dir-listing.activate = "enable"
+  webdav.activate = "enable"
+  webdav.is-readonly = "disable"
 $SERVER["socket"] == ":443" {
 	ssl.engine  = "enable"
 	ssl.pemfile = "/etc/lighttpd/example.pem"
@@ -205,11 +209,12 @@ EpA5DBBklj8UE2CdONvN
 	</body>
 </html>
 					</inline>
+					<ram/>
 				</dir>
 				<dir name="tmp"> <ram/> </dir>
 			</vfs>
 			<libc stdin="/dev/null" stdout="/dev/log" stderr="/dev/log"
-			      rtc="/dev/rtc/" rng="/dev/random" socket="/socket"/>
+			      rtc="/dev/rtc" rng="/dev/random" socket="/socket"/>
 		</config>
 
 		<route>
@@ -220,11 +225,9 @@ EpA5DBBklj8UE2CdONvN
 	</start>
 </config>}
 
-#build            { }
-build_boot_image { }
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic "
 append_qemu_nic_args "hostfwd=tcp::5555-:80,hostfwd=tcp::5556-:443"
-append xen_args  { sdl=0\; vif=\["model=e1000,mac=02:00:00:00:01:01,bridge=xenbr0"\] }
 
 run_genode_until forever

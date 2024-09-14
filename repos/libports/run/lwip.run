@@ -11,18 +11,16 @@
 # host's port 5555. Consequently, it cannot be executed on non-qemu test
 # environments (i.e., the test won't work with the Linux version of Genode).
 #
-# Please make sure to include a nic driver in your build configuration. E.g.,
-# on the x86 platform, you may enable the 'dde_ipxe' repository.
-#
 
 #
 # TODO: Add support for Linux via user-level networking (using the
-#       tun/tap proxy driver at os/src/drivers/nic/linux)
+#       tun/tap proxy driver at os/src/driver/nic/linux)
 #
 
 if {[have_board linux] ||
     [have_board imx53_qsb_tz] ||
-    [have_board rpi3]} {
+    [have_board rpi3] ||
+    [have_board rpi]} {
 	puts "\n Run script is not supported on this platform. \n"; exit 0 }
 
 if {[get_cmd_switch --autopilot] && [have_board virt_qemu_riscv]} {
@@ -64,7 +62,7 @@ install_config {
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
-	<start name="drivers" caps="1000" managing_system="yes" priority="-1">
+	<start name="drivers" caps="1200" managing_system="yes" priority="-1">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -115,7 +113,7 @@ install_config {
 	</start>
 
 	<start name="test-lwip_httpsrv" caps="120" priority="-1">
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="8M"/>
 		<config>
 			<vfs>
 				<dir name="dev">    <log/>             </dir>
@@ -133,7 +131,7 @@ install_config {
 
 build { test/lwip/http_srv }
 
-build_boot_image { test-lwip_httpsrv }
+build_boot_image [build_artifacts]
 
 #
 # Qemu config

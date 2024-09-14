@@ -24,9 +24,10 @@
 /* seL4 includes */
 #include <sel4/sel4.h>
 
-namespace Genode { struct Untyped_memory; }
+namespace Core { struct Untyped_memory; }
 
-struct Genode::Untyped_memory
+
+struct Core::Untyped_memory
 {
 	class Phys_alloc_failed : Exception { };
 
@@ -53,7 +54,7 @@ struct Genode::Untyped_memory
 	}
 
 
-	static inline void free_page(Range_allocator &phys_alloc, Genode::addr_t addr)
+	static inline void free_page(Range_allocator &phys_alloc, addr_t addr)
 	{
 		phys_alloc.free(reinterpret_cast<void *>(addr));
 	}
@@ -121,8 +122,10 @@ struct Genode::Untyped_memory
 			                                     num_objects);
 
 			if (ret != seL4_NoError) {
-				error(__FUNCTION__, ": seL4_Untyped_RetypeAtOffset (IA32_4K) "
-				      "returned ", ret);
+				error(__FUNCTION__, ": seL4_Untyped_RetypeAtOffset "
+				      "returned ", ret, " - physical_range=",
+				      Hex_range(node_offset << get_page_size_log2(),
+				                (num_pages - i) * get_page_size()));
 				return;
 			}
 		}

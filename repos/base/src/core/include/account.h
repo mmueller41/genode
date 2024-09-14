@@ -14,15 +14,17 @@
 #ifndef _CORE__INCLUDE__ACCOUNT_H_
 #define _CORE__INCLUDE__ACCOUNT_H_
 
-#include <util/reconstructible.h>
 #include <base/registry.h>
 #include <base/quota_guard.h>
 
-namespace Genode { template <typename> class Account; }
+/* core includes */
+#include <types.h>
+
+namespace Core { template <typename> class Account; }
 
 
 template <typename UNIT>
-class Genode::Account
+class Core::Account
 {
 	private:
 
@@ -85,7 +87,7 @@ class Genode::Account
 
 	public:
 
-		typedef typename Quota_guard<UNIT>::Limit_exceeded Limit_exceeded;
+		using Limit_exceeded = typename Quota_guard<UNIT>::Limit_exceeded;
 
 		class Unrelated_account : Exception { };
 
@@ -188,6 +190,17 @@ class Genode::Account
 		{
 			Mutex::Guard guard(_mutex);
 			_quota_guard.withdraw(amount);
+		}
+
+		/**
+		 * Withdraw quota from account
+		 *
+		 * \return true if withdrawal of 'amount' succeeded
+		 */
+		[[nodiscard]] bool try_withdraw(UNIT amount)
+		{
+			Mutex::Guard guard(_mutex);
+			return _quota_guard.try_withdraw(amount);
 		}
 
 		/**

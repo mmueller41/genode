@@ -309,7 +309,7 @@ int  pdmR3LdrInitU(PUVM)                              { return VINF_SUCCESS; }
 int  PDMR3LdrLoadVMMR0U(PUVM)                         { return VINF_SUCCESS; }
 void PDMR3LdrRelocateU(PUVM, RTGCINTPTR)              { }
 int  pdmR3LoadR3U(PUVM, const char *, const char *)   { return VINF_SUCCESS; }
-void pdmR3LdrTermU(PUVM)                              TRACE()
+void pdmR3LdrTermU(PUVM)                              { }
 int  PDMR3LdrLoadR0(PUVM, const char *, const char *) { return VINF_SUCCESS; }
 
 char *pdmR3FileR3(const char * file, bool)
@@ -380,11 +380,6 @@ HRESULT Console::i_teleporterTrg(PUVM, IMachine *, Utf8Str *, bool, Progress *, 
 #include <DBGFInternal.h>
 
 int dbgfR3BpInit(VM*) { return VINF_SUCCESS; }
-
-
-/* DBGFR3BugCheck.cpp */
-
-int dbgfR3BugCheckInit(VM*) { return VINF_SUCCESS; }
 
 
 /* dbgcfg.cpp */

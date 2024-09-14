@@ -19,7 +19,6 @@
 #include <base/env.h>
 #include <region_map/region_map.h>
 #include <dataspace/client.h>
-#include <deprecated/env.h>
 
 /* base-internal includes */
 #include <base/internal/local_capability.h>
@@ -61,26 +60,35 @@ class Genode::Region_map_mmap : public Region_map, public Dataspace
 
 		bool _is_attached() const { return _base > 0; }
 
-		void _add_to_rmap(Region const &);
+		/*
+		 * \return true on success
+		 */
+		bool _add_to_rmap(Region const &);
+
+		enum class Reserve_local_error { REGION_CONFLICT };
+		using Reserve_local_result = Attempt<addr_t, Reserve_local_error>;
 
 		/**
 		 * Reserve VM region for sub-rm dataspace
 		 */
-		addr_t _reserve_local(bool   use_local_addr,
-		                      addr_t local_addr,
-		                      size_t size);
+		Reserve_local_result _reserve_local(bool   use_local_addr,
+		                                    addr_t local_addr,
+		                                    size_t size);
+
+		enum class Map_local_error { REGION_CONFLICT };
+		using Map_local_result = Attempt<void *, Map_local_error>;
 
 		/**
 		 * Map dataspace into local address space
 		 */
-		void *_map_local(Dataspace_capability ds,
-		                 size_t               size,
-		                 addr_t               offset,
-		                 bool                 use_local_addr,
-		                 addr_t               local_addr,
-		                 bool                 executable,
-		                 bool                 overmap,
-		                 bool                 writeable);
+		Map_local_result _map_local(Dataspace_capability ds,
+		                            size_t               size,
+		                            addr_t               offset,
+		                            bool                 use_local_addr,
+		                            addr_t               local_addr,
+		                            bool                 executable,
+		                            bool                 overmap,
+		                            bool                 writeable);
 
 		/**
 		 * Determine size of dataspace
@@ -106,11 +114,10 @@ class Genode::Region_map_mmap : public Region_map, public Dataspace
 		Region_map_mmap(bool sub_rm, size_t size = ~0)
 		: _sub_rm(sub_rm), _size(size), _base(0) { }
 
-		~Region_map_mmap()
+		void with_attached_sub_rm_base_ptr(auto const &fn)
 		{
-			/* detach sub RM session when destructed */
 			if (_sub_rm && _is_attached())
-				env_deprecated()->rm_session()->detach((void *)_base);
+				fn((void *)_base);
 		}
 
 
@@ -118,14 +125,13 @@ class Genode::Region_map_mmap : public Region_map, public Dataspace
 		 ** Region map interface **
 		 **************************/
 
-		Local_addr attach(Dataspace_capability, size_t size, off_t, bool,
-		                  Local_addr, bool, bool) override;
+		Attach_result attach(Dataspace_capability, Attr const &) override;
 
-		void detach(Local_addr) override;
+		void detach(addr_t) override;
 
 		void fault_handler(Signal_context_capability) override { }
 
-		State state() override { return State(); }
+		Fault fault() override { return { }; }
 
 
 		/*************************

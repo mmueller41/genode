@@ -68,8 +68,6 @@ namespace Qemu {
 		virtual void  raise_interrupt(int assert) = 0;
 		virtual int   read_dma(addr_t addr, void *buf, size_t size) = 0;
 		virtual int   write_dma(addr_t addr, void const *buf, size_t size) = 0;
-		virtual void *map_dma(addr_t base, size_t size, Dma_direction dir) = 0;
-		virtual void  unmap_dma(void *addr, size_t size, Dma_direction dir) = 0;
 	};
 
 
@@ -115,7 +113,7 @@ namespace Qemu {
 	 *
 	 * \param tq  Timer_queue instance provided by the user of the library
 	 * \param pd  Pci_device instance provided by the user of the library
-	 * \param sr  Signal_receiver used by the library to install signals
+	 * \param ep  Entrypoint used by the library to install signals
 	 *
 	 * \return Pointer to Controller object that is used to access the xHCI device state
 	 */

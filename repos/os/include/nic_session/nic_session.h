@@ -31,7 +31,7 @@ namespace Nic {
 	using Genode::Packet_stream_sink;
 	using Genode::Packet_stream_source;
 
-	typedef Genode::Packet_descriptor Packet_descriptor;
+	using Packet_descriptor = Genode::Packet_descriptor;
 }
 
 
@@ -52,7 +52,7 @@ namespace Nic {
  */
 struct Nic::Session : Genode::Session
 {
-	enum { QUEUE_SIZE = 1024 };
+	static constexpr Genode::size_t QUEUE_SIZE = 1024;
 
 	/*
 	 * Types used by the client stub code and server implementation
@@ -60,11 +60,11 @@ struct Nic::Session : Genode::Session
 	 * The acknowledgement queue has always the same size as the submit
 	 * queue. We access the packet content as a char pointer.
 	 */
-	typedef Genode::Packet_stream_policy<Genode::Packet_descriptor,
-	                                     QUEUE_SIZE, QUEUE_SIZE, char> Policy;
+	using Policy = Genode::Packet_stream_policy<Genode::Packet_descriptor,
+	                                            QUEUE_SIZE, QUEUE_SIZE, char>;
 
-	typedef Packet_stream_tx::Channel<Policy> Tx;
-	typedef Packet_stream_rx::Channel<Policy> Rx;
+	using Tx = Packet_stream_tx::Channel<Policy>;
+	using Rx = Packet_stream_rx::Channel<Policy>;
 
 	/**
 	 * \noapi
@@ -77,7 +77,7 @@ struct Nic::Session : Genode::Session
 	 * rx and tx, and four signal context capabilities for the data-flow
 	 * signals.
 	 */
-	enum { CAP_QUOTA = 8 };
+	static constexpr unsigned CAP_QUOTA = 8;
 
 	virtual ~Session() { }
 

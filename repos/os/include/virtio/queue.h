@@ -86,7 +86,7 @@ class Virtio::Queue
 
 	protected:
 
-		typedef HEADER_TYPE Header_type;
+		using Header_type = HEADER_TYPE;
 
 		struct Descriptor
 		{
@@ -413,7 +413,7 @@ class Virtio::Queue
 			static_assert(!TRAITS::device_write_only);
 			static_assert(TRAITS::has_data_payload);
 
-			int const req_desc_count = 1 + (sizeof(header) + data_size) / _buffers.buffer_size();
+			size_t const req_desc_count = 1UL + (sizeof(header) + data_size) / _buffers.buffer_size();
 			if (req_desc_count > _descriptors.available_capacity())
 				return false;
 
@@ -423,14 +423,13 @@ class Virtio::Queue
 			 * Only the first descritor in the chain needs to be pushed to the available ring.
 			 */
 			_avail->ring[_avail->idx % _queue_size] = write_result.first_descriptor_idx;
-			_avail->idx += 1;
+			_avail->idx = _avail->idx + 1;
 			_avail->flags = Avail::Flags::NO_INTERRUPT;
 
 			return true;
 		}
 
-		template <typename FN>
-		void read_data(FN const &fn)
+		void read_data(auto const &fn)
 		{
 			if (!has_used_buffers())
 				return;
@@ -470,12 +469,12 @@ class Virtio::Queue
 			return *((Header_type *)(desc_data));
 		}
 
-		template <typename REPLY_TYPE, typename WAIT_REPLY_FN, typename REPLY_FN>
-		bool write_data_read_reply(Header_type    const &header,
-		                           char           const *data,
-		                           size_t        data_size,
-		                           WAIT_REPLY_FN  const &wait_for_reply,
-		                           REPLY_FN       const &read_reply)
+		template <typename REPLY_TYPE>
+		bool write_data_read_reply(Header_type const &header,
+		                           char        const *data,
+		                           size_t             data_size,
+		                           auto        const &wait_for_reply_fn,
+		                           auto        const &read_reply_fn)
 		{
 			static_assert(!TRAITS::device_write_only);
 			static_assert(TRAITS::has_data_payload);
@@ -518,10 +517,10 @@ class Virtio::Queue
 			 * Only the first descritor in the chain needs to be pushed to the available ring.
 			 */
 			_avail->ring[_avail->idx % _queue_size] = write_result.first_descriptor_idx;
-			_avail->idx += 1;
+			_avail->idx = _avail->idx + 1;
 			_avail->flags = Avail::Flags::NO_INTERRUPT;
 
-			wait_for_reply();
+			wait_for_reply_fn();
 
 			/*
 			 * Make sure wait call did what it was supposed to do.
@@ -536,16 +535,16 @@ class Virtio::Queue
 			 */
 			ack_all_transfers();
 
-			return read_reply(*reinterpret_cast<REPLY_TYPE const *>(reply_buffer.local_addr));
+			return read_reply_fn(*reinterpret_cast<REPLY_TYPE const *>(reply_buffer.local_addr));
 		}
 
-		template <typename REPLY_TYPE, typename WAIT_REPLY_FN, typename REPLY_FN>
-		bool write_data_read_reply(Header_type    const &header,
-		                           WAIT_REPLY_FN  const &wait_for_reply,
-		                           REPLY_FN       const &read_reply)
+		template <typename REPLY_TYPE>
+		bool write_data_read_reply(Header_type const &header,
+		                           auto        const &wait_for_reply_fn,
+		                           auto        const &read_reply_fn)
 		{
 			return write_data_read_reply<REPLY_TYPE>(
-				header, nullptr, 0, wait_for_reply, read_reply);
+				header, nullptr, 0, wait_for_reply_fn, read_reply_fn);
 		}
 
 		void print(Output& output) const

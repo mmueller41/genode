@@ -67,11 +67,11 @@ class Child_entry : public  Scout::Parent_element,
 
 		friend class Genode::List<Child_entry<PT> >;
 
-		enum { _IW       = 16 };      /* icon width               */
-		enum { _IH       = 16 };      /* icon height              */
-		enum { _PTW      = 100 };     /* program text width       */
-		enum { _PADX     = 10 };      /* horizontal padding       */
-		enum { _NAME_LEN = 64 };      /* max length of child name */
+		static constexpr int _IW       = 16;   /* icon width               */
+		static constexpr int _IH       = 16;   /* icon height              */
+		static constexpr int _PTW      = 100;  /* program text width       */
+		static constexpr int _PADX     = 10;   /* horizontal padding       */
+		static constexpr int _NAME_LEN = 64;   /* max length of child name */
 
 		Scout::Block      _block;
 		Kbyte_loadbar<PT> _loadbar;
@@ -114,7 +114,7 @@ class Child_entry : public  Scout::Parent_element,
 			append(&_kill_icon);
 			append(&_fold_icon);
 
-			_min_size = Scout::Area(_PTW + 100, _min_size.h());
+			_min_size = Scout::Area(_PTW + 100, _min_size.h);
 		}
 
         using Genode::List<Child_entry<PT> >::Element::next;
@@ -134,16 +134,16 @@ class Child_entry : public  Scout::Parent_element,
 			using namespace Scout;
 
 			_block.format_fixed_width(_PTW);
-			int bh = _block.min_size().h();
-			int iy = max(0U, (bh - _loadbar.min_size().h())/2);
+			int bh = _block.min_size().h;
+			int iy = max(0U, (bh - _loadbar.min_size().h)/2);
 
 			_fold_icon.geometry(Rect(Point(0, iy), Area(_IW, _IH)));
 			_kill_icon.geometry(Rect(Point(w - _IW - 8, iy), Area(_IW, _IH)));
 
-			_block.geometry(Rect(Point(max(10, _PTW - (int)_block.min_size().w()),
-			                           max(0, (bh - (int)_block.min_size().h())/2)),
+			_block.geometry(Rect(Point(max(10, _PTW - (int)_block.min_size().w),
+			                           max(0, (bh - (int)_block.min_size().h)/2)),
 			                     Area(min((int)_PTW,
-			                              (int)_block.min_size().w()), bh)));
+			                              (int)_block.min_size().w), bh)));
 
 			int lw = w - 2*_PADX - _PTW - _IW;
 			_loadbar.format_fixed_width(lw);

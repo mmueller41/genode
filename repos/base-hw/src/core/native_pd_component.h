@@ -18,17 +18,17 @@
 /* Genode includes */
 #include <hw_native_pd/hw_native_pd.h>
 
-/* core-local includes */
+/* core includes */
 #include <rpc_cap_factory.h>
 
-namespace Genode {
+namespace Core {
 
 	class Pd_session_component;
 	class Native_pd_component;
 }
 
 
-class Genode::Native_pd_component : public Rpc_object<Pd_session::Native_pd>
+class Core::Native_pd_component : public Rpc_object<Pd_session::Native_pd>
 {
 	private:
 
@@ -41,6 +41,7 @@ class Genode::Native_pd_component : public Rpc_object<Pd_session::Native_pd>
 		~Native_pd_component();
 
 		void upgrade_cap_slab() override;
+		size_t avail_cap_slab() override;
 };
 
 #endif /* _CORE__INCLUDE__NATIVE_PD_COMPONENT_H_ */

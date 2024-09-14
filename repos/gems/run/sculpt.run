@@ -7,7 +7,7 @@
 #
 # Note: the string must be exactly 5 bytes long.
 #
-proc sculpt_version { } { return "22.10" }
+proc sculpt_version { } { return "24.06" }
 
 
 proc assert_platform_supported { } {
@@ -25,8 +25,29 @@ proc assert_platform_supported { } {
 assert_platform_supported
 
 
-if {[have_spec nova]} {
-	proc kernel_output { } { return "novga serial logmem" }
+proc log_core { } {
+
+	global ::env
+
+	if {[info exists ::env(LOG)]} {
+		if {$::env(LOG) == "core"} { return true }
+	}
+
+	return false
+}
+
+
+if {[log_core]} {
+	if {[have_spec nova]} {
+		proc kernel_output { } { return "serial logmem" }
+	}
+} else {
+	# disable default enabled serial log output via core
+	proc boot_output { } { return "" }
+
+	if {[have_spec nova]} {
+		proc kernel_output { } { return "logmem" }
+	}
 }
 
 
@@ -141,22 +162,63 @@ import_from_depot [depot_user]/src/[base_src] \
 
 proc log_route { } {
 
-	global ::env
-	if {[info exists ::env(LOG)]} {
-		if {$::env(LOG) == "core"} {
-			return {<service name="LOG"> <parent/> </service>} } }
+	if {[log_core]} {
+		return {<service name="LOG"> <parent/> </service>} }
 
 	return {<service name="LOG"> <child name="log"/> </service>}
 }
 
 
-proc nic_drv { } {
+##
+# ROM routes that relabel generic driver names to platform-specific binaries
+#
+proc driver_routes { } {
 
-	if {[have_board pc]}          { return ipxe_nic_drv }
-	if {[have_board imx8q_evk]}   { return fec_nic_drv  }
-	if {[have_board mnt_reform2]} { return fec_nic_drv  }
+	set result(pc) {
+		<service name="ROM" label="nic">               <parent label="pc_nic"/> </service>
+		<service name="ROM" label="wifi.lib.so">       <parent label="pc_wifi.lib.so"/> </service>
+		<service name="ROM" label="wifi_firmware.tar"> <parent label="pc_wifi_firmware.tar"/> </service>
+		<service name="ROM" label="usb">               <parent label="pc_usb_host"/> </service>
+	}
 
-	return nic_unavailable
+	set result(mnt_reform2) {
+		<service name="ROM" label="fb">                <parent label="imx8mq_fb"/> </service>
+		<service name="ROM" label="fb.dtb">            <parent label="imx8mq_fb-mnt_reform2.dtb"/> </service>
+		<service name="ROM" label="mmc">               <parent label="imx8mq_sd_card"/> </service>
+		<service name="ROM" label="mmc.dtb">           <parent label="imx8mq_sd_card-mnt_reform2.dtb"/> </service>
+		<service name="ROM" label="nic">               <parent label="fec_nic"/> </service>
+		<service name="ROM" label="nic.dtb">           <parent label="fec_nic-mnt_reform2.dtb"/> </service>
+		<service name="ROM" label="usb">               <parent label="imx8mq_usb_host"/> </service>
+		<service name="ROM" label="usb.dtb">           <parent label="imx8mq_usb_host-mnt_reform2.dtb"/> </service>
+		<service name="ROM" label="wifi.lib.so">       <parent label="imx8mq_wifi.lib.so"/> </service>
+		<service name="ROM" label="wifi_firmware.tar"> <parent label="imx8mq_wifi_firmware.tar"/> </service>
+		<service name="I2c"> <child name="drivers"/> </service>
+	}
+
+	set result(imx8q_evk) {
+		<service name="ROM" label="nic">     <parent label="fec_nic"/> </service>
+		<service name="ROM" label="nic.dtb"> <parent label="fec_nic-imx8q_evk.dtb"/> </service>
+	}
+
+	set result(pinephone) {
+		<service name="ROM" label="wifi.lib.so">       <parent label="a64_wifi.lib.so"/> </service>
+		<service name="ROM" label="wifi.dtb">          <parent label="wifi-pinephone.dtb"/> </service>
+		<service name="ROM" label="wifi_firmware.tar"> <parent label="a64_wifi_firmware.tar"/> </service>
+		<service name="ROM" label="usb">               <parent label="a64_usb_host"/> </service>
+		<service name="ROM" label="usb.dtb">           <parent label="usb-pinephone.dtb"/> </service>
+		<service name="ROM" label="mmc">               <parent label="a64_sd_card"/> </service>
+		<service name="ROM" label="mmc.dtb">           <parent label="sd_card-pinephone.dtb"/> </service>
+		<service name="ROM" label="fb">                <parent label="de_fb"/> </service>
+		<service name="ROM" label="fb.dtb">            <parent label="de-pinephone.dtb"/> </service>
+		<service name="ROM" label="touch">             <parent label="goodix_touch"/> </service>
+		<service name="ROM" label="touch.dtb">         <parent label="goodix-pinephone.dtb"/> </service>
+		<service name="IRQ" label_prefix="touch ->"> <child name="drivers" label="runtime -> touch -> PH4"/> </service>
+	}
+
+	if {[info exists result([board])]} {
+		return $result([board]); }
+
+	return "";
 }
 
 
@@ -165,7 +227,7 @@ proc log_core_start_node { } {
 	if {[have_board linux]} return
 
 	return {
-	<start name="log_core">
+	<start name="log_core" priority="-1">
 		<resource name="RAM" quantum="1M"/>
 		<config period_ms="2000"/>
 		<route>
@@ -180,11 +242,10 @@ proc log_core_start_node { } {
 
 proc log_kernel_start_node { } {
 
-	if {[have_board linux]}     return
-	if {[have_board pinephone]} return
+	if {![have_spec nova]} return
 
 	return {
-	<start name="log_kernel">
+	<start name="log_kernel" priority="-1">
 		<binary name="log_core"/>
 		<resource name="RAM" quantum="1M"/>
 		<config period_ms="2000"/>
@@ -229,7 +290,7 @@ install_config {
 		<provides><service name="Timer"/></provides>
 	</start>
 
-	<start name="report_rom" priority="0">
+	<start name="report_rom" priority="-1">
 		<binary name="report_rom"/>
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
@@ -243,10 +304,13 @@ install_config {
 			        report="global_keys_handler -> leitzentrale"/>
 			<policy label="pointer -> shape"    report="shape"/>
 			<policy label="clipboard -> focus"  report="nitpicker -> focus"/>
-			<policy label="drivers -> capslock" report="global_keys_handler -> capslock"/>
 			<policy label="runtime -> capslock" report="global_keys_handler -> capslock"/>
-			<policy label="drivers -> numlock"  report="global_keys_handler -> numlock"/>
+			<policy label="runtime -> numlock"  report="global_keys_handler -> numlock"/>
+			<policy label="numlock_remap_rom -> numlock" report="global_keys_handler -> numlock"/>
+			<policy label="event_filter -> capslock" report="global_keys_handler -> capslock"/>
 			<policy label="runtime -> clicked"  report="nitpicker -> clicked"/>
+			<policy label="leitzentrale -> manager -> nitpicker_focus" report="nitpicker -> focus"/>
+			<policy label="leitzentrale -> manager -> nitpicker_hover" report="nitpicker -> hover"/>
 			<policy label="nit_focus -> leitzentrale"
 			        report="global_keys_handler -> leitzentrale"/>
 			<policy label="nit_focus -> slides"
@@ -257,14 +321,14 @@ install_config {
 		</config>
 	</start>
 
-	<start name="report_logger" priority="0">
+	<start name="report_logger" priority="-1">
 		<binary name="report_rom"/>
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config verbose="yes"/>
 	</start>
 
-	<start name="config_fs" caps="200" priority="0">
+	<start name="config_fs" caps="200" priority="-1">
 		<binary name="vfs"/>
 		<resource name="RAM" quantum="12M"/>
 		<provides> <service name="File_system"/> </provides>
@@ -278,7 +342,7 @@ install_config {
 		</config>
 	</start>
 
-	<start name="config_fs_rom">
+	<start name="config_fs_rom" priority="-1">
 		<binary name="fs_rom"/>
 		<resource name="RAM" quantum="10M"/>
 		<provides> <service name="ROM"/> </provides>
@@ -288,7 +352,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="report_fs_rom">
+	<start name="report_fs_rom" priority="-1">
 		<binary name="fs_rom"/>
 		<resource name="RAM" quantum="3M"/>
 		<provides> <service name="ROM"/> </provides>
@@ -298,7 +362,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="report_fs">
+	<start name="report_fs" priority="-1">
 		<binary name="vfs"/>
 		<resource name="RAM" quantum="16M"/>
 		<provides> <service name="File_system"/> </provides>
@@ -309,10 +373,6 @@ install_config {
 					<inline name="log">### start ###</inline>
 					<dir name="runtime">
 						<inline name="state"><empty/></inline>
-						<dir name="wifi_drv">
-							<inline name="accesspoints"><empty/></inline>
-							<inline name="state">       <empty/></inline>
-						</dir>
 						<dir name="nic_router"> <inline name="state">    <empty/></inline> </dir>
 						<dir name="update">     <inline name="state">    <empty/></inline> </dir>
 						<dir name="depot_query"><inline name="blueprint"><empty/></inline> </dir>
@@ -326,7 +386,7 @@ install_config {
 		</config>
 	</start>
 
-	<start name="log_terminal">
+	<start name="log_terminal" priority="-1">
 		<binary name="file_terminal"/>
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Terminal"/> </provides>
@@ -341,7 +401,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="log">
+	<start name="log" priority="-1">
 		<binary name="terminal_log"/>
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="LOG"/> </provides>
@@ -355,7 +415,7 @@ install_config {
 	} [log_core_start_node] {
 	} [log_kernel_start_node] {
 
-	<start name="fs_report">
+	<start name="fs_report" priority="-1">
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> </provides>
 		<config> <vfs> <fs/> </vfs> </config>
@@ -365,52 +425,43 @@ install_config {
 		</route>
 	</start>
 
-	<start name="drivers" caps="4600" priority="-1" managing_system="yes">
+	<start name="drivers" caps="4850" priority="-1" managing_system="yes">
 		<resource name="RAM" quantum="200M"/>
-		<resource name="CPU" quantum="10"/>
+		<resource name="CPU" quantum="5"/>
 		<binary name="init"/>
 		<route>
 			} [log_route] {
 			<service name="ROM" label="config">
 				<child name="config_fs_rom" label="drivers"/> </service>
-			<service name="ROM" label_last="capslock">
-				<child name="report_rom" label="drivers -> capslock"/> </service>
-			<service name="ROM" label_last="event_filter.config">
-				<child name="config_fs_rom" label="managed/event_filter"/> </service>
-			<service name="ROM" label_prefix="event_filter -> keyboard/">
-				<child name="config_fs_rom"/> </service>
-			<service name="ROM" label_last="fb_drv.config">
-				<child name="config_fs_rom" label="managed/fb_drv"/> </service>
-			<service name="ROM" label_last="gpu_drv.config">
-				<child name="config_fs_rom" label="gpu_drv"/> </service>
-			<service name="ROM" label_last="numlock_remap.config">
-				<child name="config_fs_rom" label="numlock_remap"/> </service>
-			<service name="ROM" label_last="usb_policy">
-				<child name="config_fs_rom" label="usb"/> </service>
+			<service name="ROM" label_last="gpu.config">
+				<child name="config_fs_rom" label="gpu"/> </service>
 			<service name="ROM" label_last="system">
 				<child name="config_fs_rom" label="managed/system"/> </service>
 			<service name="ROM" label_last="modem.config">
 				<child name="config_fs_rom" label="managed/modem"/> </service>
 			<service name="ROM" label_last="audio.config">
 				<child name="config_fs_rom" label="managed/audio"/> </service>
-			<service name="ROM" label_last="numlock">  <child name="report_rom"/> </service>
+			<service name="ROM" label_last="sleep_states">
+				<child name="report_fs_rom" label="runtime/acpi_support/sleep_states"/> </service>
 			<service name="Timer">   <child name="timer"/> </service>
 			<service name="Capture"> <child name="nitpicker"/> </service>
-			<service name="Event">   <child name="nitpicker"/> </service>
+			<service name="Event">   <child name="event_filter"/> </service>
 			<service name="Report">  <child name="fs_report"/> </service>
 			<any-service> <parent/> </any-service>
 		</route>
 		<provides>
-			<service name="Block"/>
-			<service name="Usb"/>
 			<service name="Platform"/>
-			<service name="Gpu"/>
+			<service name="Pin_state"/>
+			<service name="Pin_control"/>
+			<service name="I2c"/>
+			<service name="IRQ"/>
 		</provides>
 	</start>
 
-	<start name="nitpicker" caps="1000" priority="0">
+	<start name="nitpicker" caps="1000" priority="-1">
 		<resource name="RAM" quantum="12M"/>
 		<resource name="CPU" quantum="10"/>
+		<affinity xpos="1" width="1"/> <!-- decouple nitpicker from boot CPU -->
 		<provides>
 			<service name="Gui"/> <service name="Capture"/> <service name="Event"/>
 		</provides>
@@ -424,6 +475,38 @@ install_config {
 			<service name="Report"> <child name="report_rom"/> </service>
 			<service name="Timer">  <child name="timer"/>      </service>
 			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<!-- toggle key mappings depending on the numlock state -->
+	<start name="numlock_remap_rom" priority="-1">
+		<binary name="rom_filter"/>
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="ROM"/> </provides>
+		<route>
+			<service name="ROM" label="config">
+				<child name="config_fs_rom" label="numlock_remap"/> </service>
+			<service name="ROM" label="numlock"> <child name="report_rom"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<start name="event_filter" priority="-1" caps="120">
+		<resource name="RAM" quantum="2M"/>
+		<provides> <service name="Event"/> </provides>
+		<route>
+			<service name="ROM" label="config">
+				<child name="config_fs_rom" label="managed/event_filter"/> </service>
+			<service name="ROM" label_prefix="keyboard/">
+				<child name="config_fs_rom"/> </service>
+			<service name="ROM" label="numlock.remap"> <child name="numlock_remap_rom"/> </service>
+			<service name="ROM" label="capslock">      <child name="report_rom"/> </service>
+			<service name="ROM">   <parent/> </service>
+			<service name="PD">    <parent/> </service>
+			<service name="CPU">   <parent/> </service>
+			<service name="LOG">   <parent/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<service name="Event"> <child name="nitpicker"/> </service>
 		</route>
 	</start>
 
@@ -524,10 +607,10 @@ install_config {
 		</route>
 	</start>
 
-	<start name="leitzentrale" caps="2350" priority="-1">
+	<start name="leitzentrale" caps="2400" priority="-1">
 		<binary name="init"/>
-		<resource name="RAM" quantum="130M"/>
-		<resource name="CPU" quantum="35"/>
+		<resource name="RAM" quantum="203M"/>
+		<resource name="CPU" quantum="10"/>
 		<affinity xpos="1" width="1"/> <!-- decouple leitzentrale from boot CPU -->
 		<provides>
 			<service name="Gui"/>
@@ -549,6 +632,8 @@ install_config {
 				<child name="config_fs_rom"/> </service>
 			<service name="ROM" label_prefix="config -> ">
 				<child name="config_fs_rom"/> </service>
+			<service name="ROM" label="manager -> nitpicker_focus">
+				<child name="report_rom"/> </service>
 			<service name="ROM" label="manager -> nitpicker_hover">
 				<child name="report_rom"/> </service>
 			<service name="ROM" label="manager -> leitzentrale">
@@ -566,16 +651,28 @@ install_config {
 		</route>
 	</start>
 
-	<start name="runtime" caps="50000" priority="-1">
-		<binary name="init"/>
+	<start name="terminal_monitor" priority="-1">
+		<binary name="terminal_crosslink"/>
+		<resource name="RAM" quantum="2M"/>
+		<provides>
+			<service name="Terminal"/>
+		</provides>
+	</start>
+
+	<start name="runtime" caps="50000" priority="-1" managing_system="yes">
+		<binary name="monitor"/>
 		<resource name="RAM" quantum="32G"/>
-		<resource name="CPU" quantum="40"/>
+		<resource name="CPU" quantum="70"/>
 		<route>
 			<service name="ROM" label="config">
 				<child name="config_fs_rom" label="managed/runtime"/> </service>
 			<service name="ROM" label_prefix="config -> ">
 				<child name="config_fs_rom"/> </service>
+			<service name="ROM" label_prefix="report -> ">
+				<child name="report_fs_rom"/> </service>
 			<service name="ROM" label="capslock">
+				<child name="report_rom"/> </service>
+			<service name="ROM" label="numlock">
 				<child name="report_rom"/> </service>
 			<service name="ROM" label="clicked">
 				<child name="report_rom"/> </service>
@@ -583,8 +680,6 @@ install_config {
 				<child name="config_fs" label="rw"/> </service>
 			<service name="File_system" label="report">
 				<child name="report_fs" label="ro"/> </service>
-			<service name="Block"> <child name="drivers"/> </service>
-			<service name="Usb"> <child name="drivers"/> </service>
 			<service name="Platform" label_prefix="acpica">
 				<child name="drivers" label="acpica"/> </service>
 			<service name="Platform"> <child name="drivers"/> </service>
@@ -595,7 +690,6 @@ install_config {
 			<service name="Gui" label="lock_screen">
 				<child name="nitpicker" label="lock_screen"/> </service>
 			<service name="Gui"> <child name="nitpicker"/> </service>
-			<service name="Gpu"> <child name="drivers"/> </service>
 			<service name="Timer"> <child name="timer"/> </service>
 			<service name="Report" label_suffix="-> shape"> <child name="pointer"/> </service>
 			<service name="Report" label="inspect -> clipboard">
@@ -616,12 +710,16 @@ install_config {
 				<child name="leitzentrale" label="fonts"/> </service>
 			<service name="Report"> <child name="fs_report"/> </service>
 			<service name="LOG" label="unlogged"> <parent/> </service>
-			} [log_route] {
-			<service name="ROM" label="nic_drv"> <parent label="} [nic_drv] {"/> </service>
-			<service name="Event"   label="global">       <child name="nitpicker"/>    </service>
-			<service name="Event"   label="leitzentrale"> <child name="leitzentrale"/> </service>
+			} [log_route] [driver_routes] {
+			<service name="Event" label="leitzentrale"> <child name="leitzentrale"/> </service>
+			<service name="Event"> <child name="event_filter"/> </service>
 			<service name="Capture" label="global">       <child name="nitpicker"/>    </service>
 			<service name="Capture" label="leitzentrale"> <child name="leitzentrale"/> </service>
+			<service name="Pin_state">   <child name="drivers"/> </service>
+			<service name="Pin_control"> <child name="drivers"/> </service>
+			<service name="Terminal"> <child name="terminal_monitor"/> </service>
+			<service name="TRACE" label="runtime"> <parent label="runtime -> "/> </service>
+			<service name="TRACE" label="global">  <parent label=""/>        </service>
 			<any-service> <parent/> </any-service>
 		</route>
 	</start>
@@ -642,6 +740,9 @@ install_config {
 foreach subdir { launcher depot managed keyboard } {
 	file mkdir [file join [initial_config_dir] $subdir] }
 
+if {[llength [ingredients_of_type presets]] > 0} {
+	file mkdir [file join [initial_config_dir] presets] }
+
 # configs that are managed by the sculpt manager if absent
 set optional_configs {
 	fonts
@@ -649,7 +750,7 @@ set optional_configs {
 	event_filter
 	wifi
 	runtime
-	gpu_drv
+	gpu
 }
 
 foreach config $optional_configs {
@@ -663,7 +764,7 @@ foreach config $optional_configs {
 set required_configs {
 	nitpicker
 	deploy
-	fb_drv
+	fb
 	clipboard
 	drivers
 	numlock_remap
@@ -672,6 +773,7 @@ set required_configs {
 	usb
 	system
 	ram_fs
+	manager
 }
 
 foreach config $required_configs {
@@ -682,9 +784,12 @@ foreach config $required_configs {
 	copy_file $from $to
 }
 
-# selection of depot users (pubkey and download files) and launchers
+# selection of depot users (pubkey and download files), launchers, and presets
 foreach ingredient [ingredients_of_type launcher] {
 	check_xml_syntax [ingredient_path launcher $ingredient] }
+
+foreach ingredient [ingredients_of_type presets] {
+	check_xml_syntax [ingredient_path deploy $ingredient] }
 
 foreach type { depot launcher } {
 	foreach ingredient [ingredients_of_type $type] {
@@ -692,11 +797,16 @@ foreach type { depot launcher } {
 		set to   [file join [initial_config_dir] $type $ingredient]
 		file copy $from $to } }
 
+foreach ingredient [ingredients_of_type presets] {
+	set from [ingredient_path deploy $ingredient]
+	set to   [file join [initial_config_dir] presets $ingredient]
+	file copy $from $to }
+
 copy_file [genode_dir]/repos/gems/recipes/pkg/sculpt/README [initial_config_file README]
 copy_file [genode_dir]/repos/gems/run/sculpt/vimrc          [initial_config_file vimrc]
 
 # keyboard layouts
-foreach file { en_us de_ch de_de fr_ch fr_fr special } {
+foreach file { en_us de_ch de_de fr_ch fr_fr fr_bepo special } {
 	set from [genode_dir]/repos/os/src/server/event_filter/$file.chargen
 	set to   [file join [initial_config_dir] keyboard $file]
 	check_xml_syntax $from
@@ -730,7 +840,7 @@ foreach config { fonts wifi runtime event_filter system } {
 	}
 }
 
-copy_file [file join [initial_config_dir] fb_drv] [managed_config_path fb_drv]
+copy_file [file join [initial_config_dir] fb] [managed_config_path fb]
 
 
 #
@@ -743,6 +853,39 @@ close $fd
 
 # supply VERSION as a boot module to the sculpt manager
 file copy [initial_config_file VERSION] [run_dir]/genode/VERSION
+
+
+#
+# Generate build info as boot module
+#
+
+proc build_date { } { return [clock format [clock seconds] -format %Y-%m-%d] }
+
+proc genode_version { } {
+
+	if {[have_installed git] && [file exists [file join [genode_dir] .git]]} {
+		return [exec [installed_command git] -C [genode_dir] describe \
+		       {--dirty= <local changes>} 2> /dev/null] }
+
+	set fh [open [file join [genode_dir] VERSION] "RDONLY"]
+	set version [read $fh]
+	close $fh
+
+	regsub -all {\s} $version "" version
+	return $version
+}
+
+set    build_info "<build_info"
+append build_info " genode_version=\"[genode_version]\""
+append build_info " date=\"[build_date]\""
+append build_info " depot_user=\"[depot_user]\""
+append build_info " board=\"$board_var\""
+append build_info " base=\"[depot_user]/bin/[depot_spec]/[base_src]/[_current_depot_archive_version src [base_src]]\"/"
+append build_info ">"
+
+set fd [open [run_dir]/genode/build_info w]
+puts $fd $build_info
+close $fd
 
 
 ##
@@ -776,6 +919,12 @@ proc referenced_pkg_values { } {
 	foreach launcher [ingredients_of_type launcher] {
 		set path [file join [initial_config_dir] launcher $launcher]
 		lappend values {*}[pkg_attribute_values $path launcher]
+	}
+
+	# scan presets
+	foreach preset [ingredients_of_type presets] {
+		set path [file join [initial_config_dir] presets $preset]
+		lappend values {*}[pkg_attribute_values $path config/start]
 	}
 
 	# scan deploy config
@@ -849,7 +998,7 @@ proc current_pkg { pkg } { return $pkg/[_current_depot_archive_version pkg $pkg]
 #
 # Supplement file with versioned pkg archive paths
 #
-# \path  deploy config or launcher to augment
+# \path  deploy config, or launcher, or preset to augment
 # \node  XML node type containing the 'pkg' attribute to modify
 #
 # Each matching XML node is inspected regarding its 'pkg' attribute. If its
@@ -863,14 +1012,28 @@ proc augment_pkg_versions { path node } {
 	set content [read $fd]
 	close $fd
 
-	# filter 'pkg' attribute
-	set pattern "(\<$node\[^\>\]+?pkg=\")(\[^/\]+)(\")"
+	# filter 'pkg' attribute that is not <user>/pkg/<
+	set pattern "(\<$node\[^\>]+?pkg=\")"
+	append pattern {(?![\w\d\-]+/pkg/[\w\d\-_]+/[\w\d\-\._]+)(.*)}
+	append pattern "(\")"
 	while {[regexp $pattern $content dummy head pkg tail]} {
-		set pkg_path [depot_user]/pkg/[current_pkg $pkg]
-		regsub $pattern $content "$head$pkg_path$tail" content
+		if {[regexp [_depot_archive_path_pattern] $pkg dummy user type name]
+		    && $type == "pkg"} {
+				set pkg_path $user/pkg/[current_pkg $name]
+				regsub $pattern $content "$head$pkg_path$tail" content
+		} elseif {![regexp {/} $pkg dummy]} {
+			set pkg_path [depot_user]/pkg/[current_pkg $pkg]
+			regsub $pattern $content "$head$pkg_path$tail" content
+		} else {
+			puts stderr "Error: malformed depot-archive path '$pkg',"
+			puts stderr "       expected '<user>/pkg/<name>' or"
+			puts stderr "                '<name>' or"
+			puts stderr "                '<user>/pkg/<name>/<version>'"
+			exit
+		}
 	}
 
-	# write back the filtered launcher snippet
+	# write back the filtered launcher snippet, deploy config, or preset
 	set fd [open $path w]
 	puts $fd $content
 	close $fd
@@ -881,13 +1044,21 @@ proc augment_pkg_versions { path node } {
 foreach launcher [ingredients_of_type launcher] {
 	augment_pkg_versions [file join [initial_config_dir] launcher $launcher] "launcher" }
 
+# presets
+foreach preset [ingredients_of_type presets] {
+	augment_pkg_versions [file join [initial_config_dir] presets $preset] "start" }
 
 # deploy config
 augment_pkg_versions [initial_config_file deploy] "start"
 
+# update arch attribute of deploy config and presets
+proc augment_arch_attribute { file } {
+	exec sed -i "/config/s/arch=\"\"/arch=\"[depot_spec]\"/" $file }
 
-# update arch attribute of deploy config
-exec sed -i "/config/s/arch=\"\"/arch=\"[depot_spec]\"/" [initial_config_file deploy]
+foreach preset [ingredients_of_type presets] {
+	augment_arch_attribute [file join [initial_config_dir] presets $preset] }
+
+augment_arch_attribute [initial_config_file deploy]
 
 
 ##
@@ -937,7 +1108,6 @@ if {[have_board linux]} {
 	#
 	copy_file [run_dir]/genode/fs_rom [run_dir]/genode/cached_fs_rom
 }
-
 
 # support for the Leitzentrale GUI
 copy_file [genode_dir]/repos/gems/src/app/backdrop/genode_logo.png [run_dir]/genode/

@@ -13,11 +13,9 @@ if { [have_include "power_on/qemu"] || ![have_spec nova] || ![have_spec x86_64]}
 	exit 0
 }
 
-build { app/usb_report_filter }
-
 create_boot_directory
 import_from_depot [depot_user]/src/[base_src] \
-                  [depot_user]/src/acpi_drv \
+                  [depot_user]/src/acpi \
                   [depot_user]/src/fs_rom \
                   [depot_user]/src/init \
                   [depot_user]/src/jpeg \
@@ -26,15 +24,15 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/libyuv \
                   [depot_user]/src/log_terminal \
                   [depot_user]/src/nitpicker \
-                  [depot_user]/src/pc_usb_host_drv \
+                  [depot_user]/src/pc_usb_host \
                   [depot_user]/src/pci_decode \
-                  [depot_user]/src/platform_drv \
+                  [depot_user]/src/platform \
                   [depot_user]/src/posix \
-                  [depot_user]/src/ps2_drv \
+                  [depot_user]/src/ps2 \
                   [depot_user]/src/report_rom \
                   [depot_user]/src/stdcxx \
                   [depot_user]/src/vbox5-nova \
-                  [depot_user]/src/vesa_drv \
+                  [depot_user]/src/vesa_fb \
                   [depot_user]/src/vfs \
                   [depot_user]/src/vfs_import \
                   [depot_user]/src/vfs_pipe \
@@ -61,17 +59,14 @@ install_config {
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
-			<policy label="pci_decode -> system"                report="acpi_drv -> acpi"/>
-			<policy label="platform_drv -> devices"             report="pci_decode -> devices"/>
-			<policy label="pointer -> hover"                    report="nitpicker -> hover"/>
-			<policy label="pointer -> xray"                     report="nitpicker -> xray"/>
-			<policy label="usb_report_filter -> devices"        report="usb_drv -> devices"/>
-			<policy label="usb_report_filter -> usb_drv_config" report="usb_drv -> config"/>
-			<policy label="virtualbox -> usb_devices"           report="usb_report_filter -> usb_devices"/>
+			<policy label="pci_decode -> system" report="acpi -> acpi"/>
+			<policy label="platform -> devices"  report="pci_decode -> devices"/>
+			<policy label="pointer -> hover"     report="nitpicker -> hover"/>
+			<policy label="pointer -> xray"      report="nitpicker -> xray"/>
 		</config>
 	</start>
 
-	<start name="acpi_drv" caps="250">
+	<start name="acpi" caps="250">
 		<resource name="RAM" quantum="4M"/>
 		<route>
 			<service name="Report"> <child name="report_rom"/> </service>
@@ -80,7 +75,7 @@ install_config {
 	</start>
 
 	<start name="pci_decode" caps="350">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="2M"/>
 		<route>
 			<service name="ROM" label="system"> <child name="report_rom"/> </service>
 			<service name="Report"> <child name="report_rom"/> </service>
@@ -88,7 +83,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="platform_drv" caps="100" managing_system="yes">
+	<start name="platform" caps="100" managing_system="yes">
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Platform"/> </provides>
 		<route>
@@ -97,9 +92,9 @@ install_config {
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 		<config>
-			<policy label_prefix="ps2_drv"> <device name="ps2"/> </policy>
-			<policy label_prefix="fb_drv"  info="yes"> <pci class="VGA"/>   </policy>
-			<policy label_prefix="usb_drv" info="yes"> <pci class="USB"/>   </policy>
+			<policy label_prefix="ps2"> <device name="ps2"/> </policy>
+			<policy label_prefix="fb"  info="yes"> <pci class="VGA"/>   </policy>
+			<policy label_prefix="usb" info="yes"> <pci class="USB"/>   </policy>
 		</config>
 	</start>
 
@@ -108,75 +103,17 @@ install_config {
 		<provides><service name="Timer"/></provides>
 	</start>
 
-	<start name="usb_config_fs" priority="-1">
-		<binary name="vfs"/>
-		<resource name="RAM" quantum="1M"/>
-		<provides><service name="File_system"/></provides>
-		<config verbose="yes">
-			<vfs>
-				<ram/>
-				<import>
-					<inline name="usb_drv.config">
-<config>
-	<report devices="yes" config="yes"/>
-	<policy label_prefix="virtualbox" class="0x3"/>
-</config>
-					</inline>
-					<inline name="usb_report_filter.config">
-<config>
-	<vfs> <fs/> </vfs>
-
-	<!-- USB device whitelist -->
-	<client label="virtualbox"/>
-	<device vendor_id="0x03eb" product_id="0x204d"/> <!-- 'Pro Micro' test device -->
-</config>
-					</inline>
-				</import>
-			</vfs>
-			<policy label_prefix="usb_report_filter" root="/" writeable="yes" />
-			<policy label_prefix="usb_config_rom" root="/"/>
-		</config>
-	</start>
-
-	<start name="usb_config_rom" priority="-1">
-		<binary name="fs_rom"/>
-		<resource name="RAM" quantum="1200K"/>
-		<provides><service name="ROM"/></provides>
-		<route>
-			<service name="File_system"><child name="usb_config_fs"/></service>
-			<any-service><parent/><any-child/></any-service>
-		</route>
-	</start>
-
-	<start name="usb_report_filter" priority="-1">
-		<resource name="RAM" quantum="1200K"/>
-		<route>
-			<service name="Report"><child name="report_rom" /></service>
-			<service name="ROM" label="config">
-				<child name="usb_config_rom" label="usb_report_filter.config"/>
-			</service>
-			<service name="ROM" label="devices">
-				<child name="report_rom"/>
-			</service>
-			<service name="ROM" label="usb_drv_config">
-				<child name="report_rom"/>
-			</service>
-			<service name="File_system" label="usb_drv.config">
-				<child name="usb_config_fs"/>
-			</service>
-			<any-service><parent/><any-child /></any-service>
-		</route>
-	</start>
-
-	<start name="usb_drv" priority="-1">
-		<binary name="pc_usb_host_drv"/>
+	<start name="usb" priority="-1">
+		<binary name="pc_usb_host"/>
 		<resource name="RAM" quantum="16M"/>
 		<provides> <service name="Usb"/> </provides>
+		<config>
+			<report devices="yes" config="yes"/>
+			<policy label_prefix="virtualbox"><device class="0x3"/></policy>
+		</config>
 		<route>
-			<service name="IRQ"><child name="acpi_drv" /></service>
+			<service name="IRQ"><child name="acpi" /></service>
 			<service name="Report"> <child name="report_rom" /> </service>
-			<service name="ROM" label="config">
-				<child name="usb_config_rom" label="usb_drv.config"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 	</start>
@@ -240,7 +177,6 @@ install_config {
 		</config>
 		<route>
 			<service name="Report"><child name="report_rom" /></service>
-			<service name="ROM" label="usb_devices"> <child name="report_rom"/> </service>
 			<any-service> <parent/> <any-child /> </any-service>
 		</route>
 	</start>
@@ -275,51 +211,26 @@ exec -ignorestderr \
 exec ln -sf ${genode_dir}/repos/ports/run/vm_genode_usb_hid_raw.vbox bin/
 exec ln -sf ../../usb_hid_raw.iso bin/
 
-build_boot_image { usb_report_filter usb_hid_raw.iso vm_genode_usb_hid_raw.vbox }
+build_boot_image { usb_hid_raw.iso vm_genode_usb_hid_raw.vbox }
 
 if { ![get_cmd_switch --autopilot] } { run_genode_until forever }
 
 # autopilot test
 
-run_genode_until {\[init -\> log_terminal\] \[init -\> event_dump\] Input event #0\t} 90
+run_genode_until {\[init -\> log_terminal\] \[init -\> event_dump\] Input event #11\t} 150
 
-# remove everything before the first interesting line
-regexp {(\[init -\> log_terminal\] \[init -\> event_dump\] Input event #0\t.*)} $output all output
-
-run_genode_until {.*\[init -\> event_dump\] Input event #11.*\n} 60 [output_spawn_id]
-
-unify_output { dev_info:} ""
-unify_output { usb [0-9\-]+:} ""
-unify_output { number [0-9]+} ""
-unify_output {(?n)on usb-usbbus.*$} ""
-unify_output {(?n)using .*$} ""
-unify_output {(?n)^.*__wait_event.*$} ""
-unify_output {(?n)^.*Failed to submit URB.*$} ""
-unify_output {(?n)^.*dev_warn.*$} ""
-unify_output {(?n)^.*dangling allocation.*$} ""
-unify_output {(?n)^.*Warning:.*$} ""
-unify_output { [0-9][0-9][0-9][0-9]:[0-9][0-9][0-9][0-9] } " "
-filter_out_color_escape_sequences
-trim_lines
+# pay only attention to the output of event_dump
+grep_output {^\[init -\> log_terminal\] \[init -\> event_dump\]}
 
 compare_output_to {
 [init -> log_terminal] [init -> event_dump] Input event #0	PRESS KEY_X 65534	key count: 1
 [init -> log_terminal] [init -> event_dump] Input event #1	RELEASE KEY_X	key count: 0
-[init -> log_terminal] [init -> event_dump] Input event #2	PRESS BTN_LEFT 65534	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #3	REL_MOTION -1+0	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #4	REL_MOTION +0+1	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #5	RELEASE BTN_LEFT	key count: 0
-[init -> usb_drv] USB disconnect, device
-[init -> log_terminal] [init -> usb_drv -> usb_drv] USB disconnect, device
-[init -> usb_drv] new full-speed USB device
-[init -> virtualbox] Attach USB device usb-2-8
-[init -> log_terminal] [init -> usb_drv -> usb_drv] new full-speed USB device
-[init -> log_terminal] [init -> usb_hid_drv] input: USB HID v1.11 Keyboard [HID 03eb:204d]
-[init -> log_terminal] [init -> usb_hid_drv] input: USB HID v1.11 Mouse [HID 03eb:204d]
-[init -> log_terminal] [init -> event_dump] Input event #6	PRESS KEY_X 65534	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #7	RELEASE KEY_X	key count: 0
+[init -> log_terminal] [init -> event_dump] Input event #2	REL_MOTION -1+1	key count: 0
+[init -> log_terminal] [init -> event_dump] Input event #3	PRESS BTN_LEFT 65534	key count: 1
+[init -> log_terminal] [init -> event_dump] Input event #4	RELEASE BTN_LEFT	key count: 0
+[init -> log_terminal] [init -> event_dump] Input event #5	PRESS KEY_X 65534	key count: 1
+[init -> log_terminal] [init -> event_dump] Input event #6	RELEASE KEY_X	key count: 0
+[init -> log_terminal] [init -> event_dump] Input event #7	REL_MOTION -1+1	key count: 0
 [init -> log_terminal] [init -> event_dump] Input event #8	PRESS BTN_LEFT 65534	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #9	REL_MOTION -1+0	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #10	REL_MOTION +0+1	key count: 1
-[init -> log_terminal] [init -> event_dump] Input event #11	RELEASE BTN_LEFT	key count: 0
+[init -> log_terminal] [init -> event_dump] Input event #9	RELEASE BTN_LEFT	key count: 0
 }

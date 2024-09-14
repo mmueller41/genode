@@ -24,15 +24,15 @@
 /* core includes */
 #include <dataspace_component.h>
 
-namespace Genode { class Ram_dataspace_factory; }
+namespace Core { class Ram_dataspace_factory; }
 
 
-class Genode::Ram_dataspace_factory : public Ram_allocator,
-                                      public Dataspace_owner
+class Core::Ram_dataspace_factory : public Ram_allocator,
+                                    public Dataspace_owner
 {
 	public:
 
-		typedef Range_allocator::Range Phys_range;
+		using Phys_range = Range_allocator::Range;
 
 		static Phys_range any_phys_range() { return { 0UL, ~0UL }; }
 

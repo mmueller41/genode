@@ -30,11 +30,14 @@ namespace Net {
  */
 struct Net::Port
 {
-	Genode::uint16_t value;
+	Genode::uint16_t value { 0UL };
+
+	Port() { }
 
 	explicit Port(Genode::uint16_t const value) : value(value) { }
 
 	bool operator == (Port const &other) const { return value == other.value; }
+	bool operator != (Port const &other) const { return value != other.value; }
 
 	void print(Genode::Output &out) const { Genode::print(out, value); }
 }

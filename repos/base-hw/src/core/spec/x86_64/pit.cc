@@ -22,7 +22,7 @@
 #include <kernel/timer.h>
 #include <platform.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Kernel;
 
 
@@ -55,13 +55,25 @@ uint32_t Board::Timer::pit_calc_timer_freq(void)
 
 Board::Timer::Timer(unsigned)
 :
-	Mmio(Platform::mmio_to_virt(Hw::Cpu_memory_map::lapic_phys_base()))
+	Mmio({(char *)Platform::mmio_to_virt(Hw::Cpu_memory_map::lapic_phys_base()), Mmio::SIZE})
+{
+	init();
+}
+
+
+void Board::Timer::init()
 {
 	/* enable LAPIC timer in one-shot mode */
 	write<Tmr_lvt::Vector>(Board::TIMER_VECTOR_KERNEL);
 	write<Tmr_lvt::Delivery>(0);
 	write<Tmr_lvt::Mask>(0);
 	write<Tmr_lvt::Timer_mode>(0);
+
+	/* use very same divider after ACPI resume as used during initial boot */
+	if (divider) {
+		write<Divide_configuration::Divide_value>((uint8_t)divider);
+		return;
+	}
 
 	/* calibrate LAPIC frequency to fullfill our requirements */
 	for (Divide_configuration::access_t div = Divide_configuration::Divide_value::MAX;
@@ -75,6 +87,7 @@ Board::Timer::Timer(unsigned)
 
 		/* Calculate timer frequency */
 		ticks_per_ms = pit_calc_timer_freq();
+		divider      = div;
 	}
 
 	/**
@@ -96,7 +109,7 @@ time_t Timer::ticks_to_us(time_t const ticks) const {
 
 
 time_t Timer::us_to_ticks(time_t const us) const {
-	return (us / 1000) * _device.ticks_per_ms; }
+	return (us * _device.ticks_per_ms) / 1000; }
 
 
 time_t Timer::_max_value() const {

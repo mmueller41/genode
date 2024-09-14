@@ -1,8 +1,7 @@
-set build_components { app/pdf_view }
-
-source ${genode_dir}/repos/base/run/platform_drv.inc
-
-build $build_components
+build {
+	lib/libc lib/vfs lib/openjpeg lib/freetype lib/libpng lib/zlib lib/jbig2dec
+	lib/mupdf lib/jpeg app/pdf_view
+}
 
 create_boot_directory
 
@@ -13,7 +12,7 @@ import_from_depot \
 	[depot_user]/src/init \
 	[depot_user]/src/nitpicker \
 
-set config {
+install_config {
 <config>
 	<parent-provides>
 		<service name="ROM"/>
@@ -30,10 +29,12 @@ set config {
 		<any-service> <parent/> <any-child/> </any-service>
 	</default-route>
 	<default caps="100"/>
+
 	<start name="timer">
 		<resource name="RAM" quantum="1M"/>
 		<provides><service name="Timer"/></provides>
 	</start>
+
 	<start name="drivers" caps="1500" managing_system="yes">
 		<resource name="RAM" quantum="64M"/>
 		<binary name="init"/>
@@ -55,7 +56,7 @@ set config {
 			<capture/> <event/>
 
 			<domain name="pointer" layer="1" content="client" label="no" origin="pointer" />
-			<domain name="default" layer="2" content="client" label="no" hover="always"/>
+			<domain name="default" layer="2" content="client" label="no" hover="always" width="1024" height="768"/>
 
 			<policy label_prefix="pointer" domain="pointer"/>
 			<default-policy domain="default"/>
@@ -96,8 +97,6 @@ set config {
 </config>
 }
 
-install_config $config
-
 #
 # Download test PDF file
 #
@@ -118,15 +117,7 @@ set fd [open [run_dir]/genode/focus w]
 puts $fd "<focus label=\"wm -> focus\"/>"
 close $fd
 
-append boot_modules {
-	libc.lib.so vfs.lib.so libm.lib.so
-	openjpeg.lib.so freetype.lib.so libpng.lib.so zlib.lib.so jbig2dec.lib.so
-	mupdf.lib.so jpeg.lib.so
-	pdf_view
-	test.pdf
-}
-
-build_boot_image $boot_modules
+build_boot_image [list {*}[build_artifacts] test.pdf]
 
 append qemu_args " -m 800"
 

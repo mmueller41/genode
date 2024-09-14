@@ -25,16 +25,22 @@
 #include <linux/kernel.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/sched/clock.h>
 #include <linux/tick.h>
 #include <linux/of.h>
 #include <linux/of_clk.h>
 #include <linux/of_fdt.h>
+#include <linux/version.h>
+#include <net/net_namespace.h>
+
+#include <../mm/slab.h>
 
 /* definitions in drivers/base/base.h */
 extern int devices_init(void);
 extern int buses_init(void);
 extern int classes_init(void);
 extern int platform_bus_init(void);
+extern int auxiliary_bus_init(void);
 
 /* definition from kernel/main.c implemented architecture specific */
 extern void time_init(void);
@@ -48,6 +54,9 @@ static int kernel_init(void * args)
 	struct task_struct *tsk = current;
 	set_task_comm(tsk, "init");
 
+	/* setup page struct for zero page in BSS */
+	lx_emul_add_page_range(empty_zero_page, PAGE_SIZE);
+
 	wait_for_completion(&kthreadd_done);
 
 	workqueue_init();
@@ -59,6 +68,8 @@ static int kernel_init(void * args)
 	of_core_init();
 	platform_bus_init();
 
+	auxiliary_bus_init();
+
 	lx_emul_initcalls();
 
 	system_state = SYSTEM_RUNNING;
@@ -69,21 +80,42 @@ static int kernel_init(void * args)
 }
 
 
-static void timer_loop(void)
+static int kernel_idle(void * args)
 {
-	for (;;) {
-		tick_nohz_idle_enter();
+	struct task_struct *tsk = current;
+	set_task_comm(tsk, "idle");
 
-		if (!lx_emul_task_another_runnable())
-			tick_nohz_idle_stop_tick();
+	/* set this current task to be the idle task */
+	lx_emul_task_set_idle();
+
+	/*
+	 * Idle task always gets run in the end of each schedule
+	 * and again at the beginning of each schedule
+	 */
+	for (;;) {
+		lx_emul_task_schedule(true);
+
+		tick_nohz_idle_enter();
+		tick_nohz_idle_stop_tick();
 
 		lx_emul_task_schedule(true);
-		lx_emul_time_handle();
 
-		/* check restarting ticking */
 		tick_nohz_idle_restart_tick();
-
 		tick_nohz_idle_exit();
+	}
+
+	return 0;
+}
+
+
+static void timer_loop(void)
+{
+	/* set timer interrupt task to highest priority */
+	lx_emul_task_priority(current, 0);
+
+	for (;;) {
+		lx_emul_task_schedule(true);
+		lx_emul_time_handle();
 	}
 }
 
@@ -96,9 +128,6 @@ int lx_emul_init_task_function(void * dtb)
 	static struct pt_regs regs;
 	set_irq_regs(&regs);
 
-	/* Run emulation library self-tests before starting kernel */
-	lx_emul_associate_page_selftest();
-
 	/**
 	 * Here we do the minimum normally done start_kernel() of init/main.c
 	 */
@@ -109,7 +138,14 @@ int lx_emul_init_task_function(void * dtb)
 	kmem_cache_init();
 	wait_bit_init();
 	radix_tree_init();
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,2,0)
+	maple_tree_init();
+#endif
+
 	workqueue_init_early();
+
+	skb_init();
 
 	early_irq_init();
 	irqchip_init();
@@ -119,13 +155,24 @@ int lx_emul_init_task_function(void * dtb)
 	hrtimers_init();
 	softirq_init();
 	timekeeping_init();
-
 	time_init();
 
 	sched_clock_init();
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,17,0)
+	net_ns_init();
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,3,0)
+	kernel_thread(kernel_init, NULL, "init", CLONE_FS);
+	kernel_thread(kernel_idle, NULL, "idle", CLONE_FS);
+	pid = kernel_thread(kthreadd, NULL, "kthreadd", CLONE_FS | CLONE_FILES);
+#else
 	kernel_thread(kernel_init, NULL, CLONE_FS);
+	kernel_thread(kernel_idle, NULL, CLONE_FS);
 	pid = kernel_thread(kthreadd, NULL, CLONE_FS | CLONE_FILES);
+#endif
+
 	kthreadd_task = find_task_by_pid_ns(pid, NULL);;
 
 	system_state = SYSTEM_SCHEDULING;

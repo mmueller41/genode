@@ -16,6 +16,9 @@
 
 #include <linker.h>
 
+/* the R_<arch>_NONE relocation is 0 for all supported architectures */
+static constexpr int R_NONE = 0;
+
 constexpr bool verbose_relocation = false;
 
 static inline bool verbose_reloc(Linker::Dependency const &d)
@@ -66,13 +69,18 @@ struct Linker::Reloc_plt_generic
 	                  Elf::Rel const *start, unsigned long size)
 	{
 		if (type != TYPE) {
-			error("LD: Unsupported PLT relocation type: ", (int)type);
+			error("LD: Unsupported translation table address format.",
+			      " Expected ", TYPE, " got ", unsigned(type), ".",
+			      " Type can only be DT_REL or DT_RELA not both.");
 			throw Incompatible();
 		}
 
 		REL const *rel = (REL const *)start;
 		REL const *end = rel + (size / sizeof(REL));
 		for (; rel < end; rel++) {
+
+			/* do nothing */
+			if (rel->type() == R_NONE) continue;
 
 			if (rel->type() != JMPSLOT) {
 				error("LD: Unsupported PLT relocation ", (int)rel->type());
@@ -98,8 +106,7 @@ class Linker::Reloc_non_plt_generic
 		 * safely here since all other DSO are loaded, relocated, and constructed at
 		 * this point
 		 */
-		template <typename REL>
-		void _copy(REL const *rel, Elf::Addr *addr)
+		void _copy(auto const *rel, Elf::Addr *addr)
 		{
 			if (!_dep.obj().is_binary()) {
 				error("LD: copy relocation in DSO "

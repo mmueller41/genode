@@ -18,12 +18,14 @@
 #include <base/stdint.h>
 #include <base/output.h>
 #include <util/misc_math.h>
+#include <util/noncopyable.h>
 #include <cpu/string.h>
 
 namespace Genode {
 
 	class Number_of_bytes;
 	class Byte_range_ptr;
+	class Const_byte_range_ptr;
 	class Cstring;
 	template <Genode::size_t> class String;
 }
@@ -69,17 +71,43 @@ class Genode::Number_of_bytes
 
 
 /**
- * Data structure for describing a byte buffer
+ * Data structure for describing a mutable byte buffer
  *
  * The type is intended to be used as 'Byte_range_ptr const &' argument.
- * It is deliberately non-copyable.
  */
-struct Genode::Byte_range_ptr
+struct Genode::Byte_range_ptr : Noncopyable
 {
-	char * const start;
-	size_t const num_bytes;
+	struct {
+		char * const start;
+		size_t const num_bytes;
+	};
 
 	Byte_range_ptr(char *start, size_t num_bytes)
+	: start(start), num_bytes(num_bytes) { }
+};
+
+
+/**
+ * Data structure for describing a constant byte buffer
+ */
+struct Genode::Const_byte_range_ptr : Noncopyable
+{
+	struct {
+		char const * const start;
+		size_t       const num_bytes;
+	};
+
+	bool contains(char const *ptr) const
+	{
+		return (ptr >= start) && (ptr <= start + num_bytes - 1);
+	}
+
+	bool contains(void const *ptr) const
+	{
+		return contains((char const *)ptr);
+	}
+
+	Const_byte_range_ptr(char const *start, size_t num_bytes)
 	: start(start), num_bytes(num_bytes) { }
 };
 
@@ -93,6 +121,7 @@ namespace Genode {
 	/**
 	 * Return length of null-terminated string in bytes
 	 */
+	 __attribute((optimize("no-tree-loop-distribute-patterns")))
 	inline size_t strlen(const char *s)
 	{
 		size_t res = 0;
@@ -246,7 +275,7 @@ namespace Genode {
 	 __attribute((optimize("no-tree-loop-distribute-patterns")))
 	inline void *memset(void *dst, uint8_t i, size_t size)
 	{
-		typedef unsigned long word_t;
+		using word_t = unsigned long;
 
 		enum {
 			LEN  = sizeof(word_t),
@@ -742,12 +771,12 @@ class Genode::String
 		 * may fit perfectly into the buffer or may have been truncated.
 		 * In general, it would be safe to assume the latter.
 		 */
-		template <typename T, typename... TAIL>
-		String(T const &arg, TAIL &&... args)
+		template <typename T>
+		String(T const &head, auto &&... tail)
 		{
 			/* initialize string content */
 			Local_output output(_buf);
-			Genode::print(output, arg, args...);
+			Genode::print(output, head, tail...);
 
 			/* add terminating null */
 			_buf[output.num_chars()] = 0;

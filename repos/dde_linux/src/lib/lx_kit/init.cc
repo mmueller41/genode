@@ -23,8 +23,9 @@ namespace Lx_kit {
 }
 
 
-void Lx_kit::Initcalls::add(int (*initcall)(void), unsigned int prio) {
-	_call_list.insert(new (_heap) E(prio, initcall)); }
+void Lx_kit::Initcalls::add(int (*initcall)(void), unsigned int prio,
+                            char const *name) {
+	_call_list.insert(new (_heap) E(prio, initcall, name)); }
 
 
 void Lx_kit::Initcalls::execute_in_order()
@@ -44,6 +45,15 @@ void Lx_kit::Initcalls::execute_in_order()
 }
 
 
+void Lx_kit::Initcalls::execute(char const *name)
+{
+	for (E * entry = _call_list.first(); entry; entry = entry->next()) {
+		if (Genode::strcmp(entry->name, name) == 0)
+			entry->call();
+	}
+}
+
+
 void Lx_kit::Pci_fixup_calls::add(void (*fn)(struct pci_dev*)) {
 	_call_list.insert(new (_heap) E(fn)); }
 
@@ -55,7 +65,7 @@ void Lx_kit::Pci_fixup_calls::execute(struct pci_dev *pci_dev)
 }
 
 
-void Lx_kit::initialize(Genode::Env & env)
+void Lx_kit::initialize(Genode::Env & env, Genode::Signal_context & sig_ctx)
 {
-	Lx_kit::env(&env);
+	Lx_kit::Env::initialize(env, sig_ctx);
 }

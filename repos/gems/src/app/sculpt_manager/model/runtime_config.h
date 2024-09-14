@@ -17,7 +17,9 @@
 /* Genode includes */
 #include <util/xml_node.h>
 #include <util/list_model.h>
+#include <util/dictionary.h>
 #include <base/registry.h>
+#include <dialog/types.h>
 
 /* local includes */
 #include <types.h>
@@ -58,8 +60,8 @@ class Sculpt::Runtime_config
 				Service::Type_name const service =
 					node.attribute_value("name", Service::Type_name());
 
-				Label const dst_label =
-					parent.attribute_value("label", Label());
+					Service::Label const dst_label =
+					parent.attribute_value("label", Service::Label());
 
 				bool const ignored_service = (service == "CPU")
 				                          || (service == "PD")
@@ -74,9 +76,7 @@ class Sculpt::Runtime_config
 				                   || (service == "IO_MEM")
 				                   || (service == "Rtc")
 				                   || (service == "IRQ")
-				                   || (service == "TRACE")
-				                   || (service == "Event")
-				                   || (service == "Capture");
+				                   || (service == "TRACE");
 				if (hardware) {
 					result = "hardware";
 					return;
@@ -85,12 +85,6 @@ class Sculpt::Runtime_config
 				bool const usb = (service == "Usb");
 				if (usb) {
 					result = "usb";
-					return;
-				}
-
-				bool const storage = (service == "Block");
-				if (storage) {
-					result = "storage";
 					return;
 				}
 
@@ -128,7 +122,10 @@ class Sculpt::Runtime_config
 					}
 				}
 
-				if (service == "Gui") {
+				bool const gui = (service == "Gui")
+				              || (service == "Event")
+				              || (service == "Capture");
+				if (gui) {
 					result = "GUI";
 					return;
 				}
@@ -165,44 +162,45 @@ class Sculpt::Runtime_config
 			}
 
 			Child_service(Start_name server, Xml_node provides)
-			: Service(server, type_from_xml(provides), Label()) { }
+			: Service(server, type_from_xml(provides), { }) { }
 
-			struct Update_policy
+			static bool type_matches(Xml_node const &node)
 			{
-				typedef Child_service Element;
+				return type_from_xml(node) != Service::Type::UNDEFINED;
+			}
 
-				Start_name _server;
-				Allocator &_alloc;
-
-				Update_policy(Start_name const &server, Allocator &alloc)
-				: _server(server), _alloc(alloc) { }
-
-				void destroy_element(Element &elem) { destroy(_alloc, &elem); }
-
-				Element &create_element(Xml_node node)
-				{
-					return *new (_alloc) Child_service(_server, node);
-				}
-
-				void update_element(Element &, Xml_node) { }
-
-				static bool element_matches_xml_node(Element const &elem, Xml_node node)
-				{
-					return type_from_xml(node) == elem.type;
-				}
-
-				static bool node_is_element(Xml_node node)
-				{
-					return type_from_xml(node) != Service::Type::UNDEFINED;
-				}
-			};
+			bool matches(Xml_node const &node) const
+			{
+				return type_from_xml(node) == type;
+			}
 		};
+
+		/*
+		 * Data structure to associate dialog widget IDs with component names.
+		 */
+		struct Graph_id;
+
+		using Graph_ids = Dictionary<Graph_id, Start_name>;
+
+		struct Graph_id : Graph_ids::Element, Dialog::Id
+		{
+			Graph_id(Graph_ids &dict, Start_name const &name, Dialog::Id const &id)
+			:
+				Graph_ids::Element(dict, name), Dialog::Id(id)
+			{ }
+		};
+
+		Graph_ids _graph_ids { };
+
+		unsigned _graph_id_count = 0;
 
 	public:
 
 		struct Component : List_model<Component>::Element
 		{
 			Start_name const name;
+
+			Graph_id const graph_id;
 
 			Start_name primary_dependency { };
 
@@ -212,40 +210,21 @@ class Sculpt::Runtime_config
 
 				Dep(Start_name to_name) : to_name(to_name) { }
 
-				struct Update_policy
+				bool matches(Xml_node const &node) const
 				{
-					typedef Dep Element;
+					return _to_name(node) == to_name;
+				}
 
-					Allocator &_alloc;
-
-					Update_policy(Allocator &alloc) : _alloc(alloc) { }
-
-					void destroy_element(Dep &elem) { destroy(_alloc, &elem); }
-
-					Dep &create_element(Xml_node node)
-					{
-						return *new (_alloc) Dep(_to_name(node));
-					}
-
-					void update_element(Dep &, Xml_node) { }
-
-					static bool element_matches_xml_node(Dep const &elem, Xml_node node)
-					{
-						return _to_name(node) == elem.to_name;
-					}
-
-					static bool node_is_element(Xml_node node)
-					{
-						return _to_name(node).valid();
-					}
-				};
+				static bool type_matches(Xml_node const &node)
+				{
+					return _to_name(node).valid();
+				}
 			};
 
 			/* dependencies on other child components */
 			List_model<Dep> deps { };
 
-			template <typename FN>
-			void for_each_secondary_dep(FN const &fn) const
+			void for_each_secondary_dep(auto const &fn) const
 			{
 				deps.for_each([&] (Dep const &dep) {
 					if (dep.to_name != primary_dependency)
@@ -254,63 +233,63 @@ class Sculpt::Runtime_config
 
 			List_model<Child_service> _child_services { };
 
-			Component(Start_name const &name) : name(name) { }
+			Component(Start_name const &name, Graph_ids &graph_ids, Dialog::Id const &id)
+			:
+				name(name), graph_id(graph_ids, name, id)
+			{ }
 
-			template <typename FN>
-			void for_each_service(FN const &fn) const
+			void for_each_service(auto const &fn) const
 			{
 				_child_services.for_each(fn);
 			}
 
-			struct Update_policy
+			void update_from_xml(Allocator &alloc, Xml_node const &node)
 			{
-				typedef Component Element;
+				primary_dependency = _primary_dependency(node);
 
-				Allocator &_alloc;
+				node.with_optional_sub_node("route", [&] (Xml_node route) {
 
-				Update_policy(Allocator &alloc) : _alloc(alloc) { }
+					deps.update_from_xml(route,
 
-				void destroy_element(Component &elem)
-				{
-					/* flush list models */
-					update_element(elem, Xml_node("<start> <route/> <provides/> </start>"));
+						/* create */
+						[&] (Xml_node const &node) -> Dep & {
+							return *new (alloc) Dep(_to_name(node)); },
 
-					destroy(_alloc, &elem);
-				}
+						/* destroy */
+						[&] (Dep &e) { destroy(alloc, &e); },
 
-				Component &create_element(Xml_node node)
-				{
-					return *new (_alloc)
-						Component(node.attribute_value("name", Start_name()));
-				}
+						/* update */
+						[&] (Dep &, Xml_node) { }
+					);
+				});
 
-				void update_element(Component &elem, Xml_node node)
-				{
-					elem.primary_dependency = _primary_dependency(node);
+				node.with_optional_sub_node("provides", [&] (Xml_node provides) {
 
-					{
-						Dep::Update_policy policy { _alloc };
+					_child_services.update_from_xml(provides,
 
-						node.with_optional_sub_node("route", [&] (Xml_node route) {
-							elem.deps.update_from_xml(policy, route); });
-					}
+						/* create */
+						[&] (Xml_node const &node) -> Child_service & {
+							return *new (alloc)
+								Child_service(name, node); },
 
-					{
-						Child_service::Update_policy policy { elem.name, _alloc };
+						/* destroy */
+						[&] (Child_service &e) { destroy(alloc, &e); },
 
-						node.with_optional_sub_node("provides", [&] (Xml_node provides) {
-							elem._child_services.update_from_xml(policy,
-							                                     provides); });
-					}
-				}
+						/* update */
+						[&] (Child_service &, Xml_node) { }
+					);
+				});
+			}
 
-				static bool element_matches_xml_node(Component const &elem, Xml_node node)
-				{
-					return node.attribute_value("name", Start_name()) == elem.name;
-				}
+			bool matches(Xml_node const &node) const
+			{
+				return node.attribute_value("name", Start_name()) == name;
+			}
 
-				static bool node_is_element(Xml_node node) { return node.has_type("start"); }
-			};
+			static bool type_matches(Xml_node const &node)
+			{
+				return node.has_type("start");
+			}
 		};
 
 	private:
@@ -319,8 +298,8 @@ class Sculpt::Runtime_config
 
 		struct Parent_services
 		{
-			typedef Registered_no_delete<Service> Parent_service;
-			typedef Service::Type Type;
+			using Parent_service = Registered_no_delete<Service>;
+			using Type = Service::Type;
 
 			Registry<Parent_service> _r { };
 
@@ -329,9 +308,8 @@ class Sculpt::Runtime_config
 				_backdrop  { _r, Type::GUI,         "desktop background",             "backdrop" },
 				_lockscreen{ _r, Type::GUI,         "desktop lock screen",            "lock_screen" },
 				_nitpicker { _r, Type::GUI,         "system GUI server" },
-				_gpu       { _r, Type::GPU,         "GPU" },
 				_lz_event  { _r, Type::EVENT,       "management GUI events",          "leitzentrale" },
-				_event     { _r, Type::EVENT,       "system input events",            "global" },
+				_event     { _r, Type::EVENT,       "filtered input events" },
 				_lz_capture{ _r, Type::CAPTURE,     "management GUI",                 "leitzentrale" },
 				_capture   { _r, Type::CAPTURE,     "system GUI",                     "global" },
 				_config_fs { _r, Type::FILE_SYSTEM, "writeable system configuration", "config" },
@@ -340,6 +318,7 @@ class Sculpt::Runtime_config
 				_vimrc     { _r, Type::ROM,         "default vim configuration",      "config -> vimrc" },
 				_fonts     { _r, Type::ROM,         "system font configuration",      "config -> managed/fonts" },
 				_pf_info   { _r, Type::ROM,         "platform information",           "platform_info" },
+				_bld_info  { _r, Type::ROM,         "build information",              "build_info" },
 				_system    { _r, Type::ROM,         "system status",                  "config -> managed/system" },
 				_report    { _r, Type::REPORT,      "system reports" },
 				_shape     { _r, Type::REPORT,      "pointer shape",    "shape",     Service::Match_label::LAST },
@@ -350,24 +329,27 @@ class Sculpt::Runtime_config
 				_io_port   { _r, Type::IO_PORT,     "raw hardware access" },
 				_irq       { _r, Type::IRQ,         "raw hardware access" },
 				_block     { _r, Type::BLOCK,       "direct block-device access" },
-				_usb       { _r, Type::USB,         "direct USB-device access" },
 				_pci_wifi  { _r, Type::PLATFORM,    "wifi hardware",    "wifi" },
 				_pci_net   { _r, Type::PLATFORM,    "network hardware", "nic" },
 				_pci_audio { _r, Type::PLATFORM,    "audio hardware",   "audio" },
 				_pci_acpi  { _r, Type::PLATFORM,    "ACPI",             "acpica" },
 				_hw_gpu    { _r, Type::PLATFORM,    "GPU hardware",     "gpu" },
-				_trace     { _r, Type::TRACE,       "system-global tracing" },
+				_pin_state { _r, Type::PIN_STATE,   "GPIO pin state" },
+				_pin_ctrl  { _r, Type::PIN_CONTROL, "GPIO pin control" },
+				_trace_all { _r, Type::TRACE,       "system",      "global" },
+				_trace_rt  { _r, Type::TRACE,       "deployment",  "runtime" },
+				_trace     { _r, Type::TRACE,       "component" },
 				_vm        { _r, Type::VM,          "virtualization hardware" },
-				_pd        { _r, Type::PD,          "system PD service" };
+				_pd        { _r, Type::PD,          "system PD service" },
+				_monitor   { _r, Type::TERMINAL,    "debug monitor" };
 
-			template <typename FN>
-			void for_each(FN const &fn) const { _r.for_each(fn); }
+			void for_each(auto const &fn) const { _r.for_each(fn); }
 
 		} _parent_services { };
 
 		Service const _used_fs_service { "default_fs_rw",
 		                                 Service::Type::FILE_SYSTEM,
-		                                 Label(), "used file system" };
+		                                 { }, "used file system" };
 
 	public:
 
@@ -375,18 +357,60 @@ class Sculpt::Runtime_config
 
 		void update_from_xml(Xml_node config)
 		{
-			Component::Update_policy policy(_alloc);
-			_components.update_from_xml(policy, config);
+			_components.update_from_xml(config,
+
+				/* create */
+				[&] (Xml_node const &node) -> Component & {
+					return *new (_alloc)
+						Component(node.attribute_value("name", Start_name()),
+						          _graph_ids,
+						          Dialog::Id { _graph_id_count++ });
+				},
+
+				/* destroy */
+				[&] (Component &e) {
+
+					/* flush list models */
+					e.update_from_xml(_alloc, Xml_node("<start> <route/> <provides/> </start>"));
+
+					destroy(_alloc, &e);
+				},
+
+				/* update */
+				[&] (Component &e, Xml_node const &node) {
+					e.update_from_xml(_alloc, node); }
+			);
 		}
 
-		template <typename FN>
-		void for_each_component(FN const &fn) const { _components.for_each(fn); }
+		bool present_in_runtime(Start_name const &name) const
+		{
+			bool result = false;
+			_components.for_each([&] (Component const &component) {
+				if (component.name == name)
+					result = true; });
+			return result;
+		}
+
+		void with_start_name(Dialog::Id const &id, auto const &fn) const
+		{
+			_components.for_each([&] (Component const &component) {
+				if (component.graph_id == id)
+					fn(component.name); });
+		}
+
+		void with_graph_id(Start_name const &name, auto const &fn) const
+		{
+			_graph_ids.with_element(name,
+				[&] (Graph_id const &id) { fn(id); },
+				[&] { });
+		}
+
+		void for_each_component(auto const &fn) const { _components.for_each(fn); }
 
 		/**
 		 * Call 'fn' with the name of each dependency of component 'name'
 		 */
-		template <typename FN>
-		void for_each_dependency(Start_name const &name, FN const &fn) const
+		void for_each_dependency(Start_name const &name, auto const &fn) const
 		{
 			_components.for_each([&] (Component const &component) {
 				if (component.name == name) {
@@ -394,8 +418,7 @@ class Sculpt::Runtime_config
 						fn(dep.to_name); }); } });
 		}
 
-		template <typename FN>
-		void for_each_service(FN const &fn) const
+		void for_each_service(auto const &fn) const
 		{
 			_parent_services.for_each(fn);
 
@@ -403,6 +426,15 @@ class Sculpt::Runtime_config
 
 			_components.for_each([&] (Component const &component) {
 				component.for_each_service(fn); });
+		}
+
+		unsigned num_service_options(Service::Type const type) const
+		{
+			unsigned count = 0;
+			for_each_service([&] (Service const &service) {
+				if (service.type == type)
+					count++; });
+			return count;
 		}
 };
 

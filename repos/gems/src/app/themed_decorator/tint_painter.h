@@ -20,7 +20,7 @@
 
 struct Tint_painter
 {
-	typedef Genode::Surface_base::Rect Rect;
+	using Rect = Genode::Surface_base::Rect;
 
 	/**
 	 * Tint box with specified color
@@ -48,19 +48,19 @@ struct Tint_painter
 
 		unsigned const lut_idx = color.r + color.g + color.b;
 
-		Polygon::interpolate_rgba(Polygon::Color(0, 0, 0), color,
+		Polygon::interpolate_rgba(Polygon::Color::black(), color,
 		                          pixel_lut, alpha_lut,
 		                          lut_idx + 1, 0, 0);
 
-		Polygon::interpolate_rgba(color, Polygon::Color(255, 255, 255),
+		Polygon::interpolate_rgba(color, Polygon::Color::rgb(255, 255, 255),
 		                          pixel_lut + lut_idx, alpha_lut + lut_idx,
 		                          LUT_SIZE - lut_idx, 0, 0);
 
 
 		PT pix(color.r, color.g, color.b);
-		PT *dst, *dst_line = surface.addr() + surface.size().w()*clipped.y1() + clipped.x1();
+		PT *dst, *dst_line = surface.addr() + surface.size().w*clipped.y1() + clipped.x1();
 
-		for (int w, h = clipped.h() ; h--; dst_line += surface.size().w())
+		for (int w, h = clipped.h() ; h--; dst_line += surface.size().w)
 			for (dst = dst_line, w = clipped.w(); w--; dst++) {
 				PT const pixel = *dst;
 				*dst = pixel_lut[pixel.r() + pixel.g() + pixel.b()];

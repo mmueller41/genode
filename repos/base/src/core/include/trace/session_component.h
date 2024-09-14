@@ -21,17 +21,16 @@
 #include <base/attached_ram_dataspace.h>
 #include <trace_session/trace_session.h>
 
-/* core-local includes */
+/* core includes */
 #include <trace/subject_registry.h>
 #include <trace/policy_registry.h>
 
-namespace Genode { namespace Trace { class Session_component; } }
+namespace Core { namespace Trace { class Session_component; } }
 
 
-class Genode::Trace::Session_component
+class Core::Trace::Session_component
 :
-	public Session_object<Trace::Session,
-	                      Trace::Session_component>,
+	public Session_object<Trace::Session, Trace::Session_component>,
 	public Trace::Policy_owner
 {
 	private:
@@ -47,6 +46,17 @@ class Genode::Trace::Session_component
 		unsigned                     _policy_cnt { 0 };
 		Attached_ram_dataspace       _argument_buffer;
 
+		/*
+		 * Whenever a trace session is deliberately labeled as empty by the
+		 * top-level init instance, the session is granted global reach.
+		 * Otherwise, the label is taken a prefix filter for the visibility
+		 * of trace subjects within the session.
+		 */
+		Filter _filter() const
+		{
+			return (_label == "init -> ") ? Filter("") : Filter(_label);
+		}
+
 	public:
 
 		/**
@@ -59,7 +69,6 @@ class Genode::Trace::Session_component
 		                  Ram_allocator   &ram,
 		                  Region_map      &local_rm,
 		                  size_t           arg_buffer_size,
-		                  unsigned         parent_levels,
 		                  Source_registry &sources,
 		                  Policy_registry &policies);
 
@@ -71,17 +80,16 @@ class Genode::Trace::Session_component
 		 ***********************/
 
 		Dataspace_capability dataspace();
-		size_t subjects();
-		size_t subject_infos();
-
-		Policy_id alloc_policy(size_t) override;
-		Dataspace_capability policy(Policy_id) override;
-		void unload_policy(Policy_id) override;
-		void trace(Subject_id, Policy_id, size_t) override;
-		void pause(Subject_id) override;
-		void resume(Subject_id) override;
-		Dataspace_capability buffer(Subject_id) override;
-		void free(Subject_id) override;
+		Subjects_rpc_result subjects();
+		Infos_rpc_result subject_infos();
+		Alloc_policy_rpc_result alloc_policy(Policy_size);
+		Dataspace_capability policy(Policy_id);
+		void unload_policy(Policy_id);
+		Trace_rpc_result trace(Subject_id, Policy_id, Buffer_size);
+		void pause(Subject_id);
+		void resume(Subject_id);
+		Dataspace_capability buffer(Subject_id);
+		void free(Subject_id);
 };
 
 #endif /* _CORE__INCLUDE__TRACE__SESSION_COMPONENT_H_ */

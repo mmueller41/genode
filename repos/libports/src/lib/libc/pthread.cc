@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <stdio.h>  /* __isthreaded */
 #include <stdlib.h> /* malloc, free */
 
 /* libc-internal includes */
@@ -74,6 +75,9 @@ size_t Pthread::_tls_pointer_offset;
 
 void Libc::Pthread::Thread_object::entry()
 {
+	/* use threaded mode in FreeBSD libc code */
+	__isthreaded = 1;
+
 	/*
 	 * Obtain stack attributes of new thread for
 	 * 'pthread_attr_get_np()'
@@ -886,11 +890,17 @@ extern "C" {
 
 	}
 
+	typeof(__pthread_cleanup_push_imp) ___pthread_cleanup_push_imp
+		__attribute__((alias("__pthread_cleanup_push_imp")));
+
 
 	void __pthread_cleanup_pop_imp(int execute)
 	{
 		pthread_self()->cleanup_pop(execute);
 	}
+
+	typeof(__pthread_cleanup_pop_imp) ___pthread_cleanup_pop_imp
+		__attribute__((alias("__pthread_cleanup_pop_imp")));
 
 
 	/* Mutex */

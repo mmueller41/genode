@@ -4,6 +4,8 @@ _/pkg/backdrop
 _/src/report_rom
 _/src/clipboard
 _/src/init
+_/src/monitor
+_/src/terminal_crosslink
 _/src/fs_rom
 _/src/cached_fs_rom
 _/src/fs_report
@@ -24,7 +26,7 @@ _/src/vfs
 _/src/vfs_import
 _/src/vfs_lxip
 _/src/vfs_pipe
-_/src/rump
+_/src/vfs_rump
 _/src/chroot
 _/src/fetchurl
 _/src/curl
@@ -47,3 +49,4 @@ _/src/fs_tool
 _/src/text_area
 _/src/sandbox
 _/src/shim
+_/src/event_filter

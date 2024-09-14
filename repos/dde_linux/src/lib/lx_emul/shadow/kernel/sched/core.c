@@ -28,6 +28,9 @@
 #include <lx_emul/task.h>
 #include <lx_emul/time.h>
 
+#include <linux/sched/cputime.h>
+#include <linux/sched/clock.h>
+#include <linux/sched/wake_q.h>
 #include <../kernel/sched/sched.h>
 
 
@@ -58,7 +61,7 @@ void set_user_nice(struct task_struct * p, long nice)
 }
 
 
-static int
+int
 try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 {
 	if (!p) lx_emul_trace_and_stop(__func__);
@@ -103,14 +106,12 @@ static void __schedule(void)
 
 asmlinkage __visible void __sched schedule(void)
 {
+	lx_emul_time_update_jiffies();
+
 	if (current->__state) {
 		unsigned int task_flags = current->flags;
-		if (task_flags & PF_WQ_WORKER) {
-			tick_nohz_idle_enter();
-			lx_emul_time_handle();
-			tick_nohz_idle_exit();
+		if (task_flags & PF_WQ_WORKER)
 			wq_worker_sleeping(current);
-		}
 	}
 
 	__schedule();
@@ -141,6 +142,7 @@ asmlinkage __visible void __sched notrace preempt_schedule(void)
 	if (likely(!preemptible()))
 		return;
 
+	lx_emul_time_update_jiffies();
 	__schedule();
 }
 
@@ -150,6 +152,7 @@ asmlinkage __visible void __sched notrace preempt_schedule_notrace(void)
 	if (likely(!preemptible()))
 		return;
 
+	lx_emul_time_update_jiffies();
 	__schedule();
 }
 
@@ -187,22 +190,32 @@ int wake_up_state(struct task_struct * p, unsigned int state)
 }
 
 
-#ifdef CONFIG_SMP
+/* Linux 6.4+ uses full-fat wait_task_inactive for the UP case */
+#if defined CONFIG_SMP || LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0)
 unsigned long wait_task_inactive(struct task_struct * p,
                                  wait_task_inactive_match_state_t match_state)
 {
 	struct rq *rq = task_rq(p);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,1,0)
 	if (task_running(rq, p))
+#else
+	if (task_on_cpu(rq, p))
+#endif
 		schedule();
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6,1,0)
 	if (task_running(rq, p))
+#else
+	if (task_on_cpu(rq, p))
+#endif
 		return 0;
 
 	return 1;
 }
+#endif /* CONFIG_SMP || LINUX_VERSION_CODE */
 
-
+#ifdef CONFIG_SMP
 int set_cpus_allowed_ptr(struct task_struct * p,
                          const struct cpumask * new_mask)
 {
@@ -247,6 +260,19 @@ void wake_q_add(struct wake_q_head *head, struct task_struct *task)
 }
 
 
+/*
+ * CAUTION: This check is not an actual requirement. It should be removed when
+ * all other *_linux have been updated to 6.6 or when this function has been
+ * removed from their respective generated_dummies.c
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,6,0)
+void wake_q_add_safe(struct wake_q_head *head, struct task_struct *task)
+{
+	if (!__wake_q_add(head, task))
+		put_task_struct(task);
+}
+#endif
+
 void wake_up_q(struct wake_q_head *head)
 {
 	struct wake_q_node *node = head->first;
@@ -268,3 +294,6 @@ int idle_cpu(int cpu)
 {
 	return 1;
 }
+
+
+void sched_set_fifo(struct task_struct * p) { }

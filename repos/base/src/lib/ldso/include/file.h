@@ -74,8 +74,7 @@ struct Linker::File
 
 	unsigned elf_phdr_count() const { return phdr.count; }
 
-	template <typename FN>
-	void with_rw_phdr(FN const &fn) const
+	void with_rw_phdr(auto const &fn) const
 	{
 		for (unsigned i = 0; i < phdr.count; i++) {
 			if (is_rw(phdr.phdr[i])) {
@@ -98,23 +97,27 @@ struct Linker::Elf_file : File
 	Ram_dataspace_capability      ram_cap[Phdr::MAX_PHDR];
 	bool                    const loaded;
 
-	typedef String<64> Name;
+	using Name = String<64>;
 
 	Rom_dataspace_capability _rom_dataspace(Name const &name)
 	{
 		/* request the linker and binary from the component environment */
-		Session_capability cap;
+		Parent::Session_cap_result cap = Parent::Session_cap_error::DENIED;
 		if (name == binary_name())
 			cap = env.parent().session_cap(Parent::Env::binary());
 		if (name == linker_name())
 			cap = env.parent().session_cap(Parent::Env::linker());
-		if (cap.valid()) {
-			Rom_session_client client(reinterpret_cap_cast<Rom_session>(cap));
-			return client.dataspace();
-		}
 
-		rom_connection.construct(env, name.string());
-		return rom_connection->dataspace();
+		return cap.convert<Rom_dataspace_capability>(
+			[&] (Capability<Session> cap) {
+				Rom_session_client client(reinterpret_cap_cast<Rom_session>(cap));
+				return client.dataspace();
+			},
+			[&] (Parent::Session_cap_error) {
+				rom_connection.construct(env, name.string());
+				return rom_connection->dataspace();
+			}
+		);
 	}
 
 	void _allocate_region_within_linker_area(Name const &name)
@@ -137,8 +140,17 @@ struct Linker::Elf_file : File
 		                   || (name == "posix.lib.so")
 		                   || (strcmp(name.string(), "vfs", 3) == 0);
 
-		reloc_base = resident ? Region_map::r()->alloc_region_at_end(size)
-		                      : Region_map::r()->alloc_region(size);
+		Region_map::Alloc_region_result const allocated_region =
+			resident ? Region_map::r()->alloc_region_at_end(size)
+			         : Region_map::r()->alloc_region(size);
+
+		reloc_base = allocated_region.convert<addr_t>(
+			[&] (addr_t base)                    { return base; },
+			[&] (Region_map::Alloc_region_error) { return 0UL; });
+
+		if (!reloc_base)
+			error("failed to allocate region within linker area");
+
 		start = 0;
 	}
 
@@ -292,10 +304,15 @@ struct Linker::Elf_file : File
 	 */
 	void load_segment_rx(Elf::Phdr const &p)
 	{
-		Region_map::r()->attach_executable(rom_cap,
-		                                   trunc_page(p.p_vaddr) + reloc_base,
-		                                   round_page(p.p_memsz),
-		                                   trunc_page(p.p_offset));
+		if (Region_map::r()->attach(rom_cap, Region_map::Attr {
+			.size       = round_page(p.p_memsz),
+			.offset     = trunc_page(p.p_offset),
+			.use_at     = true,
+			.at         = trunc_page(p.p_vaddr) + reloc_base,
+			.executable = true,
+			.writeable  = false
+		}).failed())
+			error("failed to load RX segment");
 	}
 
 	/**
@@ -303,19 +320,46 @@ struct Linker::Elf_file : File
 	 */
 	void load_segment_rw(Elf::Phdr const &p, int nr)
 	{
-		void  *src = env.rm().attach(rom_cap, 0, p.p_offset);
-		addr_t dst = p.p_vaddr + reloc_base;
+		void * const src = env.rm().attach(rom_cap, Region_map::Attr {
+			.size       = { },
+			.offset     = p.p_offset,
+			.use_at     = { },
+			.at         = { },
+			.executable = { },
+			.writeable  = true
+		}).convert<void *>(
+			[&] (Genode::Region_map::Range range)  { return (void *)range.start; },
+			[&] (Genode::Region_map::Attach_error) { return nullptr; }
+		);
+		if (!src) {
+			error("dynamic linker failed to locally map RW segment ", nr);
+			return;
+		}
+
+		addr_t const dst = p.p_vaddr + reloc_base;
 
 		ram_cap[nr] = env.ram().alloc(p.p_memsz);
-		Region_map::r()->attach_at(ram_cap[nr], dst);
 
-		memcpy((void*)dst, src, p.p_filesz);
+		Region_map::r()->attach(ram_cap[nr], Region_map::Attr {
+			.size       = { },
+			.offset     = { },
+			.use_at     = true,
+			.at         = dst,
+			.executable = { },
+			.writeable  = true
+		}).with_result(
+			[&] (Genode::Region_map::Range) {
 
-		/* clear if file size < memory size */
-		if (p.p_filesz < p.p_memsz)
-			memset((void *)(dst + p.p_filesz), 0, p.p_memsz - p.p_filesz);
+				memcpy((void*)dst, src, p.p_filesz);
 
-		env.rm().detach(src);
+				/* clear if file size < memory size */
+				if (p.p_filesz < p.p_memsz)
+					memset((void *)(dst + p.p_filesz), 0, p.p_memsz - p.p_filesz);
+			},
+			[&] (Genode::Region_map::Attach_error) {
+				error("dynamic linker failed to copy RW segment"); }
+		);
+		env.rm().detach(addr_t(src));
 	}
 
 	/**

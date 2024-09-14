@@ -48,7 +48,7 @@ Untyped_capability Rpc_entrypoint::_manage(Rpc_object_base *obj)
 	if (native_thread().ec_sel != Native_thread::INVALID_INDEX)
 		ec_cap = Capability_space::import(native_thread().ec_sel);
 	else
-		ec_cap = _thread_cap;
+		ec_cap = Thread::cap();
 
 	Untyped_capability obj_cap = _alloc_rpc_cap(_pd_session, ec_cap,
 	                                            (addr_t)&_activation_entry);
@@ -157,7 +157,8 @@ void Rpc_entrypoint::_activation_entry()
 	}
 
 	/* atomically lookup and lock referenced object */
-	auto lambda = [&] (Rpc_object_base *obj) {
+	auto lambda = [&] (Rpc_object_base *obj)
+	{
 		if (!obj) {
 			error("could not look up server object, return from call id_pt=", id_pt);
 			return;
@@ -165,8 +166,7 @@ void Rpc_entrypoint::_activation_entry()
 
 		/* dispatch request */
 		ep._snd_buf.reset();
-		try { exc = obj->dispatch(opcode, unmarshaller, ep._snd_buf); }
-		catch (Blocking_canceled) { }
+		exc = obj->dispatch(opcode, unmarshaller, ep._snd_buf);
 	};
 	ep.apply(id_pt, lambda);
 
@@ -214,20 +214,22 @@ Rpc_entrypoint::Rpc_entrypoint(Pd_session *pd_session, size_t stack_size,
 	_cap = _alloc_rpc_cap(_pd_session,
 	                      Capability_space::import(native_thread().ec_sel),
 	                      (addr_t)_activation_entry);
-	if (!_cap.valid())
-		throw Cpu_session::Thread_creation_failed();
+	if (!_cap.valid()) {
+		error("failed to allocate RPC cap for new entrypoint");
+		return;
+	}
 
 	Receive_window &rcv_window = Thread::native_thread().server_rcv_window;
 
 	/* prepare portal receive window of new thread */
 	if (!rcv_window.prepare_rcv_window(*(Nova::Utcb *)&_stack->utcb()))
-		throw Cpu_session::Thread_creation_failed();
+		error("failed to prepare receive window for RPC entrypoint");
 }
 
 
 Rpc_entrypoint::~Rpc_entrypoint()
 {
-	typedef Object_pool<Rpc_object_base> Pool;
+	using Pool = Object_pool<Rpc_object_base>;
 
 	Pool::remove_all([&] (Rpc_object_base *obj) {
 		warning("object pool not empty in ", __func__);

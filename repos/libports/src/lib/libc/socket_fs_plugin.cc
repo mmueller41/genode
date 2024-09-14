@@ -8,7 +8,7 @@
  */
 
 /*
- * Copyright (C) 2015-2019 Genode Labs GmbH
+ * Copyright (C) 2015-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -48,6 +48,7 @@
 namespace Libc {
 	extern char const *config_socket();
 	bool read_ready_from_kernel(File_descriptor *);
+	bool write_ready_from_kernel(File_descriptor *);
 }
 
 
@@ -93,8 +94,8 @@ namespace Libc { namespace Socket_fs {
 	};
 
 	template <int> class String;
-	typedef String<NI_MAXHOST> Host_string;
-	typedef String<NI_MAXSERV> Port_string;
+	using Host_string = String<NI_MAXHOST>;
+	using Port_string = String<NI_MAXSERV>;
 	struct Sockaddr_string;
 
 	struct New_socket_failed : Exception { };
@@ -193,8 +194,27 @@ struct Libc::Socket_fs::Context : Plugin_context
 
 		bool _fd_read_ready(Fd type)
 		{
+			if (!_fd[type].file) return false;
+
+			bool ret = false;
+			auto fn = [&] {
+				ret = Libc::read_ready_from_kernel(_fd[type].file);
+				return Fn::COMPLETE;
+			};
+
+			if (Libc::Kernel::kernel().main_context() && Libc::Kernel::kernel().main_suspended()) {
+				fn();
+			} else {
+				monitor().monitor(fn);
+			}
+
+			return ret;
+		}
+
+		bool _fd_write_ready(Fd type)
+		{
 			if (_fd[type].file)
-				return Libc::read_ready_from_kernel(_fd[type].file);
+				return Libc::write_ready_from_kernel(_fd[type].file);
 			else
 				return false;
 		}
@@ -216,7 +236,11 @@ struct Libc::Socket_fs::Context : Plugin_context
 
 		~Context()
 		{
-			_fd_apply([] (int fd) { ::close(fd); });
+			for (unsigned i = 0; i < Fd::MAX; ++i) {
+				::close(_fd[i].num);
+				_fd[i].num = -1;
+				_fd[i].file = nullptr;
+			}
 			::close(_handle_fd);
 		}
 
@@ -260,8 +284,7 @@ struct Libc::Socket_fs::Context : Plugin_context
 			if (_state == CONNECTING)
 				return connect_read_ready();
 
-			/* XXX ask if "data" is writeable */
-			return true;
+			return _fd_write_ready(Fd::DATA);
 		}
 
 		/*
@@ -291,6 +314,9 @@ struct Libc::Socket_fs::Context : Plugin_context
 
 			if (strcmp(connect_status, "not connected") == 0)
 				return Errno(ENOTCONN);
+
+			if (strcmp(connect_status, "no route to host") == 0)
+				return Errno(EHOSTUNREACH);
 
 			error("socket_fs: unhandled connection state");
 			return Errno(ECONNREFUSED);
@@ -333,14 +359,12 @@ struct Libc::Socket_fs::Local_functor : Sockaddr_functor
 struct Libc::Socket_fs::Plugin : Libc::Plugin
 {
 	bool supports_poll() override { return true; }
-	bool supports_select(int, fd_set *, fd_set *, fd_set *, timeval *) override;
 
 	ssize_t read(File_descriptor *, void *, ::size_t) override;
 	ssize_t write(File_descriptor *, const void *, ::size_t) override;
 	int fcntl(File_descriptor *, int, long) override;
 	int close(File_descriptor *) override;
-	bool poll(File_descriptor &fd, struct pollfd &pfd) override;
-	int select(int, fd_set *, fd_set *, fd_set *, timeval *) override;
+	int poll(Pollfd fds[], int nfds) override;
 	int ioctl(File_descriptor *, unsigned long, char *) override;
 };
 
@@ -378,7 +402,7 @@ template <int CAPACITY> class Libc::Socket_fs::String
  */
 struct Libc::Socket_fs::Sockaddr_string : String<NI_MAXHOST + NI_MAXSERV>
 {
-	Sockaddr_string() { }
+	Sockaddr_string() {	stpcpy(base(), ";0"); }
 
 	Sockaddr_string(Host_string const &host, Port_string const &port)
 	{
@@ -669,6 +693,21 @@ extern "C" int socket_fs_connect(int libc_fd, sockaddr const *addr, socklen_t ad
 
 	switch (addr->sa_family) {
 	case AF_UNSPEC:
+		{
+			if (context->state() != Context::CONNECTED)
+				return 0;
+
+			Sockaddr_string addr_string { };
+			int const len = ::strlen(addr_string.base());
+			int const n   = write(context->connect_fd(), addr_string.base(), len);
+
+			if (n != len)
+				return (context->proto() == Context::UDP) ? Errno(EIO) : Errno(EAFNOSUPPORT);
+
+			context->state(Context::UNCONNECTED);
+
+			return 0;
+		}
 	case AF_INET:
 		break;
 	default:
@@ -802,12 +841,23 @@ static ssize_t do_recvfrom(File_descriptor *fd,
 		size_t out_sum = 0;
 
 		do {
-			size_t const result = read(data_fd,
-			                           (char *)buf + out_sum,
-			                           len - out_sum);
+			ssize_t const result = read(data_fd,
+			                            (char *)buf + out_sum,
+			                            len - out_sum);
+
 			if (result <= 0) { /* eof & error */
 				if (out_sum)
 					return out_sum;
+
+				/*
+				 * For non-blocking reads with MSG_PEEK, we need to return -1 and
+				 * EWOULDBLOCK or EAGAIN in case the socket is connected. Check connect
+				 * status and return accordingly.
+				 */
+				if (errno == EIO && (flags & MSG_PEEK) &&
+				    (context->fd_flags() & O_NONBLOCK) &&
+				    context->read_connect_status() == 0)
+						return Errno(EWOULDBLOCK);
 
 				return result;
 			}
@@ -950,7 +1000,13 @@ static ssize_t do_sendto(File_descriptor *fd,
 			break;
 
 		case Socket_fs::Context::Proto::TCP:
-			if (out_len == 0) return Errno(EAGAIN);
+
+			/*
+			 * Non-blocking write stalled
+			 */
+			if ((out_len == -1) && (errno == EAGAIN))
+				return Errno(EAGAIN);
+
 			/*
 			 * Write errors to TCP-data files are reflected as EPIPE, which
 			 * means the connection-mode socket is no longer connected. This
@@ -961,7 +1017,8 @@ static ssize_t do_sendto(File_descriptor *fd,
 			 * TODO If the MSG_NOSIGNAL flag is not set, the SIGPIPE signal is
 			 * generated to the calling thread.
 			 */
-			if (out_len == -1) return Errno(EPIPE);
+			if (out_len == -1)
+				return Errno(EPIPE);
 			break;
 		}
 		return out_len;
@@ -1115,7 +1172,7 @@ extern "C" int socket_fs_socket(int domain, int type, int protocol)
 	}
 
 	/* socket is ensured to be TCP or UDP */
-	typedef Socket_fs::Context::Proto Proto;
+	using Proto = Socket_fs::Context::Proto;
 	Proto proto = (sock_type == SOCK_STREAM) ? Proto::TCP : Proto::UDP;
 	Socket_fs::Context *context = nullptr;
 	try {
@@ -1261,112 +1318,46 @@ ssize_t Socket_fs::Plugin::write(File_descriptor *fd, const void *buf, ::size_t 
 }
 
 
-bool Socket_fs::Plugin::poll(File_descriptor &fdo, struct pollfd &pfd)
-{
-	if (fdo.plugin != this) return false;
-	Socket_fs::Context *context { nullptr };
+int Socket_fs::Plugin::poll(Pollfd fds[], int nfds)
 
-	try {
-		context = dynamic_cast<Socket_fs::Context *>(fdo.context);
-	} catch (Socket_fs::Context::Inaccessible) {
-		pfd.revents |= POLLNVAL;
-		return true;
-	}
-
-	enum {
-		POLLIN_MASK = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI,
-		POLLOUT_MASK = POLLOUT | POLLWRNORM | POLLWRBAND,
-	};
-
-	bool res { false };
-
-	if ((pfd.events & POLLIN_MASK) && context->read_ready()) {
-		pfd.revents |= pfd.events & POLLIN_MASK;
-		res = true;
-	}
-
-	if ((pfd.events & POLLOUT_MASK) && context->write_ready()) {
-		pfd.revents |= pfd.events & POLLOUT_MASK;
-		res = true;
-	}
-
-	return res;
-}
-
-
-bool Socket_fs::Plugin::supports_select(int nfds,
-                                        fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                                        struct timeval *timeout)
-{
-	/* return true if any file descriptor (which is set) belongs to the VFS */
-	for (int fd = 0; fd < nfds; ++fd) {
-
-		if (FD_ISSET(fd, readfds) || FD_ISSET(fd, writefds) || FD_ISSET(fd, exceptfds)) {
-			File_descriptor *fdo = file_descriptor_allocator()->find_by_libc_fd(fd);
-
-			if (fdo && (fdo->plugin == this))
-				return true;
-		}
-	}
-
-	return false;
-}
-
-
-int Socket_fs::Plugin::select(int nfds,
-                              fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                              timeval *timeout)
 {
 	int nready = 0;
 
-	fd_set const in_readfds  = *readfds;
-	fd_set const in_writefds = *writefds;
-	/* XXX exceptfds not supported */
-
-	/* clear fd sets */
-	FD_ZERO(readfds);
-	FD_ZERO(writefds);
-	FD_ZERO(exceptfds);
-
 	auto fn = [&] {
 
-		for (int fd = 0; fd < nfds; ++fd) {
+		for (int pollfd_index = 0; pollfd_index < nfds; pollfd_index++) {
 
-			bool fd_in_readfds = FD_ISSET(fd, &in_readfds);
-			bool fd_in_writefds = FD_ISSET(fd, &in_writefds);
+			bool fd_ready = false;
 
-			if (!fd_in_readfds && !fd_in_writefds)
-				continue;
+			if (fds[pollfd_index].events & (POLLIN | POLLPRI | POLLRDNORM | POLLRDBAND)) {
 
-			File_descriptor *fdo = file_descriptor_allocator()->find_by_libc_fd(fd);
-
-			/* handle only fds that belong to this plugin */
-			if (!fdo || (fdo->plugin != this))
-				continue;
-
-			if (fd_in_readfds) {
 				try {
-					Socket_fs::Context *context = dynamic_cast<Socket_fs::Context *>(fdo->context);
+					Socket_fs::Context *context =
+						static_cast<Socket_fs::Context *>(fds[pollfd_index].fdo->context);
 
 					if (context->read_ready()) {
-						FD_SET(fd, readfds);
-						++nready;
+						*fds[pollfd_index].revents |= POLLIN;
+						fd_ready = true;
 					}
 				} catch (Socket_fs::Context::Inaccessible) { }
 			}
 
-			if (fd_in_writefds) {
+			if (fds[pollfd_index].events & (POLLOUT | POLLWRNORM | POLLWRBAND)) {
 				try {
-					Socket_fs::Context *context = dynamic_cast<Socket_fs::Context *>(fdo->context);
+					Socket_fs::Context *context =
+						static_cast<Socket_fs::Context *>(fds[pollfd_index].fdo->context);
 
 					if (context->write_ready()) {
-						FD_SET(fd, writefds);
-						++nready;
+						*fds[pollfd_index].revents |= POLLOUT;
+						fd_ready = true;
 					}
 				} catch (Socket_fs::Context::Inaccessible) { }
 			}
 
-			/* XXX exceptfds not supported */
+			/* XXX POLLERR not supported */
+
+			if (fd_ready)
+				nready++;
 		}
 		return Fn::COMPLETE;
 	};

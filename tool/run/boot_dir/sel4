@@ -1,17 +1,18 @@
 proc binary_name_ld_lib_so { } { return "ld-sel4.lib.so" }
 proc binary_name_core_a    { } { return "core-sel4.a" }
 proc binary_name_timer     { } {
-	if {[have_board imx6q_sabrelite]} { return "imx6_timer_drv" }
-	if {[have_board imx7d_sabre]}     { return "imx7_timer_drv" }
-	if {[have_board pc]}              { return "pit_timer_drv"  }
+	if {[have_board imx6q_sabrelite]} { return "imx6_timer" }
+	if {[have_board imx7d_sabre]}     { return "imx7_timer" }
+	if {[have_board pc]}              { return "pit_timer"  }
 	puts "unknown platform - no timer driver"
 	exit -1
 }
 
 proc kernel_files          { } { return sel4 }
 
+proc boot_output { } { return "serial" }
 
-proc run_boot_string   { } { return "\n\rBooting all finished, dropped to user space" }
+proc run_boot_string   { } { return "\nBooting all finished, dropped to user space" }
 proc core_link_address { } { return "0x02000000" }
 
 proc sel4_elfloader_dir { } {
@@ -54,12 +55,12 @@ proc run_boot_dir {binaries} {
 
 	exec mv [run_dir]/image.elf [run_dir]/boot/image.elf
 
+	set options_bender "[boot_output] phys_max=256M"
+
 	if {[have_include "image/iso"] || [have_include "image/disk"] || [have_include image/uefi]} {
-		set serial_bender_opt ""
 
 		if {[have_include "image/disk"]} {
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+			install_disk_bootloader_to_run_dir
 		}
 
 		if {[have_include "image/iso"]} {
@@ -67,27 +68,18 @@ proc run_boot_dir {binaries} {
 		}
 
 		if {[have_include image/uefi]} {
-			set grub2_path [get_grub2_dir]
-
-			exec mkdir -p [run_dir]/efi/boot
-			exec cp $grub2_path/boot/grub2/grub2_32.efi [run_dir]/efi/boot/bootia32.efi
-			exec cp $grub2_path/boot/grub2/grub2_64.efi [run_dir]/efi/boot/bootx64.efi
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
-
-			set serial_bender_opt "serial_fallback"
+			install_uefi_bootloader_to_run_dir
+			set options_bender " serial_fallback"
 		}
 
 		#
 		# Generate GRUB2 config file
 		#
-		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
-		puts $fh "set timeout=0"
-		# tell grub2 to prefer 32bit framebuffer resolution
-		puts $fh "set gfxpayload=\"0x0x32\""
+		set fh [create_header_grub2_config]
+
 		puts $fh "menuentry 'Genode on seL4' {"
 		puts $fh " insmod multiboot2"
-		puts $fh " multiboot2 /boot/bender phys_max=256M $serial_bender_opt"
+		puts $fh " multiboot2 /boot/bender $options_bender"
 		puts $fh " module2 /boot/sel4 sel4 disable_iommu"
 		puts $fh " module2 /boot/image.elf image.elf"
 		puts $fh "}"
@@ -117,14 +109,16 @@ proc run_boot_dir {binaries} {
 		exec [sel4_elfloader_dir]/gen_boot_image.sh [pwd]/[run_dir]/boot/kernel.elf [pwd]/[run_dir]/boot/genode.elf [pwd]/[run_dir]/boot/image.elf
 	}
 
-	run_image [run_dir]/boot/image.elf
+	run_image
 
 	# install image.elf file in TFTP directory for PXE boot
 	if {[have_spec arm] && [have_include "load/tftp"]} {
 		exec {*}[load_tftp_inst_cmd] [pwd]/[run_dir]/boot/image.elf [load_tftp_base_dir][load_tftp_offset_dir]
 
 		if {[have_include "image/uboot"]} {
-			exec {*}[load_tftp_inst_cmd] [pwd]/[run_dir]/uImage [load_tftp_base_dir][load_tftp_offset_dir]
+			exec {*}[load_tftp_inst_cmd] \
+				[file join [pwd] [run_dir] boot uImage] \
+				[file join [load_tftp_base_dir][load_tftp_offset_dir]]
 		}
 	}
 
@@ -138,7 +132,7 @@ proc run_boot_dir {binaries} {
 		# Generate pulsar config file
 		#
 		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
-		puts $fh " exec /boot/bender phys_max=256M"
+		puts $fh " exec /boot/bender $options_bender"
 		puts $fh " load /boot/sel4 disable_iommu"
 		puts $fh " load /boot/image.elf"
 		close $fh
@@ -161,7 +155,6 @@ proc base_src { } {
 
 	if {[have_spec x86]}              { return base-sel4-x86 }
 	if {[have_board imx6q_sabrelite]} { return base-sel4-imx6q_sabrelite }
-	if {[have_board imx7d_sabre]}     { return base-sel4-imx7d_sabre }
 
 	global specs
 

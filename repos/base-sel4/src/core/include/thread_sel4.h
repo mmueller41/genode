@@ -19,48 +19,61 @@
 
 /* base-internal includes */
 #include <base/internal/assert.h>
+#include <base/internal/native_utcb.h>
 
 /* core includes */
 #include <map_local.h>
 #include <kernel_object.h>
 #include <untyped_memory.h>
 
-namespace Genode {
+namespace Genode { struct Thread_info; }
 
-	struct Thread_info
-	{
-		Cap_sel tcb_sel { 0 };
-		Cap_sel ep_sel  { 0 };
-		Cap_sel lock_sel { 0 };
-		Cap_sel vcpu_sel { 0 };
-
-		addr_t ipc_buffer_phys { 0 };
-		addr_t vcpu_state_phys { 0 };
-
-		inline void write_thread_info_to_ipc_buffer(Cap_sel pd_ep_sel);
-
-		Thread_info() { }
-
-		inline void init_tcb(Platform &, Range_allocator &,
-		                     unsigned const prio, unsigned const cpu);
-		inline void init(addr_t const utcb_virt_addr, unsigned const prio);
-		inline void destruct();
-
-		bool init_vcpu(Platform &, Cap_sel ept);
-	};
+namespace Core {
 
 	/**
 	 * Set register values for the instruction pointer and stack pointer and
 	 * start the seL4 thread
 	 */
-	void start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp, unsigned cpu);
+	void start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp, unsigned cpu,
+	                       addr_t tls_ipcbuffer);
 	void affinity_sel4_thread(Cap_sel const &tcb_sel, unsigned cpu);
+
+	struct Ipc_buffer_phys { addr_t addr; };
+
+	using Utcb_virt = Native_utcb::Virt;
+}
+
+
+struct Genode::Thread_info
+{
+	Cap_sel tcb_sel  { 0 };
+	Cap_sel ep_sel   { 0 };
+	Cap_sel lock_sel { 0 };
+	Cap_sel vcpu_sel { 0 };
+
+	Core::Ipc_buffer_phys ipc_buffer_phys { 0 };
+
+	addr_t vcpu_state_phys { 0 };
+
+	inline void write_thread_info_to_ipc_buffer(Cap_sel pd_ep_sel);
+
+	Thread_info() { }
+
+	inline void init_tcb(Core::Platform &, Range_allocator &,
+	                     unsigned const prio, unsigned const cpu);
+	inline void init(Core::Utcb_virt const utcb_virt, unsigned const prio);
+	inline void destruct();
+
+	bool init_vcpu(Core::Platform &, Cap_sel ept);
 };
 
-void Genode::Thread_info::init_tcb(Platform &platform,
+
+void Genode::Thread_info::init_tcb(Core::Platform &platform,
                                    Range_allocator &phys_alloc,
                                    unsigned const prio, unsigned const cpu)
 {
+	using namespace Core;
+
 	/* allocate TCB within core's CNode */
 	addr_t       const phys_addr = Untyped_memory::alloc_page(phys_alloc);
 	seL4_Untyped const service   = Untyped_memory::untyped_sel(phys_addr).value();
@@ -76,14 +89,17 @@ void Genode::Thread_info::init_tcb(Platform &platform,
 	affinity_sel4_thread(tcb_sel, cpu);
 }
 
-void Genode::Thread_info::init(addr_t const utcb_virt_addr, unsigned const prio)
+
+void Genode::Thread_info::init(Core::Utcb_virt const utcb_virt, unsigned const prio)
 {
-	Platform        &platform   = platform_specific();
+	using namespace Core;
+
+	Core::Platform  &platform   = platform_specific();
 	Range_allocator &phys_alloc = platform.ram_alloc();
 
 	/* create IPC buffer of one page */
-	ipc_buffer_phys = Untyped_memory::alloc_page(phys_alloc);
-	Untyped_memory::convert_to_page_frames(ipc_buffer_phys, 1);
+	ipc_buffer_phys = { Untyped_memory::alloc_page(phys_alloc) };
+	Untyped_memory::convert_to_page_frames(ipc_buffer_phys.addr, 1);
 
 	/* allocate TCB within core's CNode */
 	init_tcb(platform, phys_alloc, prio, 0);
@@ -109,9 +125,9 @@ void Genode::Thread_info::init(addr_t const utcb_virt_addr, unsigned const prio)
 	/* assign IPC buffer to thread */
 	{
 		/* determine page frame selector of the allocated IPC buffer */
-		Cap_sel ipc_buffer_sel = Untyped_memory::frame_sel(ipc_buffer_phys);
+		Cap_sel ipc_buffer_sel = Untyped_memory::frame_sel(ipc_buffer_phys.addr);
 
-		int const ret = seL4_TCB_SetIPCBuffer(tcb_sel.value(), utcb_virt_addr,
+		int const ret = seL4_TCB_SetIPCBuffer(tcb_sel.value(), utcb_virt.addr,
 		                                      ipc_buffer_sel.value());
 		ASSERT(ret == 0);
 	}
@@ -120,6 +136,8 @@ void Genode::Thread_info::init(addr_t const utcb_virt_addr, unsigned const prio)
 
 void Genode::Thread_info::destruct()
 {
+	using namespace Core;
+
 	if (lock_sel.value()) {
 		seL4_CNode_Delete(seL4_CapInitThreadCNode, lock_sel.value(), 32);
 		platform_specific().core_sel_alloc().free(lock_sel);
@@ -138,16 +156,12 @@ void Genode::Thread_info::destruct()
 		platform_specific().core_sel_alloc().free(vcpu_sel);
 	}
 
-	if (ipc_buffer_phys) {
-		Platform        &platform   = platform_specific();
+	if (ipc_buffer_phys.addr) {
+		Core::Platform  &platform   = platform_specific();
 		Range_allocator &phys_alloc = platform.ram_alloc();
-		Untyped_memory::convert_to_untyped_frames(ipc_buffer_phys, 4096);
-		Untyped_memory::free_page(phys_alloc, ipc_buffer_phys);
+		Untyped_memory::convert_to_untyped_frames(ipc_buffer_phys.addr, 4096);
+		Untyped_memory::free_page(phys_alloc, ipc_buffer_phys.addr);
 	}
 }
-
-
-void Genode::start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp,
-                               unsigned cpu);
 
 #endif /* _CORE__INCLUDE__THREAD_SEL4_H_ */

@@ -50,7 +50,7 @@ SRC_CC += region_map_support.cc
 SRC_CC += pager.cc
 SRC_CC += _main.cc
 SRC_CC += kernel/cpu.cc
-SRC_CC += kernel/cpu_scheduler.cc
+SRC_CC += kernel/scheduler.cc
 SRC_CC += kernel/ipc_node.cc
 SRC_CC += kernel/irq.cc
 SRC_CC += kernel/main.cc
@@ -58,17 +58,12 @@ SRC_CC += kernel/object.cc
 SRC_CC += kernel/signal_receiver.cc
 SRC_CC += kernel/thread.cc
 SRC_CC += kernel/timer.cc
-SRC_CC += init_main_thread.cc
 SRC_CC += capability.cc
 SRC_CC += stack_area_addr.cc
 SRC_CC += heartbeat.cc
 
 # provide Genode version information
 include $(BASE_DIR)/src/core/version.inc
-
-# configure multiprocessor mode
-NR_OF_CPUS ?= 1
-CC_OPT += -Wa,--defsym -Wa,NR_OF_CPUS=$(NR_OF_CPUS) -DNR_OF_CPUS=$(NR_OF_CPUS)
 
 TMP         := $(call select_from_repositories,lib/mk/core-hw.inc)
 BASE_HW_DIR := $(TMP:%/lib/mk/core-hw.inc=%)
@@ -77,3 +72,5 @@ BASE_HW_DIR := $(TMP:%/lib/mk/core-hw.inc=%)
 vpath % $(BASE_HW_DIR)/src/core
 vpath % $(BASE_DIR)/src/core
 vpath % $(BASE_DIR)/src/lib/startup
+
+include $(call select_from_repositories,lib/mk/consts-hw.inc)

@@ -16,6 +16,7 @@
 
 #include <util/string.h>
 #include <base/log.h>
+#include <base/exception.h>
 
 namespace Genode {
 
@@ -87,7 +88,7 @@ class Genode::Quota_guard_untyped
 		 * \return true if quota limit could be reduced, or
 		 *         false if the requested amount exceeds the available quota
 		 */
-		bool try_downgrade(size_t const amount)
+		[[nodiscard]] bool try_downgrade(size_t const amount)
 		{
 			if (avail() < amount)
 				return false;
@@ -102,7 +103,7 @@ class Genode::Quota_guard_untyped
 		 * \return true on success, or
 		 *         false if the amount exceeds the available quota
 		 */
-		bool try_withdraw(size_t const amount)
+		[[nodiscard]] bool try_withdraw(size_t const amount)
 		{
 			if (amount > avail())
 				return false;
@@ -185,6 +186,14 @@ class Genode::Quota_guard
 		void upgrade(UNIT amount) { _guard.upgrade(amount.value); }
 
 		/**
+		 * Try to withdraw quota by specified amount
+		 */
+		bool try_withdraw(UNIT amount)
+		{
+			return _guard.try_withdraw(amount.value);
+		}
+
+		/**
 		 * Try to decrease quota limit by specified amount
 		 */
 		bool try_downgrade(UNIT amount)
@@ -249,10 +258,10 @@ class Genode::Quota_guard
 			void acknowledge() { _ack = true; }
 		};
 
-		template <typename RET, typename FN, typename ERROR_FN>
-		RET with_reservation(UNIT     const amount,
-		                     FN       const &fn,
-		                     ERROR_FN const &error_fn)
+		template <typename RET>
+		RET with_reservation(UNIT const amount,
+		                     auto const &fn,
+		                     auto const &error_fn)
 		{
 			if (!_guard.try_withdraw(amount.value))
 				return error_fn();
@@ -280,11 +289,11 @@ class Genode::Quota_guard
 
 namespace Genode {
 
-	typedef Quota_guard<Ram_quota> Ram_quota_guard;
-	typedef Quota_guard<Cap_quota> Cap_quota_guard;
+	using Ram_quota_guard = Quota_guard<Ram_quota>;
+	using Cap_quota_guard = Quota_guard<Cap_quota>;
 
-	typedef Ram_quota_guard::Limit_exceeded Out_of_ram;
-	typedef Cap_quota_guard::Limit_exceeded Out_of_caps;
+	using Out_of_ram = Ram_quota_guard::Limit_exceeded;
+	using Out_of_caps = Cap_quota_guard::Limit_exceeded;
 }
 
 #endif /* _INCLUDE__BASE__QUOTA_GUARD_H_ */

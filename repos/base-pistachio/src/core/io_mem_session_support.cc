@@ -21,7 +21,7 @@
 /* base-internal includes */
 #include <base/internal/pistachio.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /*
@@ -46,7 +46,7 @@ static bool is_conventional_memory(addr_t base)
 }
 
 
-void Io_mem_session_component::_unmap_local(addr_t, size_t) { }
+void Io_mem_session_component::_unmap_local(addr_t, size_t, addr_t) { }
 
 
 static inline bool can_use_super_page(addr_t base, size_t size)
@@ -60,16 +60,16 @@ addr_t Io_mem_session_component::_map_local(addr_t base, size_t size)
 {
 	using namespace Pistachio;
 
-	auto alloc_virt_range = [&] ()
+	auto alloc_virt_range = [&]
 	{
 		/* special case for the null page */
 		if (is_conventional_memory(base))
 			return base;
 
-		/* align large I/O dataspaces on a super-page boundary within core */
+		/* align large I/O dataspaces to super page size, otherwise to size */
 		size_t const align = (size >= get_super_page_size())
-		                   ? get_super_page_size_log2()
-		                   : get_page_size_log2();
+		                           ? get_super_page_size_log2()
+		                           : log2(size);
 
 		return platform().region_alloc().alloc_aligned(size, align).convert<addr_t>(
 			[&] (void *ptr) { return (addr_t)ptr; },

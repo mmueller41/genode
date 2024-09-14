@@ -21,7 +21,7 @@
 #include <base/synced_allocator.h>
 #include <base/allocator_avl.h>
 
-/* Core includes */
+/* core includes */
 #include <pager.h>
 #include <cap_id_alloc.h>
 #include <platform_generic.h>
@@ -32,10 +32,10 @@
 namespace Foc { struct l4_kernel_info_t; }
 
 
-namespace Genode { class Platform; }
+namespace Core { class Platform; }
 
 
-class Genode::Platform : public Platform_generic
+class Core::Platform : public Platform_generic
 {
 	private:
 
@@ -55,13 +55,14 @@ class Genode::Platform : public Platform_generic
 			 */
 			Sigma0(Cap_index*);
 
-			int pager(Ipc_pager &) override { /* never called */ return -1; }
+			/* never called */
+			Pager_result pager(Ipc_pager &) override { return Pager_result::STOP; }
 		};
 
 		/*
 		 * Shortcut for the type of allocator instances for physical resources
 		 */
-		typedef Synced_range_allocator<Allocator_avl> Phys_allocator;
+		using Phys_allocator = Synced_range_allocator<Allocator_avl>;
 
 		Platform_pd     *_core_pd = nullptr; /* core protection domain object */
 		Phys_allocator   _ram_alloc;         /* RAM allocator */
@@ -132,7 +133,8 @@ class Genode::Platform : public Platform_generic
 			 */
 			Core_pager(Platform_pd &core_pd, Sigma0 &);
 
-			int pager(Ipc_pager &) override { /* never called */ return -1; }
+			/* never called */
+			Pager_result pager(Ipc_pager &) override { return Pager_result::STOP; }
 		};
 
 		/**

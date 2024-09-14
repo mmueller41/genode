@@ -36,6 +36,11 @@ struct Genode::Cpu_state
 	addr_t fs     = 0;
 	addr_t eflags = 0;
 	addr_t trapno = 0;
+
+	enum {
+		ACPI_SUSPEND_REQUEST = 0x100, /* convention for system_control() */
+		MSR_ACCESS           = 0x101, /* convention for system_control() */
+	};
 };
 
 #endif /* _INCLUDE__SPEC__X86_32__CPU__CPU_STATE_H_ */

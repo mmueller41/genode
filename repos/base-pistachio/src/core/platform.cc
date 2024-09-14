@@ -12,7 +12,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <base/allocator_avl.h>
 #include <base/sleep.h>
 #include <base/capability.h>
@@ -37,7 +36,7 @@
 #include <kip.h>
 #include <print_l4_thread_id.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 static const bool verbose         = true;
@@ -196,7 +195,7 @@ static void _core_pager_loop()
 }
 
 
-Platform::Sigma0::Sigma0()
+Core::Platform::Sigma0::Sigma0()
 :
 	Pager_object(Cpu_session_capability(), Thread_capability(),
 	             0, Affinity::Location(),
@@ -206,23 +205,22 @@ Platform::Sigma0::Sigma0()
 }
 
 
-Platform::Sigma0 &Platform::sigma0()
+Core::Platform::Sigma0 &Core::Platform::sigma0()
 {
 	static Sigma0 _sigma0;
 	return _sigma0;
 }
 
 
-Platform::Core_pager::Core_pager(Platform_pd &core_pd)
+Core::Platform::Core_pager::Core_pager(Platform_pd &core_pd)
 :
-	Platform_thread("core.pager"),
+	Platform_thread(core_pd, "core.pager"),
 	Pager_object(Cpu_session_capability(), Thread_capability(),
 	             0, Affinity::Location(),
 	             Session_label(), Cpu_session::Name(name()))
 {
 	Platform_thread::pager(sigma0());
 
-	core_pd.bind_thread(*this);
 	cap(Capability_space::import(native_thread_id(), Rpc_obj_key()));
 
 	/* stack begins at the top end of the '_core_pager_stack' array */
@@ -234,7 +232,7 @@ Platform::Core_pager::Core_pager(Platform_pd &core_pd)
 }
 
 
-Platform::Core_pager &Platform::core_pager()
+Core::Platform::Core_pager &Core::Platform::core_pager()
 {
 	static Core_pager _core_pager(core_pd());
 	return _core_pager;
@@ -261,7 +259,7 @@ struct Region
 		return (((base + size) > start) && (base < end));
 	}
 
-	void print(Genode::Output &out) const
+	void print(Output &out) const
 	{
 		size_t const size = end - start;
 		Genode::print(out, Hex_range<addr_t>(start, size), " ",
@@ -371,7 +369,7 @@ bool sigma0_req_region(addr_t *addr, unsigned log2size)
 }
 
 
-void Platform::_setup_mem_alloc()
+void Core::Platform::_setup_mem_alloc()
 {
 	Pistachio::L4_KernelInterfacePage_t *kip = Pistachio::get_kip();
 
@@ -453,10 +451,10 @@ void Platform::_setup_mem_alloc()
 }
 
 
-void Platform::_setup_irq_alloc() { _irq_alloc.add_range(0, 0x10); }
+void Core::Platform::_setup_irq_alloc() { _irq_alloc.add_range(0, 0x10); }
 
 
-void Platform::_setup_preemption()
+void Core::Platform::_setup_preemption()
 {
 	/*
 	 * The roottask has the maximum priority
@@ -466,7 +464,7 @@ void Platform::_setup_preemption()
 }
 
 
-void Platform::_setup_basics()
+void Core::Platform::_setup_basics()
 {
 	using namespace Pistachio;
 
@@ -485,9 +483,6 @@ void Platform::_setup_basics()
 	}
 
 	dump_kip_memdesc(kip);
-
-	/* add KIP as ROM module */
-	_rom_fs.insert(&_kip_rom);
 
 	L4_Fpage_t bipage = L4_Sigma0_GetPage(get_sigma0(),
 	                                      L4_Fpage(kip->BootInfo,
@@ -559,7 +554,7 @@ void Platform::_setup_basics()
 }
 
 
-Platform_pd &Platform::core_pd()
+Platform_pd &Core::Platform::core_pd()
 {
 	/* on first call, setup task object for core task */
 	static Platform_pd _core_pd(true);
@@ -567,13 +562,13 @@ Platform_pd &Platform::core_pd()
 }
 
 
-Platform::Platform()
+Core::Platform::Platform()
 :
 	_ram_alloc(nullptr), _io_mem_alloc(&core_mem_alloc()),
 	_io_port_alloc(&core_mem_alloc()), _irq_alloc(&core_mem_alloc()),
 	_region_alloc(&core_mem_alloc()),
-	_kip_rom((addr_t)Pistachio::get_kip(),
-	         sizeof(Pistachio::L4_KernelInterfacePage_t), "pistachio_kip")
+	_kip_rom(_rom_fs, "pistachio_kip", (addr_t)Pistachio::get_kip(),
+	         sizeof(Pistachio::L4_KernelInterfacePage_t))
 {
 	/*
 	 * We must be single-threaded at this stage and so this is safe.
@@ -598,12 +593,9 @@ Platform::Platform()
 	 * thread_id of first task. But since we do not destroy this
 	 * task, it should be no problem.
 	 */
-	static Platform_thread core_thread("core.main");
+	static Platform_thread core_thread(core_pd(), Pistachio::L4_MyGlobalId());
 
-	core_thread.set_l4_thread_id(Pistachio::L4_MyGlobalId());
 	core_thread.pager(sigma0());
-
-	core_pd().bind_thread(core_thread);
 
 	auto export_page_as_rom_module = [&] (auto rom_name, auto content_fn)
 	{
@@ -620,8 +612,8 @@ Platform::Platform()
 				memset(core_local_ptr, 0, size);
 				content_fn(core_local_ptr, size);
 
-				_rom_fs.insert(new (core_mem_alloc())
-				               Rom_module(phys_addr, size, rom_name));
+				new (core_mem_alloc())
+					Rom_module(_rom_fs, rom_name, phys_addr, size);
 			},
 			[&] (Range_allocator::Alloc_error) {
 				warning("failed to export ", rom_name, " as ROM module"); }
@@ -638,8 +630,8 @@ Platform::Platform()
 		[&] (void *core_local_ptr, size_t size) {
 			Xml_generator xml(reinterpret_cast<char *>(core_local_ptr),
 			                  size, "platform_info",
-				[&] () {
-					xml.node("kernel", [&] () {
+				[&] {
+					xml.node("kernel", [&] {
 						xml.attribute("name", "pistachio"); }); }); });
 }
 
@@ -648,7 +640,7 @@ Platform::Platform()
  ** Generic platform interface **
  ********************************/
 
-void Platform::wait_for_exit()
+void Core::Platform::wait_for_exit()
 {
 	/*
 	 * On Pistachio, core never exits. So let us sleep forever.

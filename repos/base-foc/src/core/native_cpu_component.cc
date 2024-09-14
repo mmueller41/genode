@@ -11,9 +11,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes */
 #include <native_cpu_component.h>
 #include <cpu_session_component.h>
@@ -22,7 +19,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 Native_capability Native_cpu_component::native_cap(Thread_capability cap)
@@ -38,7 +35,7 @@ Native_capability Native_cpu_component::native_cap(Thread_capability cap)
 Foc_thread_state Native_cpu_component::thread_state(Thread_capability cap)
 {
 	auto lambda = [&] (Cpu_thread_component *thread) {
-		return (!thread) ? Foc_thread_state()
+		return (!thread) ? Foc_thread_state { }
 		                 : thread->platform_thread().state(); };
 
 	return _thread_ep.apply(cap, lambda);

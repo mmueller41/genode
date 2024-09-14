@@ -27,6 +27,8 @@ namespace Board {
 	using Psci = Hw::Psci<Hw::Psci_smc_functor>;
 	using Pic = Hw::Gicv2;
 	static constexpr bool NON_SECURE = true;
+
+	static constexpr Genode::size_t NR_OF_CPUS = 2;
 };
 
 #endif /* _SRC__BOOTSTRAP__SPEC__VIRT__QEMU_H_ */

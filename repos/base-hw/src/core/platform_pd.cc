@@ -21,7 +21,7 @@
 #include <platform_pd.h>
 #include <platform_thread.h>
 
-using namespace Genode;
+using namespace Core;
 using Hw::Page_table;
 
 
@@ -144,9 +144,8 @@ void Cap_space::upgrade_slab(Allocator &alloc)
 		[&] (void *ptr) {
 			_slab.insert_sb(ptr); },
 
-		[&] (Allocator::Alloc_error) {
-			/* XXX distinguish error conditions */
-			throw Out_of_ram();
+		[&] (Allocator::Alloc_error error) {
+			Allocator::throw_alloc_error(error);
 	});
 }
 
@@ -154,16 +153,6 @@ void Cap_space::upgrade_slab(Allocator &alloc)
 /********************************
  ** Platform_pd implementation **
  ********************************/
-
-bool Platform_pd::bind_thread(Platform_thread &t)
-{
-	/* is this the first and therefore main thread in this PD? */
-	bool main_thread = !_thread_associated;
-	_thread_associated = true;
-	t.join_pd(this, main_thread, Address_space::weak_ptr());
-	return true;
-}
-
 
 void Platform_pd::assign_parent(Native_capability parent)
 {

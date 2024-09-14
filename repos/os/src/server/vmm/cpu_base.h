@@ -1,11 +1,12 @@
 /*
  * \brief  VMM cpu object
  * \author Stefan Kalkowski
+ * \author Benjamin Lamowski
  * \date   2019-07-18
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2019-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -16,10 +17,11 @@
 
 #include <exception.h>
 #include <generic_timer.h>
+#include <state.h>
 
 #include <base/env.h>
 #include <base/heap.h>
-#include <cpu/vm_state_virtualization.h>
+#include <cpu/vcpu_state_virtualization.h>
 #include <util/mmio.h>
 #include <vm_session/connection.h>
 #include <vm_session/handler.h>
@@ -33,13 +35,7 @@ class Vmm::Cpu_base
 {
 	public:
 
-		struct State : Genode::Vm_state
-		{
-			Genode::uint64_t reg(unsigned idx) const;
-			void reg(unsigned idx, Genode::uint64_t v);
-		};
-
-		struct Esr : Genode::Register<32>
+		struct Esr : Genode::Register<sizeof(addr_t)*8>
 		{
 			struct Ec : Bitfield<26, 6>
 			{
@@ -62,31 +58,58 @@ class Vmm::Cpu_base
 		         Genode::Env             & env,
 		         Genode::Heap            & heap,
 		         Genode::Entrypoint      & ep,
-		         short const               cpu_id);
+		         unsigned                  cpu_id);
 
 		unsigned           cpu_id() const;
-		void               run();
-		void               pause();
 		bool               active() const;
-		State &            state()  const;
 		Gic::Gicd_banked & gic();
-		void               dump();
-		void               handle_exception();
+		void               dump(Vcpu_state & state);
+		void               handle_exception(Vcpu_state &state);
 		void               recall();
-		void               initialize_boot(Genode::addr_t ip,
+		void               initialize_boot(Vcpu_state &state,
+		                                   Genode::addr_t ip,
 		                                   Genode::addr_t dtb);
+		virtual void setup_state(Vcpu_state &) { };
+
+		virtual ~Cpu_base() = default;
+
+		Vcpu_state & state() {
+			return _state->ref;
+		}
+
+		template<typename FN>
+		void with_state(FN const & fn)
+		{
+			_vm_vcpu.with_state(fn);
+		}
+
+		void set_ready() {
+			_cpu_ready.up();
+		}
 
 		template <typename FUNC>
 		void handle_signal(FUNC handler)
 		{
-			if (active()) {
-				pause();
-				handle_exception();
-			}
+			_vm_vcpu.with_state([this, handler](Genode::Vcpu_state &vmstate) {
+				Vmm::Vcpu_state & state = static_cast<Vmm::Vcpu_state &>(vmstate);
+				_state.construct(state);
 
-			handler();
-			_update_state();
-			if (active()) run();
+				try {
+					if (active()) {
+						handle_exception(state);
+					}
+
+					handler(state);
+					_update_state(state);
+				} catch(Exception &e) {
+					Genode::error(e);
+					dump(state);
+					return false;
+				}
+
+				_state.destruct();
+				return active();
+			});
 		}
 
 		template <typename T>
@@ -100,12 +123,7 @@ class Vmm::Cpu_base
 
 			void handle()
 			{
-				try {
-					cpu.handle_signal([this] () { (obj.*member)(); });
-				} catch(Exception &e) {
-					Genode::error(e);
-					cpu.dump();
-				}
+				cpu.handle_signal([this] (Vcpu_state &) { (obj.*member)(); });
 			}
 
 			Signal_handler(Cpu_base           & cpu,
@@ -118,14 +136,23 @@ class Vmm::Cpu_base
 
 	protected:
 
-		class System_register : public Genode::Avl_node<System_register>
+		class System_register : protected Genode::Avl_node<System_register>
 		{
 			private:
 
-				const Esr::access_t       _encoding;
-				const char               *_name;
-				const bool                _writeable;
-				Genode::uint64_t          _value;
+				const Esr::access_t  _encoding;
+				const char         * _name;
+				const bool           _writeable;
+				uint64_t             _value;
+
+				friend class Avl_node<System_register>;
+				friend class Avl_tree<System_register>;
+
+				/*
+				 * Noncopyable
+				 */
+				System_register(System_register const &);
+				System_register &operator = (System_register const &);
 
 			public:
 
@@ -169,8 +196,10 @@ class Vmm::Cpu_base
 				: System_register(0, crn, op1, crm, op2,
 				                  name, writeable, v, tree) {}
 
-				const char * name()       const { return _name;      }
-				const bool   writeable()  const { return _writeable; }
+				virtual ~System_register() {}
+
+				const char * name() const { return _name;      }
+				bool writeable()    const { return _writeable; }
 
 				System_register * find_by_encoding(Iss::access_t e)
 				{
@@ -196,16 +225,20 @@ class Vmm::Cpu_base
 					return (r->_encoding > _encoding); }
 		};
 
-		short                              _vcpu_id;
-		bool                               _active { true };
-		Vm                               & _vm;
-		Genode::Vm_connection            & _vm_session;
-		Genode::Heap                     & _heap;
-		Signal_handler<Cpu_base>           _vm_handler;
-		Genode::Vm_connection::Exit_config _exit_config { };
-		Genode::Vm_connection::Vcpu        _vm_vcpu;
-		State                            & _state;
-		Genode::Avl_tree<System_register>  _reg_tree;
+		struct Vcpu_state_container { Vcpu_state &ref; };
+
+		unsigned                               _vcpu_id;
+		bool                                   _active { true };
+		Vm                                   & _vm;
+		Genode::Vm_connection                & _vm_session;
+		Genode::Heap                         & _heap;
+		Signal_handler<Cpu_base>               _vm_handler;
+		Genode::Vm_connection::Exit_config     _exit_config { };
+		Genode::Vm_connection::Vcpu            _vm_vcpu;
+		Genode::Avl_tree<System_register>      _reg_tree {};
+		Genode::Constructible<Vcpu_state_container> _state {};
+		Semaphore                              _cpu_ready {};
+
 
 
 		/***********************
@@ -216,14 +249,15 @@ class Vmm::Cpu_base
 		Generic_timer                     _timer;
 
 		void _handle_nothing() {}
-		bool _handle_sys_reg();
-		void _handle_brk();
-		void _handle_wfi();
-		void _handle_sync();
-		void _handle_irq();
-		void _handle_data_abort();
-		void _handle_hyper_call();
-		void _update_state();
+		void _handle_startup(Vcpu_state &state);
+		bool _handle_sys_reg(Vcpu_state &state);
+		void _handle_brk(Vcpu_state &state);
+		void _handle_wfi(Vcpu_state &state);
+		void _handle_sync(Vcpu_state &state);
+		void _handle_irq(Vcpu_state &state);
+		void _handle_data_abort(Vcpu_state &state);
+		void _handle_hyper_call(Vcpu_state &state);
+		void _update_state(Vcpu_state &state);
 
 	public:
 

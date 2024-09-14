@@ -4,53 +4,102 @@
  * \author  Christian Prochaska
  * \author  Norman Feske
  * \date    2006-04-12
- *
- * The startup code calls constructors for static objects before calling
- * main(). Furthermore, this file contains the support of exit handlers
- * and destructors.
  */
 
 /*
- * Copyright (C) 2006-2017 Genode Labs GmbH
+ * Copyright (C) 2006-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
 
 /* Genode includes */
-#include <base/env.h>
-#include <base/sleep.h>
-#include <base/component.h>
-#include <deprecated/env.h>
+#include <base/thread.h>
 
 /* platform-specific local helper functions */
-#include <base/internal/parent_cap.h>
+#include <base/internal/globals.h>
 #include <base/internal/crt0.h>
 
-void * __dso_handle = 0;
+using namespace Genode;
+
+
+addr_t init_main_thread_result;
+
+static Platform *platform_ptr;
 
 
 /**
- * Dummy default arguments for main function
+ * Satisfy crt0.s in static programs, LDSO overrides this symbol
  */
-static char  argv0[] = { '_', 'm', 'a', 'i', 'n', 0};
-static char *argv[1] = { argv0 };
+extern "C" void init_rtld() __attribute__((weak));
+void init_rtld()
+{
+	/* init cxa guard mechanism before any local static variables are used */
+	init_cxx_guard();
+}
+
+/**
+ * Lower bound of the stack, solely used for sanity checking
+ */
+extern unsigned char __initial_stack_base[];
 
 
 /**
- * Arguments for main function
+ * Create a thread object for the main thread
  *
- * These global variables may be initialized by a constructor provided by an
- * external library.
+ * \return  stack pointer of the new environment via init_main_thread_result
+ *
+ * This function must be called only once per program and before the _main
+ * function. It can be called as soon as a temporary environment provides
+ * some stack space and inter-process communication. At this stage, global
+ * static objects are not registered for implicit destruction at program exit.
  */
-char **genode_argv = argv;
-int    genode_argc = 1;
-char **genode_envp = 0;
+extern "C" void init_main_thread()
+{
+	prepare_init_main_thread();
 
+	platform_ptr = &init_platform();
 
-/******************************************************
- ** C entry function called by the crt0 startup code **
- ******************************************************/
+	/*
+	 * Create a 'Thread' object for the main thread
+	 */
+	static constexpr size_t STACK_SIZE = 16*1024;
+
+	struct Main_thread : Thread
+	{
+		Main_thread()
+		:
+			Thread(Weight::DEFAULT_WEIGHT, "main", STACK_SIZE, Type::MAIN)
+		{ }
+
+		void entry() override { /* never executed */ }
+	};
+
+	static Main_thread main_thread { };
+
+	/*
+	 * The new stack pointer enables the caller to switch from its current
+	 * environment to the those that the thread object provides.
+	 */
+	addr_t const sp = reinterpret_cast<addr_t>(main_thread.stack_top());
+	init_main_thread_result = sp;
+
+	/*
+	 * Sanity check for the usage of the initial stack
+	 *
+	 * Because the initial stack is located in the BSS, it is zero-initialized.
+	 * We check that the stack still contains zeros at its lower boundary after
+	 * executing all the initialization code.
+	 */
+	enum { STACK_PAD = 256U };
+	for (unsigned i = 0; i < STACK_PAD; i++) {
+		if (__initial_stack_base[i] == 0)
+			continue;
+
+		error("initial stack overflow detected");
+		for (;;);
+	}
+}
 
 
 namespace Genode {
@@ -69,28 +118,13 @@ namespace Genode {
 		void (**func)();
 		for (func = &_ctors_end; func != &_ctors_start; (*--func)());
 	}
-
-	/* XXX move to base-internal header */
-	extern void bootstrap_component();
 }
 
 
-extern "C" int _main()
+extern "C" int _main() /* executed with the stack within the stack area */
 {
-	Genode::bootstrap_component();
+	bootstrap_component(*platform_ptr);
 
 	/* never reached */
 	return 0;
 }
-
-
-extern int main(int argc, char **argv, char **envp);
-
-
-void Component::construct(Genode::Env &env) __attribute__((weak));
-void Component::construct(Genode::Env &)
-{
-	/* call real main function */
-	main(genode_argc, genode_argv, genode_envp);
-}
-

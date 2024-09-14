@@ -50,7 +50,7 @@ class Genode::Xml_attribute
 		/**
 		 * Define tokenizer that matches XML tags (with hyphens) as identifiers
 		 */
-		typedef ::Genode::Token<Scanner_policy_xml_identifier> Token;
+		using Token = ::Genode::Token<Scanner_policy_xml_identifier>;
 
 		struct Tokens
 		{
@@ -93,7 +93,7 @@ class Genode::Xml_attribute
 		explicit Xml_attribute(Token t) : _tokens(t)
 		{
 			if (_tokens.name.type() != Token::IDENT)
-				throw Nonexistent_attribute();
+				throw Invalid_syntax();
 
 			if (!_tokens.valid())
 				throw Invalid_syntax();
@@ -110,18 +110,17 @@ class Genode::Xml_attribute
 		 ** Exception types **
 		 *********************/
 
-		class Invalid_syntax        : public Exception { };
-		class Nonexistent_attribute : public Exception { };
+		class Invalid_syntax : public Exception { };
 
 
-		typedef String<64> Name;
+		using Name = String<64>;
 		Name name() const {
 			return Name(Cstring(_tokens.name.start(), _tokens.name.len())); }
 
 		/**
 		 * Return true if attribute has specified type
 		 */
-		bool has_type(char const *type) {
+		bool has_type(char const *type) const {
 			return strlen(type) == _tokens.name.len() &&
 			       strcmp(type, _tokens.name.start(), _tokens.name.len()) == 0; }
 
@@ -156,8 +155,7 @@ class Genode::Xml_attribute
 		 * Note that the content of the buffer is not null-terminated but
 		 * delimited by the size argument.
 		 */
-		template <typename FN>
-		void with_raw_value(FN const &fn) const
+		void with_raw_value(auto const &fn) const
 		{
 			/*
 			 * Skip leading quote of the '_value' to access the actual value.
@@ -173,8 +171,7 @@ class Genode::Xml_attribute
 		 *           false if attribute is invalid or value
 		 *           conversion failed
 		 */
-		template <typename T>
-		bool value(T &out) const
+		bool value(auto &out) const
 		{
 			bool result = false;
 
@@ -208,7 +205,7 @@ class Genode::Xml_node
 {
 	private:
 
-		typedef Xml_attribute::Token Token;
+		using Token = Xml_attribute::Token;
 
 		/**
 		 * Forward declaration needed for befriending Tag with Xml_attribute
@@ -223,9 +220,7 @@ class Genode::Xml_node
 		 ** Exception types **
 		 *********************/
 
-		typedef Genode::Exception                    Exception;
-		typedef Xml_attribute::Nonexistent_attribute Nonexistent_attribute;
-		typedef Xml_attribute::Invalid_syntax        Invalid_syntax;
+		using Invalid_syntax = Xml_attribute::Invalid_syntax;
 
 		class Nonexistent_sub_node  : public Exception { };
 
@@ -233,7 +228,7 @@ class Genode::Xml_node
 		/**
 		 * Type definition for maintaining backward compatibility
 		 */
-		typedef Xml_attribute Attribute;
+		using Attribute = Xml_attribute;
 
 	private:
 
@@ -660,7 +655,7 @@ class Genode::Xml_node
 		/**
 		 * Request type name of XML node as null-terminated string
 		 */
-		typedef String<64> Type;
+		using Type = String<64>;
 		Type type() const
 		{
 			Token name = _tags.start.name();
@@ -678,8 +673,7 @@ class Genode::Xml_node
 		/**
 		 * Call functor 'fn' with the node data '(char const *, size_t)'
 		 */
-		template <typename FN>
-		void with_raw_node(FN const &fn) const
+		void with_raw_node(auto const &fn) const
 		{
 			char const *start_ptr = _tags.start.token().start();
 			fn(start_ptr, _tags.end.next_token().start() - start_ptr);
@@ -693,8 +687,7 @@ class Genode::Xml_node
 		 *
 		 * If the node has no content, the functor 'fn' is not called.
 		 */
-		template <typename FN>
-		void with_raw_content(FN const &fn) const
+		void with_raw_content(auto const &fn) const
 		{
 			if (_tags.start.type() == Tag::EMPTY)
 				return;
@@ -844,8 +837,7 @@ class Genode::Xml_node
 		 * The functor is called with the sub node as argument.
 		 * If no matching sub node exists, the functor is not called.
 		 */
-		template <typename FN>
-		void with_optional_sub_node(char const *type, FN const &fn) const
+		void with_optional_sub_node(char const *type, auto const &fn) const
 		{
 			if (has_sub_node(type))
 				fn(sub_node(type));
@@ -855,22 +847,20 @@ class Genode::Xml_node
 		 * Apply functor 'fn' to first sub node of specified type
 		 *
 		 * The functor is called with the sub node as argument.
-		 * If no matching sub node exists, the functor 'fn_nexists' is called.
+		 * If no matching sub node exists, the functor 'missing_fn' is called.
 		 */
-		template <typename FN, typename FN_NEXISTS>
-		void with_sub_node(char const *type, FN const &fn, FN_NEXISTS const &fn_nexists) const
+		void with_sub_node(char const *type, auto const &fn, auto const &missing_fn) const
 		{
 			if (has_sub_node(type))
 				fn(sub_node(type));
 			else
-				fn_nexists();
+				missing_fn();
 		}
 
 		/**
 		 * Execute functor 'fn' for each sub node of specified type
 		 */
-		template <typename FN>
-		void for_each_sub_node(char const *type, FN const &fn) const
+		void for_each_sub_node(char const *type, auto const &fn) const
 		{
 			if (!has_sub_node(type))
 				return;
@@ -887,45 +877,9 @@ class Genode::Xml_node
 		/**
 		 * Execute functor 'fn' for each sub node
 		 */
-		template <typename FN>
-		void for_each_sub_node(FN const &fn) const
+		void for_each_sub_node(auto const &fn) const
 		{
 			for_each_sub_node(nullptr, fn);
-		}
-
-		/**
-		 * Return Nth attribute of XML node
-		 *
-		 * \param idx                    attribute index,
-		 *                               first attribute has index 0
-		 * \throw Nonexistent_attribute  no such attribute exists
-		 * \return                       XML attribute
-		 */
-		Xml_attribute attribute(unsigned idx) const
-		{
-			Xml_attribute attr = _tags.start.attribute();
-			for (unsigned i = 0; i < idx; i++)
-				attr = Xml_attribute(attr._next_token());
-
-			return attr;
-		}
-
-		/**
-		 * Return attribute of specified type
-		 *
-		 * \param type                   name of attribute type
-		 * \throw Nonexistent_attribute  no such attribute exists
-		 * \return                       XML attribute
-		 */
-		Xml_attribute attribute(char const *type) const
-		{
-			for (Xml_attribute attr = _tags.start.attribute(); ;) {
-				if (attr.has_type(type))
-					return attr;
-
-				attr = Xml_attribute(attr._next_token());
-			}
-			throw Nonexistent_attribute();
 		}
 
 		/**
@@ -991,6 +945,25 @@ class Genode::Xml_node
 		}
 
 		/**
+		 * Execute functor 'fn' for each attribute
+		 */
+		void for_each_attribute(auto const &fn) const
+		{
+			if (!_tags.start.has_attribute())
+				return;
+
+			for (Xml_attribute attr = _tags.start.attribute(); ; ) {
+				fn(attr);
+
+				Token const next = attr._next_token();
+				if (!Xml_attribute::_valid(next))
+					return;
+
+				attr = Xml_attribute(next);
+			}
+		}
+
+		/**
 		 * Return true if sub node of specified type exists
 		 */
 		bool has_sub_node(char const *type) const
@@ -1021,10 +994,14 @@ class Genode::Xml_node
 		/**
 		 * Return true if this node differs from 'another'
 		 */
-		bool differs_from(Xml_node const &another) const
+		bool differs_from(Xml_node const &other) const
 		{
-			return size() != another.size() ||
-			       memcmp(_addr, another._addr, size()) != 0;
+			bool result = false;
+			other.with_raw_node([&] (char const * const other_start, size_t other_len) {
+				with_raw_node([&] (char const * const start, size_t len) {
+					result = (len != other_len)
+					      || (memcmp(start, other_start, len) != 0); }); });
+			return result;
 		}
 };
 
@@ -1050,7 +1027,7 @@ class Genode::Xml_unquoted : Noncopyable
 
 		template <size_t N>
 		Xml_unquoted(String<N> const &string)
-		: _content_ptr({ string.string(), string.length() - 1})
+		: _content_ptr({ string.string(), string.length() ? string.length() - 1 : 0 })
 		{ }
 
 		void print(Output &out) const

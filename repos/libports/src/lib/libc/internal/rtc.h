@@ -55,7 +55,7 @@ struct Libc::Rtc : Vfs::Watch_response_handler
 					struct tm tm { };
 					if (strptime(buf, "%Y-%m-%d %H:%M:%S", &tm)
 					 || strptime(buf, "%Y-%m-%d %H:%M", &tm)) {
-						_rtc_value = mktime(&tm);
+						_rtc_value = timegm(&tm);
 						if (_rtc_value == (time_t)-1)
 							_rtc_value = 0;
 					}
@@ -116,7 +116,7 @@ struct Libc::Rtc : Vfs::Watch_response_handler
 			msecs_since_rtc_update.value / 1000;
 
 		result.tv_sec  = _rtc_value + seconds_since_rtc_update;
-		result.tv_nsec = (current_msecs.value % 1000) * (1000*1000);
+		result.tv_nsec = (msecs_since_rtc_update.value % 1000) * (1000*1000);
 
 		return result;
 	}

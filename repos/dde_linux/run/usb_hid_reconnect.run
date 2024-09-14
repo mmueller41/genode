@@ -17,10 +17,10 @@ if {![have_include "power_on/qemu"]} {
 
 create_boot_directory
 import_from_depot [depot_user]/src/[base_src] \
-                  [depot_user]/pkg/test_usb_host_drv-[board] \
+                  [depot_user]/pkg/test_usb_host-[board] \
                   [depot_user]/src/dynamic_rom \
                   [depot_user]/src/report_rom \
-                  [depot_user]/src/usb_hid_drv \
+                  [depot_user]/src/usb_hid \
                   [depot_user]/src/init
 
 build { server/event_dump }
@@ -51,11 +51,11 @@ install_config {
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config verbose="no">
-			<default-policy report="usb_drv -> usb_drv -> devices"/>
+			<default-policy report="usb -> usb -> devices"/>
 		</config>
 	</start>
 
-	<start name="usb_drv" caps="1500" managing_system="yes">
+	<start name="usb" caps="1500" managing_system="yes">
 		<binary name="init"/>
 		<resource name="RAM" quantum="32M"/>
 		<provides> <service name="Usb"/> </provides>
@@ -68,9 +68,9 @@ install_config {
 		</route>
 	</start>
 
-	<start name="usb_hid_drv" caps="140">
+	<start name="usb_hid" caps="180">
 		<resource name="RAM" quantum="11M"/>
-		<config use_report="yes" capslock_led="rom" numlock_led="rom" scrlock_led="rom"/>
+		<config capslock_led="rom" numlock_led="rom" scrlock_led="rom"/>
 		<route>
 			<service name="ROM" label="capslock"> <child name="dynamic_rom"/> </service>
 			<service name="ROM" label="numlock">  <child name="dynamic_rom"/> </service>
@@ -123,20 +123,20 @@ install_config {
 #
 # Define USB host controller config
 #
-set fd [open [run_dir]/genode/usb_host_drv.config w]
+set fd [open [run_dir]/genode/usb_host.config w]
 puts $fd {
 <config bios_handoff="yes">
 	<report devices="yes"/>
-	<policy label_prefix="usb_hid_drv" class="0x3"/>
+	<policy label_prefix="usb_hid"> <device class="0x3"/> </policy>
 </config>}
 close $fd
 
-build_boot_image { event_dump }
+build_boot_image [build_artifacts]
 
 append qemu_args " -device nec-usb-xhci,id=xhci -device usb-kbd,bus=xhci.0 -nographic"
 
 # wait for keyboard
-run_genode_until {.*USB HID.*Keyboard.*} 60
+run_genode_until {.*USB HID v1.11 Keyboard.*} 60
 
 set spawn_id $qemu_spawn_id
 
@@ -149,13 +149,13 @@ run_genode_until {(qemu)} 20 $spawn_id
 for {set i 0} {$i < 50} {incr i} {
 
 	# connect keyboard
-	send "device_add usb-kbd,id=ukb1\n"
+	send "device_add usb-kbd,id=ukb$i\n"
 
 	# wait for keyboard
 	run_genode_until {.*USB HID.*Keyboard.*\n} 10 $spawn_id
 
 	# disconnect keyboard
-	send "device_del ukb1\n"
+	send "device_del ukb$i\n"
 
 	# wait for disconnect
 	run_genode_until {.*USB disconnect.*\n} 10 $spawn_id

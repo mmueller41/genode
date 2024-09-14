@@ -16,13 +16,14 @@
 
 /* Genode includes */
 #include <rm_session/rm_session.h>
-#include <base/stdint.h>
-#include <base/log.h>
 #include <util/touch.h>
 
 /* base-internal includes */
 #include <base/internal/page_size.h>
 #include <base/internal/okl4.h>
+
+/* core includes */
+#include <types.h>
 
 /*
  * The binding for 'L4_KDB_Enter' on ARM takes a 'char *' as argument, which
@@ -37,7 +38,7 @@
 #endif
 
 
-namespace Genode {
+namespace Core {
 
 	inline void log_event(const char *) { }
 	inline void log_event(const char *, unsigned, unsigned, unsigned) { }
@@ -110,7 +111,7 @@ namespace Genode {
 
 	inline addr_t map_src_addr(addr_t, addr_t phys) { return phys; }
 
-	inline size_t constrain_map_size_log2(size_t size_log2) { return size_log2; }
+	inline Log2 kernel_constrained_map_size(Log2 size) { return size; }
 }
 
 #endif /* _CORE__INCLUDE__UTIL_H_ */

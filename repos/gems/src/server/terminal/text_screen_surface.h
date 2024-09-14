@@ -38,8 +38,8 @@ class Terminal::Text_screen_surface
 
 		class Invalid_framebuffer_size : Genode::Exception { };
 
-		typedef Text_painter::Font             Font;
-		typedef Glyph_painter::Fixpoint_number Fixpoint_number;
+		using Font            = Text_painter::Font;
+		using Fixpoint_number = Glyph_painter::Fixpoint_number;
 
 		struct Geometry
 		{
@@ -66,8 +66,8 @@ class Terminal::Text_screen_surface
 				fb_size(initial_fb_size),
 				char_width(font.string_width(Utf8_ptr("M"))),
 				char_height(font.height()),
-				columns((_visible(initial_fb_size.w()) << 8)/char_width.value),
-				lines(_visible(initial_fb_size.h())/char_height)
+				columns((_visible(initial_fb_size.w) << 8)/char_width.value),
+				lines(_visible(initial_fb_size.h)/char_height)
 			{
 				if (columns*lines == 0)
 					throw Invalid();
@@ -90,8 +90,8 @@ class Terminal::Text_screen_surface
 			 */
 			Area unused_pixels() const
 			{
-				return Area(fb_size.w() - used_pixels().w(),
-				            fb_size.h() - used_pixels().h());
+				return Area(fb_size.w - used_pixels().w,
+				            fb_size.h - used_pixels().h);
 			}
 
 			/**
@@ -109,7 +109,7 @@ class Terminal::Text_screen_surface
 				if (char_width.value == 0 || char_height == 0)
 					return Position { };
 
-				return Position((p.x() << 8) / char_width.value, p.y() / char_height);
+				return Position((p.x << 8) / char_width.value, p.y / char_height);
 			}
 		};
 
@@ -128,8 +128,8 @@ class Terminal::Text_screen_surface
 
 				static size_t bytes_needed(Text_screen_surface const &surface)
 				{
-					return Cell_array<Char_cell>::bytes_needed(surface.size().w(),
-					                                           surface.size().h());
+					return Cell_array<Char_cell>::bytes_needed(surface.size().w,
+					                                           surface.size().h);
 				}
 
 				Snapshot(Allocator &alloc, Text_screen_surface const &from)
@@ -217,22 +217,20 @@ class Terminal::Text_screen_surface
 				Color const bg_color =
 					_palette.background(Color_palette::Index{0},
 					                    Color_palette::Highlighted{false});
-				Rect r[4] { };
-				Rect const all(Point(0, 0), _geometry.fb_size);
-				_geometry.fb_rect().cut(_geometry.used_rect(), &r[0], &r[1], &r[2], &r[3]);
-				for (unsigned i = 0; i < 4; i++)
-					Box_painter::paint(surface, r[i], bg_color);
+
+				_geometry.fb_rect().cut(_geometry.used_rect()).for_each([&] (Rect const &r) {
+					Box_painter::paint(surface, r, bg_color); });
 			}
 
-			int const clip_top  = 0, clip_bottom = _geometry.fb_size.h(),
-			          clip_left = 0, clip_right  = _geometry.fb_size.w();
+			int const clip_top  = 0, clip_bottom = _geometry.fb_size.h,
+			          clip_left = 0, clip_right  = _geometry.fb_size.w;
 
-			unsigned y = _geometry.start().y();
+			unsigned y = _geometry.start().y;
 			for (unsigned line = 0; line < _cell_array.num_lines(); line++) {
 
 				if (_cell_array.line_dirty(line)) {
 
-					Fixpoint_number x { (int)_geometry.start().x() };
+					Fixpoint_number x { (int)_geometry.start().x };
 					for (unsigned column = 0; column < _cell_array.num_cols(); column++) {
 
 						Char_cell const cell = _cell_array.get_cell(column, line);
@@ -268,18 +266,18 @@ class Terminal::Text_screen_surface
 							Color bg_color = _palette.background(bg_idx, highlighted);
 
 							if (selected) {
-								bg_color = Color(180, 180, 180);
-								fg_color = Color( 50, 50,   50);
+								bg_color = Color::rgb(180, 180, 180);
+								fg_color = Color::rgb( 50, 50,   50);
 							}
 
 							if (pointer) {
-								bg_color = Color(220, 220, 220);
-								fg_color = Color( 50, 50,   50);
+								bg_color = Color::rgb(220, 220, 220);
+								fg_color = Color::rgb( 50, 50,   50);
 							}
 
 							if (cell.has_cursor()) {
-								fg_color = Color( 63,  63,  63);
-								bg_color = Color(255, 255, 255);
+								fg_color = Color::rgb( 63,  63,  63);
+								bg_color = Color::rgb(255, 255, 255);
 							}
 
 							PT const pixel(fg_color.r, fg_color.g, fg_color.b);
@@ -288,16 +286,16 @@ class Terminal::Text_screen_surface
 							next_x.value += _geometry.char_width.value;
 
 							Box_painter::paint(surface,
-							                   Rect(Point(x.decimal(), y),
-							                        Point(next_x.decimal() - 1,
-							                              y + _geometry.char_height - 1)),
+							                   Rect::compound(Point(x.decimal(), y),
+							                                  Point(next_x.decimal() - 1,
+							                                        y + _geometry.char_height - 1)),
 							                   bg_color);
 
 							/* horizontally align glyph within cell */
 							x.value += (_geometry.char_width.value - (int)((glyph.width - 1)<<8)) >> 1;
 
 							Glyph_painter::paint(Glyph_painter::Position(x, (int)y),
-							                     glyph, surface.addr(), _geometry.fb_size.w(),
+							                     glyph, surface.addr(), _geometry.fb_size.w,
 							                     clip_top, clip_bottom, clip_left, clip_right,
 							                     pixel, fg_alpha);
 							x = next_x;
@@ -321,12 +319,12 @@ class Terminal::Text_screen_surface
 
 			int const num_dirty_lines = last_dirty_line - first_dirty_line + 1;
 			if (num_dirty_lines > 0) {
-				int      const y = _geometry.start().y()
+				int      const y = _geometry.start().y
 				                 + first_dirty_line*_geometry.char_height;
 				unsigned const h = num_dirty_lines*_geometry.char_height
-				                 + _geometry.unused_pixels().h();
+				                 + _geometry.unused_pixels().h;
 
-				return Rect(Point(0, y), Area(_geometry.fb_size.w(),h));
+				return Rect(Point(0, y), Area(_geometry.fb_size.w, h));
 			}
 
 			return Rect();

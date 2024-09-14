@@ -33,16 +33,23 @@ typedef void (*dde_ipxe_nic_link_cb)(void);
 typedef void (*dde_ipxe_nic_rx_cb)(unsigned if_index, const char *packet, unsigned packet_len);
 
 /**
+ * Notification about that all packets have been received
+ */
+typedef void (*dde_ipxe_nic_rx_done)(void);
+
+/**
  * Register packet reception callback
  *
  * \param   rx_cb    packet-reception callback function
  * \param   link_cb  link-state change callback function
+ * \param   rx_done  all packets are received callback function
  *
  * This registers a function pointer as rx callback. Incoming ethernet packets
  * are passed to this function.
  */
-extern void dde_ipxe_nic_register_callbacks(dde_ipxe_nic_rx_cb rx_cb,
-                                            dde_ipxe_nic_link_cb link_cb);
+extern void dde_ipxe_nic_register_callbacks(dde_ipxe_nic_rx_cb,
+                                            dde_ipxe_nic_link_cb,
+                                            dde_ipxe_nic_rx_done);
 
 /**
  * Clear callbacks
@@ -60,6 +67,8 @@ extern void dde_ipxe_nic_unregister_callbacks();
  * \return  0 on success, -1 otherwise
  */
 extern int dde_ipxe_nic_tx(unsigned if_index, const char *packet, unsigned packet_len);
+
+extern void dde_ipxe_nic_tx_done();
 
 /**
  * Get MAC address of device

@@ -19,7 +19,6 @@
 #include <base/sleep.h>
 #include <base/trace/events.h>
 #include <util/reconstructible.h>
-#include <deprecated/env.h>
 
 /* base-internal includes */
 #include <base/internal/globals.h>
@@ -28,9 +27,13 @@
 
 using namespace Genode;
 
+
 class Signal_handler_thread : Thread, Blockade
 {
 	private:
+
+		Pd_session  &_pd;
+		Cpu_session &_cpu;
 
 		/**
 		 * Actual signal source
@@ -43,12 +46,15 @@ class Signal_handler_thread : Thread, Blockade
 
 		void entry() override
 		{
-			_signal_source.construct(env_deprecated()->pd_session()->alloc_signal_source());
-			wakeup();
-			Signal_receiver::dispatch_signals(&(*_signal_source));
+			_pd.signal_source().with_result([&] (Capability<Signal_source> source) {
+				_signal_source.construct(_cpu, source);
+				wakeup();
+				Signal_receiver::dispatch_signals(*_signal_source); },
+			[&] (Pd_session::Signal_source_error) {
+				error("failed to initialize signal-source interface"); });
 		}
 
-		enum { STACK_SIZE = 4*1024*sizeof(addr_t) };
+		static constexpr size_t STACK_SIZE = 4*1024*sizeof(addr_t);
 
 	public:
 
@@ -56,7 +62,8 @@ class Signal_handler_thread : Thread, Blockade
 		 * Constructor
 		 */
 		Signal_handler_thread(Env &env)
-		: Thread(env, "signal handler", STACK_SIZE)
+		:
+			Thread(env, "signal handler", STACK_SIZE), _pd(env.pd()), _cpu(env.cpu())
 		{
 			start();
 
@@ -70,7 +77,7 @@ class Signal_handler_thread : Thread, Blockade
 
 		~Signal_handler_thread()
 		{
-			env_deprecated()->pd_session()->free_signal_source(_signal_source->rpc_cap());
+			_pd.free_signal_source(_signal_source->rpc_cap());
 		}
 };
 
@@ -102,11 +109,6 @@ namespace Genode {
 	{
 		signal_handler_thread().construct(env);
 	}
-
-	void destroy_signal_thread()
-	{
-		signal_handler_thread().destruct();
-	}
 }
 
 
@@ -117,6 +119,7 @@ namespace Genode {
 void Signal_context::local_submit()
 {
 	if (_receiver) {
+		Mutex::Guard guard(_mutex);
 		/* construct and locally submit signal object */
 		Signal::Data signal(this, 1);
 		_receiver->local_submit(signal);
@@ -201,46 +204,74 @@ Genode::Signal_context_registry *signal_context_registry()
  ** Signal receiver **
  *********************/
 
-Signal_receiver::Signal_receiver() { }
+static Pd_session *_pd_ptr;
+static Parent     *_parent_ptr;
 
 
-Signal_context_capability Signal_receiver::manage(Signal_context *context)
+Signal_receiver::Signal_receiver() : _pd(*_pd_ptr)
 {
-	if (context->_receiver)
-		throw Context_already_in_use();
+	if (!_pd_ptr) {
+		struct Missing_call_of_init_signal_receiver { };
+		throw  Missing_call_of_init_signal_receiver();
+	}
+}
 
-	context->_receiver = this;
+
+Signal_context_capability Signal_receiver::manage(Signal_context &context)
+{
+	if (context._receiver) {
+		error("ill-attempt to manage an already managed signal context");
+		return context._cap;
+	}
+
+	context._receiver = this;
 
 	Mutex::Guard contexts_guard(_contexts_mutex);
 
 	/* insert context into context list */
-	_contexts.insert_as_tail(context);
+	_contexts.insert_as_tail(&context);
 
 	/* register context at process-wide registry */
-	signal_context_registry()->insert(&context->_registry_le);
+	signal_context_registry()->insert(&context._registry_le);
 
 	for (;;) {
 
 		Ram_quota ram_upgrade { 0 };
 		Cap_quota cap_upgrade { 0 };
 
-		try {
-			/* use signal context as imprint */
-			context->_cap = env_deprecated()->pd_session()->alloc_context(_cap, (long)context);
+		using Error = Pd_session::Alloc_context_error;
+
+		/* use pointer to signal context as imprint */
+		Pd_session::Imprint const imprint { addr_t(&context) };
+
+		_pd.alloc_context(_cap, imprint).with_result(
+			[&] (Capability<Signal_context> cap) { context._cap = cap; },
+			[&] (Error e) {
+				switch (e) {
+				case Error::OUT_OF_RAM:
+					ram_upgrade = Ram_quota { 1024*sizeof(long) };
+					break;
+				case Error::OUT_OF_CAPS:
+					cap_upgrade = Cap_quota { 4 };
+					break;
+				case Error::INVALID_SIGNAL_SOURCE:
+					error("ill-attempt to create context for invalid signal source");
+					sleep_forever();
+					break;
+				}
+			});
+
+		if (context._cap.valid())
 			break;
-		}
-		catch (Out_of_ram)  { ram_upgrade = Ram_quota { 1024*sizeof(long) }; }
-		catch (Out_of_caps) { cap_upgrade = Cap_quota { 4 }; }
 
 		log("upgrading quota donation for PD session "
 		    "(", ram_upgrade, " bytes, ", cap_upgrade, " caps)");
 
-		env_deprecated()->parent()->upgrade(Parent::Env::pd(),
-		                                    String<100>("ram_quota=", ram_upgrade, ", "
-		                                                "cap_quota=", cap_upgrade).string());
+		_parent_ptr->upgrade(Parent::Env::pd(),
+		                     String<100>("ram_quota=", ram_upgrade, ", "
+		                                 "cap_quota=", cap_upgrade).string());
 	}
-
-	return context->_cap;
+	return context._cap;
 }
 
 
@@ -261,7 +292,7 @@ Signal Signal_receiver::pending_signal()
 		_contexts.head(context._next);
 		context._pending     = false;
 		result               = context._curr_signal;
-		context._curr_signal = Signal::Data(0, 0);
+		context._curr_signal = Signal::Data();
 
 		Trace::Signal_received trace_event(context, result.num);
 		return true;
@@ -312,10 +343,10 @@ void Signal_receiver::local_submit(Signal::Data data)
 }
 
 
-void Signal_receiver::dispatch_signals(Signal_source *signal_source)
+void Signal_receiver::dispatch_signals(Signal_source &signal_source)
 {
 	for (;;) {
-		Signal_source::Signal source_signal = signal_source->wait_for_signal();
+		Signal_source::Signal source_signal = signal_source.wait_for_signal();
 
 		/* look up context as pointed to by the signal imprint */
 		Signal_context *context = (Signal_context *)(source_signal.imprint());
@@ -344,18 +375,25 @@ void Signal_receiver::dispatch_signals(Signal_source *signal_source)
 }
 
 
-void Signal_receiver::_platform_begin_dissolve(Signal_context *context)
+void Signal_receiver::_platform_begin_dissolve(Signal_context &context)
 {
 	/*
 	 * Because the 'remove' operation takes the registry mutex, the context
 	 * must not be acquired when calling this method. See the comment in
 	 * 'Signal_receiver::dissolve'.
 	 */
-	signal_context_registry()->remove(&context->_registry_le);
+	signal_context_registry()->remove(&context._registry_le);
 }
 
 
-void Signal_receiver::_platform_finish_dissolve(Signal_context *) { }
+void Signal_receiver::_platform_finish_dissolve(Signal_context &) { }
 
 
 void Signal_receiver::_platform_destructor() { }
+
+
+void Genode::init_signal_receiver(Pd_session &pd, Parent &parent)
+{
+	_pd_ptr     = &pd;
+	_parent_ptr = &parent;
+}

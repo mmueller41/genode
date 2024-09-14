@@ -58,8 +58,9 @@ struct Trace_subject_registry
 			return nullptr;
 		}
 
-		enum { MAX_SUBJECTS = 512 };
-		Genode::Trace::Subject_id _subjects[MAX_SUBJECTS];
+		static constexpr Genode::Trace::Num_subjects MAX_SUBJECTS { 512 };
+
+		Genode::Trace::Subject_id _subjects[MAX_SUBJECTS.value];
 
 		void _sort_by_recent_execution_time()
 		{
@@ -79,14 +80,6 @@ struct Trace_subject_registry
 			}
 
 			_entries = sorted;
-		}
-
-		unsigned update_subjects(Genode::Trace::Connection &trace)
-		{
-			return (unsigned)Genode::retry<Genode::Out_of_ram>(
-				[&] () { return trace.subjects(_subjects, MAX_SUBJECTS); },
-				[&] () { trace.upgrade_ram(4096); }
-			);
 		}
 
 	public:
@@ -124,7 +117,7 @@ struct Trace_subject_registry
 					xml.attribute("thread", e->info.thread_name().string());
 					xml.attribute("id", e->id.id);
 
-					typedef Genode::Trace::Subject_info Subject_info;
+					using Subject_info = Genode::Trace::Subject_info;
 					Subject_info::State const state = e->info.state();
 					xml.attribute("state", Subject_info::state_name(state));
 
@@ -156,7 +149,7 @@ struct App::Main
 {
 	Env &_env;
 
-	Trace::Connection _trace { _env, 128*1024, 32*1024, 0 };
+	Trace::Connection _trace { _env, 128*1024, 32*1024 };
 
 	Reporter _reporter { _env, "trace_subjects", "trace_subjects", 64*1024 };
 

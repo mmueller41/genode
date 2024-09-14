@@ -25,15 +25,16 @@
 #include <pager.h>
 #include <platform_thread.h>
 
-namespace Genode {
+namespace Core {
+
 	struct Rm_client;
 	struct Rm_member;
 	class Region_map_component;
 }
 
 
-class Genode::Region_map_component : public Rpc_object<Region_map>,
-                                     private List<Region_map_component>::Element
+class Core::Region_map_component : public Rpc_object<Region_map>,
+                                   private List<Region_map_component>::Element
 {
 	private:
 
@@ -51,15 +52,14 @@ class Genode::Region_map_component : public Rpc_object<Region_map>,
 		void add_client(Rm_client &) { }
 		void remove_client(Rm_client &) { }
 
-		Local_addr attach(Dataspace_capability, size_t, off_t, bool,
-		                  Local_addr, bool, bool) override {
-			return (addr_t)0; }
+		Attach_result attach(Dataspace_capability, Attr const &) override {
+			return Attach_error::REGION_CONFLICT; }
 
-		void detach(Local_addr) override { }
+		void detach(addr_t) override { }
 
 		void fault_handler(Signal_context_capability) override { }
 
-		State state() override { return State(); }
+		Fault fault() override { return { }; }
 
 		Dataspace_capability dataspace() override { return Dataspace_capability(); }
 
@@ -74,7 +74,7 @@ class Genode::Region_map_component : public Rpc_object<Region_map>,
 };
 
 
-struct Genode::Rm_client : Pager_object
+struct Core::Rm_client : Pager_object
 {
 	Rm_client(Cpu_session_capability, Thread_capability,
 	          Region_map_component &, unsigned long,

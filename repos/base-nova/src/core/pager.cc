@@ -19,7 +19,7 @@
 /* base-internal includes */
 #include <base/internal/native_thread.h>
 
-/* core-local includes */
+/* core includes */
 #include <pager.h>
 #include <platform.h>
 #include <platform_thread.h>
@@ -34,19 +34,8 @@
 
 static bool verbose_oom = false;
 
-using namespace Genode;
+using namespace Core;
 using namespace Nova;
-
-
-static Nova::Hip const &kernel_hip()
-{
-	/**
-	 * Initial value of esp register, saved by the crt0 startup code.
-	 * This value contains the address of the hypervisor information page.
-	 */
-	extern addr_t __initial_sp;
-	return *reinterpret_cast<Hip const *>(__initial_sp);
-}
 
 
 /**
@@ -66,25 +55,26 @@ struct Pager_thread: public Thread
 	void entry() override { }
 };
 
-enum { PAGER_CPUS = Platform::MAX_SUPPORTED_CPUS };
+enum { PAGER_CPUS = Core::Platform::MAX_SUPPORTED_CPUS };
 static Constructible<Pager_thread> pager_threads[PAGER_CPUS];
 
-static Pager_thread &pager_thread(Affinity::Location location,
-                                  Platform &platform)
+static void with_pager_thread(Affinity::Location location,
+                              Core::Platform &platform, auto const &fn)
 {
 	unsigned const pager_index = platform.pager_index(location);
 	unsigned const kernel_cpu_id = platform.kernel_cpu_id(location);
 
 	if (kernel_hip().is_cpu_enabled(kernel_cpu_id) &&
-	    pager_index < PAGER_CPUS && pager_threads[pager_index].constructed())
-		return *pager_threads[pager_index];
+	    pager_index < PAGER_CPUS && pager_threads[pager_index].constructed()) {
+
+		fn(*pager_threads[pager_index]);
+		return;
+	}
 
 	warning("invalid CPU parameter used in pager object: ",
 	        pager_index, "->", kernel_cpu_id, " location=",
 	        location.xpos(), "x", location.ypos(), " ",
 	        location.width(), "x", location.height());
-
-	throw Invalid_thread();
 }
 
 
@@ -142,15 +132,15 @@ void Pager_object::_page_fault_handler(Pager_object &obj)
 	 */
 	obj._state_lock.acquire();
 
-	obj._state.thread.ip     = ipc_pager.fault_ip();
-	obj._state.thread.sp     = 0;
-	obj._state.thread.trapno = PT_SEL_PAGE_FAULT;
+	obj._state.thread.cpu.ip     = ipc_pager.fault_ip();
+	obj._state.thread.cpu.sp     = 0;
+	obj._state.thread.cpu.trapno = PT_SEL_PAGE_FAULT;
 
 	obj._state.block();
 	obj._state.block_pause_sm();
 
 	/* lookup fault address and decide what to do */
-	int error = obj.pager(ipc_pager);
+	unsigned error = (obj.pager(ipc_pager) == Pager_object::Pager_result::STOP);
 
 	/* don't open receive window for pager threads */
 	if (utcb.crd_rcv.value())
@@ -194,10 +184,6 @@ void Pager_object::_page_fault_handler(Pager_object &obj)
 	                                 ipc_pager.fault_addr(),
 	                                 ipc_pager.sp(),
 	                                 (uint8_t)ipc_pager.fault_type());
-
-	/* region manager fault - to be handled */
-	log("page fault, ", fault_info, " reason=", error);
-
 	obj._state_lock.release();
 
 	/* block the faulting thread until region manager is done */
@@ -223,7 +209,7 @@ void Pager_object::exception(uint8_t exit_id)
 	_state_lock.acquire();
 
 	/* remember exception type for Cpu_session::state() calls */
-	_state.thread.trapno = exit_id;
+	_state.thread.cpu.trapno = exit_id;
 
 	if (_exception_sigh.valid()) {
 		_state.submit_signal();
@@ -295,7 +281,7 @@ bool Pager_object::_migrate_thread()
 
 		/* syscall to migrate */
 		unsigned const migrate_to = platform_specific().kernel_cpu_id(_location);
-		uint8_t res = syscall_retry(*this, [&]() {
+		uint8_t res = syscall_retry(*this, [&] {
 			return ec_ctrl(EC_MIGRATE, _state.sel_client_ec, migrate_to,
 			               Obj_crd(EC_SEL_THREAD, 0, Obj_crd::RIGHT_EC_RECALL));
 		});
@@ -335,7 +321,7 @@ void Pager_object::_recall_handler(Pager_object &obj)
 		utcb.mtd = 0;
 
 	/* switch on/off single step */
-	bool singlestep_state = obj._state.thread.eflags & 0x100UL;
+	bool singlestep_state = obj._state.thread.cpu.eflags & 0x100UL;
 	if (obj._state.singlestep() && !singlestep_state) {
 		utcb.flags |= 0x100UL;
 		utcb.mtd |= Mtd::EFL;
@@ -492,7 +478,7 @@ void Pager_object::wake_up()
 	if (!_state.blocked())
 		return;
 
-	_state.thread.exception = false;
+	_state.thread.state = Thread_state::State::VALID;
 
 	_state.unblock();
 
@@ -567,7 +553,7 @@ static uint8_t create_portal(addr_t pt, addr_t pd, addr_t ec, Mtd mtd,
                              addr_t eip, Pager_object * oom_handler)
 {
 	uint8_t res = syscall_retry(*oom_handler,
-		[&]() { return create_pt(pt, pd, ec, mtd, eip); });
+		[&] { return create_pt(pt, pd, ec, mtd, eip); });
 
 	if (res != NOVA_OK)
 		return res;
@@ -592,14 +578,18 @@ template <uint8_t EV>
 void Exception_handlers::register_handler(Pager_object &obj, Mtd mtd,
                                           void (* __attribute__((regparm(1))) func)(Pager_object &))
 {
-	addr_t const ec_sel = pager_thread(obj.location(), platform_specific()).native_thread().ec_sel;
+	uint8_t res = !Nova::NOVA_OK;
+	with_pager_thread(obj.location(), platform_specific(), [&] (Pager_thread &pager_thread) {
+		addr_t const ec_sel = pager_thread.native_thread().ec_sel;
 
-	/* compiler generates instance of exception entry if not specified */
-	addr_t entry = func ? (addr_t)func : (addr_t)(&_handler<EV>);
-	uint8_t res = create_portal(obj.exc_pt_sel_client() + EV,
-	                            platform_specific().core_pd_sel(), ec_sel, mtd, entry, &obj);
+		/* compiler generates instance of exception entry if not specified */
+		addr_t entry = func ? (addr_t)func : (addr_t)(&_handler<EV>);
+		res = create_portal(obj.exc_pt_sel_client() + EV,
+		                    platform_specific().core_pd_sel(), ec_sel, mtd, entry, &obj);
+	});
+
 	if (res != Nova::NOVA_OK)
-		throw Invalid_thread();
+		error("failed to register exception handler");
 }
 
 
@@ -649,9 +639,6 @@ Exception_handlers::Exception_handlers(Pager_object &obj)
 
 void Pager_object::_construct_pager()
 {
-	addr_t const pd_sel = platform_specific().core_pd_sel();
-	addr_t const ec_sel = pager_thread(_location, platform_specific()).native_thread().ec_sel;
-
 	/* create portal for page-fault handler - 14 */
 	_exceptions.register_handler<14>(*this, Mtd::QUAL | Mtd::ESP | Mtd::EIP,
 	                                 _page_fault_handler);
@@ -662,25 +649,36 @@ void Pager_object::_construct_pager()
 	_exceptions.register_handler<PT_SEL_RECALL>(*this, mtd_recall,
 	                                            _recall_handler);
 
-	/* create portal for final cleanup call used during destruction */
-	uint8_t res = create_portal(sel_pt_cleanup(), pd_sel, ec_sel, Mtd(0),
-	                            reinterpret_cast<addr_t>(_invoke_handler),
-	                            this);
+	addr_t const pd_sel = platform_specific().core_pd_sel();
+
+	uint8_t res = !Nova::NOVA_OK;
+
+	with_pager_thread(_location, platform_specific(), [&] (Pager_thread &pager_thread) {
+
+		addr_t const ec_sel = pager_thread.native_thread().ec_sel;
+
+		/* create portal for final cleanup call used during destruction */
+		res = create_portal(sel_pt_cleanup(), pd_sel, ec_sel, Mtd(0),
+		                    reinterpret_cast<addr_t>(_invoke_handler),
+		                    this);
+	});
 	if (res != Nova::NOVA_OK) {
 		error("could not create pager cleanup portal, error=", res);
-		throw Invalid_thread();
+		return;
 	}
 
 	/* semaphore used to block paged thread during recall */
 	res = Nova::create_sm(sel_sm_block_pause(), pd_sel, 0);
 	if (res != Nova::NOVA_OK) {
-		throw Invalid_thread();
+		error("failed to initialize sel_sm_block_pause, error=", res);
+		return;
 	}
 
 	/* semaphore used to block paged thread during OOM memory revoke */
 	res = Nova::create_sm(sel_sm_block_oom(), pd_sel, 0);
 	if (res != Nova::NOVA_OK) {
-		throw Invalid_thread();
+		error("failed to initialize sel_sm_block_oom, error=", res);
+		return;
 	}
 }
 
@@ -704,8 +702,10 @@ Pager_object::Pager_object(Cpu_session_capability cpu_session_cap,
 	_state.block();
 
 	if (Native_thread::INVALID_INDEX == _selectors ||
-	    Native_thread::INVALID_INDEX == _client_exc_pt_sel)
-		throw Invalid_thread();
+	    Native_thread::INVALID_INDEX == _client_exc_pt_sel) {
+		error("failed to complete construction of pager object");
+		return;
+	}
 
 	_construct_pager();
 
@@ -722,7 +722,7 @@ Pager_object::Pager_object(Cpu_session_capability cpu_session_cap,
 	uint8_t const res = Nova::create_sm(exc_pt_sel_client() + SM_SEL_EC,
 	                                    pd_sel, 0);
 	if (res != Nova::NOVA_OK)
-		throw Invalid_thread();
+		error("failed to create locking semaphore for pager object");
 }
 
 
@@ -955,18 +955,19 @@ void Pager_object::_oom_handler(addr_t pager_dst, addr_t pager_src,
 
 addr_t Pager_object::create_oom_portal()
 {
-	try {
-		addr_t const pt_oom      = sel_oom_portal();
-		addr_t const core_pd_sel = platform_specific().core_pd_sel();
-		Pager_thread &thread     = pager_thread(_location, platform_specific());
-		addr_t const ec_sel      = thread.native_thread().ec_sel;
+	uint8_t res = !Nova::NOVA_OK;
 
-		uint8_t res = create_portal(pt_oom, core_pd_sel, ec_sel, Mtd(0),
-		                            reinterpret_cast<addr_t>(_oom_handler),
-		                            this);
-		if (res == Nova::NOVA_OK)
-			return pt_oom;
-	} catch (...) { }
+	with_pager_thread(_location, platform_specific(),
+		[&] (Pager_thread &thread) {
+			addr_t const core_pd_sel = platform_specific().core_pd_sel();
+			addr_t const ec_sel      = thread.native_thread().ec_sel;
+			res = create_portal(sel_oom_portal(), core_pd_sel, ec_sel, Mtd(0),
+			                    reinterpret_cast<addr_t>(_oom_handler),
+			                    this);
+	});
+
+	if (res == Nova::NOVA_OK)
+		return sel_oom_portal();
 
 	error("creating portal for out of memory notification failed");
 	return 0;

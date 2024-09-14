@@ -107,7 +107,7 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 		Constructible<Elf_file> _elf_file { };
 
 
-		bool _object_init(Object::Name const &name, Elf::Addr reloc_base)
+		bool _object_init(char const *name, Elf::Addr reloc_base)
 		{
 			Object::init(name, reloc_base);
 			return true;
@@ -126,7 +126,7 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
 
 	public:
 
-		Elf_object(Dependency const &dep, Object::Name const &name,
+		Elf_object(Dependency const &dep, char const *name,
 		           Elf::Addr reloc_base) SELF_RELOC
 		:
 			_elf_object_initialized(_object_init(name, reloc_base)),
@@ -261,9 +261,9 @@ class Linker::Elf_object : public Object, private Fifo<Elf_object>::Element
  */
 struct Linker::Ld : private Dependency, Elf_object
 {
-	Ld() SELF_RELOC :
+	Ld(bool use_name = true) SELF_RELOC :
 		Dependency(*this, nullptr),
-		Elf_object(*this, linker_name(), relocation_address())
+		Elf_object(*this, use_name ? linker_name() : nullptr, relocation_address())
 	{ }
 
 	void setup_link_map()
@@ -335,18 +335,6 @@ Linker::Ld &Linker::Ld::linker()
 	static Ld_vtable _linker;
 	return _linker;
 }
-
-
-/*
- * Defined in the startup library, passed to legacy main functions.
- */
-extern char **genode_argv;
-extern int    genode_argc;
-extern char **genode_envp;
-
-static int exit_status;
-
-static void exit_on_suspended() { genode_exit(exit_status); }
 
 
 /**
@@ -449,29 +437,6 @@ struct Linker::Binary : private Root_object, public Elf_object
 			}
 
 			stage = STAGE_SO;
-			return;
-		}
-
-		/*
-		 * The 'Component::construct' function is missing. This may be the
-		 * case for legacy components that still implement a 'main' function.
-		 *
-		 * \deprecated  the handling of legacy 'main' functions will be removed
-		 */
-		if (Elf::Addr addr = lookup_symbol("main")) {
-			warning("using legacy main function, please convert to 'Component::construct'");
-
-			/* execute static constructors before calling legacy 'main' */
-			finish_static_construction();
-
-			exit_status = ((int (*)(int, char **, char **))addr)(genode_argc,
-			                                                     genode_argv,
-			                                                     genode_envp);
-
-			/* trigger suspend in the entry point */
-			env.ep().schedule_suspend(exit_on_suspended, nullptr);
-
-			/* return to entrypoint and exit via exit_on_suspended() */
 			return;
 		}
 
@@ -656,7 +621,7 @@ extern "C" void init_rtld()
 	 * type relocation might produce a wrong vtable pointer (at least on ARM), do
 	 * not call any virtual funtions of this object.
 	 */
-	Ld linker_on_stack;
+	Ld linker_on_stack { false };
 	linker_on_stack.relocate(BIND_LAZY);
 
 	/* init cxa guard mechanism before any local static variables are used */
@@ -687,25 +652,32 @@ void Genode::init_ldso_phdr(Env &env)
 	{
 		struct Not_implemented : Exception { };
 
-		Local_addr attach(Dataspace_capability ds, size_t, off_t,
-		                  bool, Local_addr, bool, bool) override
+		Attach_result attach(Dataspace_capability ds, Attr const &) override
 		{
 			size_t const size = Dataspace_client(ds).size();
 
 			Linker::Region_map &linker_area = *Linker::Region_map::r();
 
-			addr_t const at = linker_area.alloc_region_at_end(size);
-
-			(void)linker_area.attach_at(ds, at, size, 0UL);
-
-			return at;
+			return linker_area.alloc_region_at_end(size).convert<Attach_result>(
+				[&] (addr_t const at) {
+					return linker_area.attach(ds, Region_map::Attr {
+						.size       = size,
+						.offset     = { },
+						.use_at     = true,
+						.at         = at,
+						.executable = { },
+						.writeable  = true });
+				},
+				[&] (Linker::Region_map::Alloc_region_error) {
+					return Attach_error::REGION_CONFLICT; }
+			);
 		}
 
-		void detach(Local_addr) override { throw Not_implemented(); }
+		void detach(addr_t) override { throw Not_implemented(); }
 
 		void fault_handler(Signal_context_capability) override { }
 
-		State state() override { throw Not_implemented(); }
+		Fault fault() override { throw Not_implemented(); }
 
 		Dataspace_capability dataspace() override { throw Not_implemented(); }
 

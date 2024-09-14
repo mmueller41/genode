@@ -3,7 +3,7 @@ if {[get_cmd_switch --autopilot] && [have_board virt_qemu_riscv]} {
 	exit 0
 }
 
-build { app/sequence server/vfs lib/vfs_import test/libc }
+build { app/sequence server/vfs lib/libc lib/vfs lib/vfs_import test/libc }
 
 create_boot_directory
 
@@ -75,6 +75,22 @@ install_config {
 							<import overwrite="yes">
 								<dir name="fs">
 									<symlink name="link" target="test"/>
+									<inline name="test">Hello, this is Genode!</inline>
+								</dir>
+							</import>
+						</vfs>
+					</config>
+				</start>
+				<start name="/bin/true" caps="500">
+					<config>
+						<libc stdin="/dev/null" stdout="/dev/log" stderr="/dev/log"/>
+						<vfs>
+							<dir name="fs"> <fs/> </dir>
+							<dir name="dev"> <log/> <null/> </dir>
+							<ram/>
+							<import overwrite="yes">
+								<dir name="fs">
+									<symlink name="link" target="test"/>
 									<inline name="test">Hello world!</inline>
 								</dir>
 							</import>
@@ -104,8 +120,8 @@ install_config {
 	</config>
 }
 
-build_boot_image { vfs_import.lib.so libc.lib.so vfs vfs.lib.so sequence }
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic "
 
-run_genode_until {Hello world!} 30
+run_genode_until {Hello world!.{0,7}\n} 30

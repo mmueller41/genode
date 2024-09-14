@@ -21,7 +21,7 @@ struct Config_model::Node : Noncopyable, Interface, private List_model<Node>::El
 	friend class List_model<Node>;
 	friend class List<Node>;
 
-	static bool type_matches(Xml_node const &) { return true; }
+	static bool type_matches(Xml_node const &xml);
 
 	virtual bool matches(Xml_node const &) const = 0;
 
@@ -200,7 +200,7 @@ struct Config_model::Resource_node : Node
 
 	static Category _category_from_xml(Xml_node const &xml)
 	{
-		typedef String<16> Name;
+		using Name = String<16>;
 		Name const name = xml.attribute_value("name", Name());
 
 		if (name == "RAM") return Category::RAM;
@@ -304,6 +304,20 @@ struct Config_model::Service_node : Node
 };
 
 
+bool Config_model::Node::type_matches(Xml_node const &xml)
+{
+	return Parent_provides_node::type_matches(xml)
+	    || Default_route_node  ::type_matches(xml)
+	    || Default_node        ::type_matches(xml)
+	    || Start_node          ::type_matches(xml)
+	    || Affinity_space_node ::type_matches(xml)
+	    || Report_node         ::type_matches(xml)
+	    || Resource_node       ::type_matches(xml)
+	    || Heartbeat_node      ::type_matches(xml)
+	    || Service_node        ::type_matches(xml);
+}
+
+
 void Config_model::update_from_xml(Xml_node                 const &xml,
                                    Allocator                      &alloc,
                                    Reconstructible<Verbose>       &verbose,
@@ -371,7 +385,7 @@ void Config_model::update_from_xml(Xml_node                 const &xml,
 	auto update = [&] (Node &node, Xml_node const &xml) { node.update(xml); };
 
 	try {
-		update_list_model_from_xml(_model, xml, create, destroy, update);
+		_model.update_from_xml(xml, create, destroy, update);
 	}
 	catch (Unknown_element_type) {
 		error("unable to apply complete configuration"); }
@@ -391,7 +405,7 @@ void Config_model::apply_children_restart(Xml_node const &xml)
 	};
 
 	try {
-		update_list_model_from_xml(_model, xml, create, destroy, update);
+		_model.update_from_xml(xml, create, destroy, update);
 	}
 	catch (...) { };
 }

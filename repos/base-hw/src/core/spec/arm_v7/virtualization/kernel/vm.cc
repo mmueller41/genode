@@ -1,19 +1,19 @@
 /*
- * \brief   Kernel backend for virtual machines
- * \author  Stefan Kalkowski
- * \date    2015-02-10
+ * \brief  Kernel backend for virtual machines
+ * \author Stefan Kalkowski
+ * \author Benjamin Lamowski
+ * \date   2015-02-10
  */
 
 /*
- * Copyright (C) 2015-2017 Genode Labs GmbH
+ * Copyright (C) 2015-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-#include <base/log.h>
 #include <hw/assert.h>
-#include <cpu/vm_state_virtualization.h>
+#include <cpu/vcpu_state_virtualization.h>
 
 #include <platform_pd.h>
 #include <kernel/cpu.h>
@@ -65,7 +65,7 @@ struct Hypervisor::Host_context
 static Hypervisor::Host_context & host_context(Cpu & cpu)
 {
 	static Genode::Constructible<Hypervisor::Host_context>
-		host_context[NR_OF_CPUS];
+		host_context[Board::NR_OF_CPUS];
 	if (!host_context[cpu.id()].constructed()) {
 		host_context[cpu.id()].construct();
 		Hypervisor::Host_context & c = *host_context[cpu.id()];
@@ -135,19 +135,23 @@ void Board::Vcpu_context::Virtual_timer_irq::disable()
 
 Kernel::Vm::Vm(Irq::Pool              & user_irq_pool,
                Cpu                    & cpu,
-               Genode::Vm_state       & state,
+               Genode::Vcpu_data      & data,
                Kernel::Signal_context & context,
                Identity               & id)
 :
 	Kernel::Object { *this },
-	Cpu_job(Cpu_priority::min(), 0),
+	Cpu_job(Scheduler::Priority::min(), 0),
 	_user_irq_pool(user_irq_pool),
-	_state(state),
+	_state(data),
 	_context(context),
 	_id(id),
 	_vcpu_context(cpu)
 {
 	affinity(cpu);
+	/* once constructed, exit with a startup exception */
+	pause();
+	_state.cpu_exception = Genode::VCPU_EXCEPTION_STARTUP;
+	_context.submit(1);
 }
 
 
@@ -200,6 +204,14 @@ void Kernel::Vm::proceed(Cpu & cpu)
 
 	Hypervisor::switch_world(_state, host_context(cpu));
 }
+
+
+void Vm::_sync_to_vmm()
+{}
+
+
+void Vm::_sync_from_vmm()
+{}
 
 
 void Vm::inject_irq(unsigned irq)

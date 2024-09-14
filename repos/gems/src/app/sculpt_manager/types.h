@@ -15,6 +15,7 @@
 #define _TYPES_H_
 
 #include <util/list_model.h>
+#include <util/xml_generator.h>
 #include <base/env.h>
 #include <base/attached_rom_dataspace.h>
 #include <platform_session/platform_session.h>
@@ -32,19 +33,20 @@
 #include <nic_session/nic_session.h>
 #include <rtc_session/rtc_session.h>
 #include <trace_session/trace_session.h>
+#include <io_mem_session/io_mem_session.h>
+#include <io_port_session/io_port_session.h>
 
 namespace Sculpt {
 
 	using namespace Genode;
 
-	typedef String<64>  Rom_name;
-	typedef String<128> Path;
-	typedef String<36>  Start_name;
-	typedef String<64>  Label;
+	using Rom_name   = String<64>;
+	using Path       = String<128>;
+	using Start_name = String<36>;
 
-	typedef Gui::Point Point;
-	typedef Gui::Rect  Rect;
-	typedef Gui::Area  Area;
+	using Point = Gui::Point;
+	using Rect  = Gui::Rect;
+	using Area  = Gui::Area;
 
 	enum Writeable { WRITEABLE, READ_ONLY };
 
@@ -57,9 +59,37 @@ namespace Sculpt {
 		NETWORK      = DEFAULT,
 		STORAGE      = DEFAULT,
 		MULTIMEDIA   = -1,
-		DRIVER       = 0,
-		LEITZENTRALE = 0         /* only for latency-critical drivers */
+		DRIVER       = 0,        /* only for latency-critical drivers */
+		LEITZENTRALE = MULTIMEDIA,
+		NESTED_MAX   = 0,        /* within nested init (inspect) */
 	};
+
+	/**
+	 * Argument type for controlling the verification of downloads
+	 */
+	struct Verify { bool value; };
+
+	/**
+	 * Utility for passing lambda arguments to non-template functions
+	 */
+	template <typename... ARGS>
+	struct With
+	{
+		struct Callback : Interface
+		{
+			virtual void operator () (ARGS &&...) const = 0;
+		};
+
+		template <typename FN>
+		struct Fn : Callback
+		{
+			FN const &_fn;
+			Fn(FN const &fn) : _fn(fn) { };
+			void operator () (ARGS &&... args) const override { _fn(args...); }
+		};
+	};
+
+	struct Progress { bool progress; };
 }
 
 #endif /* _TYPES_H_ */

@@ -15,16 +15,17 @@
 #define _ROOT_WIDGET_H_
 
 /* local includes */
-#include "widget.h"
+#include <widget.h>
 
 namespace Menu_view { struct Root_widget; }
 
 
 struct Menu_view::Root_widget : Widget
 {
-	Root_widget(Widget_factory &factory, Xml_node node, Unique_id unique_id)
+	Root_widget(Name const &name, Unique_id const &id,
+	            Widget_factory &factory, Xml_node const &node)
 	:
-		Widget(factory, node, unique_id)
+		Widget(name, id, factory, node)
 	{ }
 
 	Area animated_size() const
@@ -32,7 +33,7 @@ struct Menu_view::Root_widget : Widget
 		Area result(1, 1);
 
 		_children.for_each([&] (Widget const &child) {
-			result = child.animated_geometry().area(); });
+			result = child.animated_geometry().area; });
 
 		return result;
 	}
@@ -75,7 +76,7 @@ struct Menu_view::Root_widget : Widget
 	{
 		_children.for_each([&] (Widget &child) {
 			child.position(Point(0, 0));
-			child.size(_geometry.area());
+			child.size(_geometry.area);
 		});
 	}
 };

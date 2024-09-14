@@ -32,12 +32,12 @@ namespace Fs_report {
 	class  Root;
 	struct Main;
 
-	typedef Genode::Path<Session_label::capacity()> Path;
+	using Path = Genode::Path<Session_label::capacity()>;
 
 	static bool create_parent_dir(Vfs::Directory_service &vfs, Path const &child,
 	                              Genode::Allocator &alloc)
 	{
-		typedef Vfs::Directory_service::Opendir_result Opendir_result;
+		using Opendir_result = Vfs::Directory_service::Opendir_result;
 
 		Path parent = child;
 		parent.strip_last_element();
@@ -70,9 +70,9 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 {
 	private:
 
-		Genode::Entrypoint     &_ep;
-		Genode::Allocator      &_alloc;
-		Vfs::File_system       &_vfs;
+		Genode::Allocator &_alloc;
+		Vfs::Env::Io      &_io;
+		Vfs::File_system  &_vfs;
 
 		Attached_ram_dataspace _ds;
 		Path                   _path { };
@@ -84,7 +84,7 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 
 		template <typename FN> void _file_op(FN const &fn)
 		{
-			typedef Vfs::Directory_service::Open_result Open_result;
+			using Open_result = Vfs::Directory_service::Open_result;
 
 			Vfs_handle *handle;
 			Open_result res = _vfs.open(_path.base(),
@@ -108,10 +108,10 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 
 			/* sync file operations before close */
 			while (!handle->fs().queue_sync(handle))
-				_ep.wait_and_dispatch_one_io_signal();
+				_io.commit_and_wait();
 
 			while (handle->fs().complete_sync(handle) == Vfs::File_io_service::SYNC_QUEUED)
-				_ep.wait_and_dispatch_one_io_signal();
+				_io.commit_and_wait();
 
 			handle->close();
 		}
@@ -126,11 +126,12 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 
 		Session_component(Genode::Env                 &env,
 		                  Genode::Allocator           &alloc,
+		                  Vfs::Env::Io                &io,
 		                  Vfs::File_system            &vfs,
 		                  Genode::Session_label const &label,
 		                  size_t                       buffer_size)
 		:
-			_ep(env.ep()), _alloc(alloc), _vfs(vfs),
+			_alloc(alloc), _io(io), _vfs(vfs),
 			_ds(env.ram(), env.rm(), buffer_size),
 			_path(path_from_label<Path>(label.string()))
 		{
@@ -145,21 +146,25 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 		{
 			auto fn = [&] (Vfs_handle *handle) {
 
-				typedef Vfs::File_io_service::Write_result Write_result;
+				using Write_result = Vfs::File_io_service::Write_result;
 
 				if (_file_size != length)
 					handle->fs().ftruncate(handle, length);
 
 				size_t offset = 0;
 				while (offset < length) {
-					file_size n = 0;
+					size_t n = 0;
 
 					handle->seek(offset);
-					Write_result res = handle->fs().write(
-						handle, _ds.local_addr<char const>() + offset,
-						length - offset, n);
 
-					if (res != Write_result::WRITE_OK) {
+					Const_byte_range_ptr const src(_ds.local_addr<char>() + offset,
+					                               length - offset);
+
+					Write_result res = handle->fs().write(handle, src, n);
+
+					if (res == Write_result::WRITE_ERR_WOULD_BLOCK)
+						_io.commit_and_wait();
+					else if (res != Write_result::WRITE_OK) {
 						/* do not spam the log */
 						if (_success)
 							error("failed to write report to '", _path, "'");
@@ -168,7 +173,7 @@ class Fs_report::Session_component : public Genode::Rpc_object<Report::Session>
 						return;
 					}
 
-					offset += (size_t)n;
+					offset += n;
 				}
 
 				_file_size = length;
@@ -237,7 +242,8 @@ class Fs_report::Root : public Genode::Root_component<Session_component>
 			}
 
 			return new (md_alloc())
-				Session_component(_env, _heap, _vfs_env.root_dir(), label, buffer_size);
+				Session_component(_env, _heap, _vfs_env.io(), _vfs_env.root_dir(),
+				                  label, buffer_size);
 		}
 
 	public:

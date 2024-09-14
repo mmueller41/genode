@@ -15,13 +15,12 @@
 
 /* Genode includes */
 #include <irq_session/irq_session.h>
-#include <hw/spec/x86_64/x86_64.h>
 
 /* core includes */
 #include <port_io.h>
 #include <platform.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Board;
 
 enum {
@@ -40,8 +39,13 @@ enum {
 Local_interrupt_controller::
 Local_interrupt_controller(Global_interrupt_controller &global_irq_ctrl)
 :
-	Mmio             { Platform::mmio_to_virt(Hw::Cpu_memory_map::lapic_phys_base()) },
+	Local_apic({Platform::mmio_to_virt(Hw::Cpu_memory_map::lapic_phys_base())}),
 	_global_irq_ctrl { global_irq_ctrl }
+{
+	init();
+}
+
+void Local_interrupt_controller::init()
 {
 	/* Start initialization sequence in cascade mode */
 	outb(PIC_CMD_MASTER, 0x11);
@@ -132,7 +136,7 @@ void Local_interrupt_controller::send_ipi(unsigned const cpu_id)
 	Icr_high::access_t icr_high = 0;
 	Icr_low::access_t  icr_low  = 0;
 
-	Icr_high::Destination::set(icr_high, _global_irq_ctrl.lapic_id(cpu_id));
+	Icr_high::Destination::set(icr_high, cpu_id);
 
 	Icr_low::Vector::set(icr_low, Local_interrupt_controller::IPI);
 	Icr_low::Level_assert::set(icr_low);
@@ -146,19 +150,6 @@ void Local_interrupt_controller::send_ipi(unsigned const cpu_id)
 /****************************************
  ** Board::Global_interrupt_controller **
  ****************************************/
-
-uint8_t Global_interrupt_controller::lapic_id(unsigned cpu_id) const
-{
-	return _lapic_id[cpu_id];
-}
-
-
-void Global_interrupt_controller::lapic_id(unsigned cpu_id,
-                                           uint8_t  lapic_id)
-{
-	_lapic_id[cpu_id] = lapic_id;
-}
-
 
 void Global_interrupt_controller::irq_mode(unsigned irq_number,
                                            unsigned trigger,
@@ -231,7 +222,7 @@ Global_interrupt_controller::_create_irt_entry(unsigned const irq)
 
 Global_interrupt_controller::Global_interrupt_controller()
 :
-	Mmio(Platform::mmio_to_virt(Hw::Cpu_memory_map::MMIO_IOAPIC_BASE))
+	Mmio({(char *)Platform::mmio_to_virt(Hw::Cpu_memory_map::MMIO_IOAPIC_BASE), Mmio::SIZE})
 {
 	write<Ioregsel>(IOAPICVER);
 	_irte_count = read<Iowin::Maximum_redirection_entry>() + 1;
@@ -246,17 +237,24 @@ Global_interrupt_controller::Global_interrupt_controller()
 			_irq_mode[i].trigger_mode = TRIGGER_LEVEL;
 			_irq_mode[i].polarity = POLARITY_LOW;
 		}
-
-		/* remap all IRQs managed by I/O APIC */
-		if (i < _irte_count) {
-			Irte::access_t irte = _create_irt_entry(i);
-			write<Ioregsel>(IOREDTBL + 2 * i + 1);
-			write<Iowin>((Iowin::access_t)(irte >> Iowin::ACCESS_WIDTH));
-			write<Ioregsel>(IOREDTBL + 2 * i);
-			write<Iowin>((Iowin::access_t)(irte));
-		}
 	}
-};
+
+	init();
+}
+
+
+void Global_interrupt_controller::init()
+{
+	/* remap all IRQs managed by I/O APIC */
+	for (unsigned i = 0; i < _irte_count; i++)
+	{
+		Irte::access_t irte = _create_irt_entry(i);
+		write<Ioregsel>(IOREDTBL + 2 * i + 1);
+		write<Iowin>((Iowin::access_t)(irte >> Iowin::ACCESS_WIDTH));
+		write<Ioregsel>(IOREDTBL + 2 * i);
+		write<Iowin>((Iowin::access_t)(irte));
+	}
+}
 
 
 void Global_interrupt_controller::toggle_mask(unsigned const vector,

@@ -22,13 +22,38 @@ namespace Depot_download_manager {
 
 	using namespace Depot;
 
-	typedef String<32>  Rom_name;
-	typedef String<160> Url;
-	typedef String<160> Path;
+	using Rom_name = String<32>;
+	using Url      = String<160>;
+	using Path     = String<160>;
 
 	struct Depot_query_version { unsigned value; };
 	struct Fetchurl_version    { unsigned value; };
+
+	struct Require_verify;
+
+	struct Pubkey_known { bool value; };
 }
+
+
+/**
+ * Argument type for propagating 'verify' install attributes to imports
+ */
+struct Depot_download_manager::Require_verify
+{
+	bool value;
+
+	static Require_verify from_xml(Xml_node const &node)
+	{
+		return Require_verify { node.attribute_value("require_verify", true) };
+	}
+
+	void gen_attr(Xml_generator &xml) const
+	{
+		if (!value)
+			xml.attribute("require_verify", "no");
+	}
+};
+
 
 namespace Genode {
 

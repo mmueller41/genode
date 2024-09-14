@@ -1,11 +1,12 @@
 /*
  * \brief  VMM ARM Generic timer device model
  * \author Stefan Kalkowski
+ * \author Benjamin Lamowski
  * \date   2019-08-20
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2019-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -16,7 +17,7 @@
 
 #include <gic.h>
 
-#include <cpu/vm_state_virtualization.h>
+#include <cpu/vcpu_state_virtualization.h>
 #include <drivers/timer/util.h>
 #include <timer_session/connection.h>
 #include <util/register.h>
@@ -25,6 +26,8 @@ namespace Vmm {
 	class Cpu_base;
 	class Generic_timer;
 }
+
+using Genode::Vcpu_state;
 
 class Vmm::Generic_timer : Gic::Irq::Irq_handler
 {
@@ -44,12 +47,12 @@ class Vmm::Generic_timer : Gic::Irq::Irq_handler
 
 		Genode::uint64_t _ticks_per_ms();
 
-		bool _enabled();
-		bool _masked();
-		bool _pending();
+		bool _enabled(Vcpu_state &state);
+		bool _masked(Vcpu_state &state);
+		bool _pending(Vcpu_state &state);
 
 		void _handle_timeout(Genode::Duration);
-		Genode::uint64_t _usecs_left();
+		Genode::uint64_t _usecs_left(Vcpu_state &state);
 
 	public:
 
@@ -58,10 +61,11 @@ class Vmm::Generic_timer : Gic::Irq::Irq_handler
 		              Gic::Irq           & irq,
 		              Cpu_base           & cpu);
 
-		void schedule_timeout();
+		void schedule_timeout(Vcpu_state &state);
 		void cancel_timeout();
-		void handle_irq();
-		void dump();
+		void handle_irq(Vcpu_state &state);
+		void dump(Vcpu_state &state);
+		static void setup_state(Vcpu_state &state);
 
 
 		/*****************

@@ -36,11 +36,11 @@ struct Sculpt::Settings
 		Name name;
 		Path chargen_file;
 
-		template <typename FN>
-		static void for_each(FN const &fn)
+		static void for_each(auto const &fn)
 		{
 			static Keyboard_layout layouts[] = {
 				{ .name = "French",       .chargen_file = "keyboard/fr_fr" },
+				{ .name = "French Bepo",  .chargen_file = "keyboard/fr_bepo" },
 				{ .name = "German",       .chargen_file = "keyboard/de_de" },
 				{ .name = "Swiss French", .chargen_file = "keyboard/fr_ch" },
 				{ .name = "Swiss German", .chargen_file = "keyboard/de_ch" },

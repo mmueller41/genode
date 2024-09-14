@@ -14,29 +14,26 @@
 #ifndef _CORE__OBJECT_H_
 #define _CORE__OBJECT_H_
 
-/* Genode includes */
-#include <util/reconstructible.h>
-
 /* base-internal includes */
 #include <base/internal/capability_space.h>
+
+/* core includes */
+#include <types.h>
 
 /* base-hw includes */
 #include <kernel/interface.h>
 #include <kernel/object.h>
 
-namespace Genode {
-
-	/**
-	 * Represents a kernel object in core
-	 *
-	 * \param T  type of the kernel object
-	 */
-	template <typename T> class Kernel_object;
-}
+namespace Core { template <typename T> class Kernel_object; }
 
 
+/**
+ * Represents a kernel object in core
+ *
+ * \param T  type of the kernel object
+ */
 template <typename T>
-class Genode::Kernel_object : public Genode::Constructible<Kernel::Core_object<T>>
+class Core::Kernel_object : public Constructible<Kernel::Core_object<T>>
 {
 	protected:
 
@@ -52,8 +49,7 @@ class Genode::Kernel_object : public Genode::Constructible<Kernel::Core_object<T
 		/**
 		 * Creates a kernel object via a syscall
 		 */
-		template <typename... ARGS>
-		Kernel_object(Called_from_core, ARGS &&... args)
+		Kernel_object(Called_from_core, auto &&... args)
 		:
 			_cap(Capability_space::import(T::syscall_create(*this, args...)))
 		{ }
@@ -61,17 +57,16 @@ class Genode::Kernel_object : public Genode::Constructible<Kernel::Core_object<T
 		/**
 		 * Creates a kernel object directly
 		 */
-		template <typename... ARGS>
-		Kernel_object(Called_from_kernel, ARGS &&... args)
+		Kernel_object(Called_from_kernel, auto &&... args)
 		:
 			_cap(Capability_space::import(Kernel::cap_id_invalid()))
 		{
-			Genode::Constructible<Kernel::Core_object<T>>::construct(args...);
+			Constructible<Kernel::Core_object<T>>::construct(args...);
 		}
 
 		~Kernel_object()
 		{
-			if (Genode::Constructible<Kernel::Core_object<T>>::constructed())
+			if (Constructible<Kernel::Core_object<T>>::constructed())
 				T::syscall_destroy(*this);
 		}
 
@@ -80,10 +75,9 @@ class Genode::Kernel_object : public Genode::Constructible<Kernel::Core_object<T
 		/**
 		 * Create the kernel object explicitely via this function
 		 */
-		template <typename... ARGS>
-		bool create(ARGS &&... args)
+		bool create(auto &&... args)
 		{
-			if (Genode::Constructible<Kernel::Core_object<T>>::constructed())
+			if (Constructible<Kernel::Core_object<T>>::constructed())
 				return false;
 
 			_cap = Capability_space::import(T::syscall_create(*this, args...));

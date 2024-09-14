@@ -14,10 +14,9 @@
 #ifndef _MODEL__STORAGE_DEVICE_H_
 #define _MODEL__STORAGE_DEVICE_H_
 
-#include "types.h"
-#include "partition.h"
-#include "capacity.h"
-#include "xml.h"
+#include <model/partition.h>
+#include <model/capacity.h>
+#include <xml.h>
 
 namespace Sculpt { struct Storage_device; };
 
@@ -31,11 +30,30 @@ struct Sculpt::Storage_device
 		FAILED    /* driver failed to access the device */
 	};
 
+	struct Action : Interface
+	{
+		virtual void storage_device_discovered() = 0;
+	};
+
+	Env       &_env;
 	Allocator &_alloc;
+	Action    &_action;
 
-	typedef String<32> Label;
+	using Driver = String<32>;
+	using Port   = String<8>;
 
-	Label const label;
+	Driver const driver;
+	Port   const port;
+
+	Start_name name() const
+	{
+		return port.valid() ? Start_name { driver, "-", port }
+		                    : Start_name { driver };
+	}
+
+	Start_name part_block_start_name() const { return { name(), ".part"    }; }
+	Start_name relabel_start_name()    const { return { name(), ".relabel" }; }
+	Start_name expand_start_name()     const { return { name(), ".expand"  }; }
 
 	Capacity capacity; /* non-const because USB storage devices need to update it */
 
@@ -48,9 +66,27 @@ struct Sculpt::Storage_device
 
 	Partitions partitions { };
 
-	Attached_rom_dataspace _partitions_rom;
+	Rom_handler<Storage_device> _partitions {
+		_env, String<80>("report -> runtime/", part_block_start_name(), "/partitions").string(),
+		*this, &Storage_device::_handle_partitions };
 
 	unsigned _part_block_version = 0;
+
+	void _update_partitions_from_xml(Xml_node const &node)
+	{
+		partitions.update_from_xml(node,
+
+			/* create */
+			[&] (Xml_node const &node) -> Partition & {
+				return *new (_alloc) Partition(Partition::Args::from_xml(node)); },
+
+			/* destroy */
+			[&] (Partition &p) { destroy(_alloc, &p); },
+
+			/* update */
+			[&] (Partition &, Xml_node) { }
+		);
+	}
 
 	/**
 	 * Trigger the rediscovery of the device, e.g., after partitioning of after
@@ -61,57 +97,48 @@ struct Sculpt::Storage_device
 		state = UNKNOWN;
 		_part_block_version++;
 
-		Partition_update_policy policy(_alloc);
-		partitions.update_from_xml(policy, Xml_node("<partitions/>"));
+		_update_partitions_from_xml(Xml_node("<partitions/>"));
 	}
 
-	void process_part_block_report()
+	void _handle_partitions(Xml_node const &) { _action.storage_device_discovered(); }
+
+	void process_partitions()
 	{
-		_partitions_rom.update();
+		_partitions.with_xml([&] (Xml_node const &report) {
 
-		Xml_node const report = _partitions_rom.xml();
-		if (!report.has_type("partitions"))
-			return;
+			if (!report.has_type("partitions"))
+				return;
 
-		whole_device = (report.attribute_value("type", String<16>()) == "disk");
+			whole_device = (report.attribute_value("type", String<16>()) == "disk");
 
-		Partition_update_policy policy(_alloc);
-		partitions.update_from_xml(policy, report);
+			_update_partitions_from_xml(report);
 
-		/*
-		 * Import whole-device partition information.
-		 *
-		 * Ignore reports that come in while the device is in use. Otherwise,
-		 * the reconstruction of 'whole_device_partition' would wrongly reset
-		 * the partition state such as the 'file_system.inspected' flag.
-		 */
-		if (!whole_device_partition.constructed() || whole_device_partition->idle()) {
-			whole_device_partition.construct(Partition::Args::whole_device(capacity));
-			report.for_each_sub_node("partition", [&] (Xml_node partition) {
-				if (partition.attribute_value("number", Partition::Number()) == "0")
-					whole_device_partition.construct(Partition::Args::from_xml(partition)); });
-		}
+			/*
+			 * Import whole-device partition information.
+			 *
+			 * Ignore reports that come in while the device is in use. Otherwise,
+			 * the reconstruction of 'whole_device_partition' would wrongly reset
+			 * the partition state such as the 'file_system.inspected' flag.
+			 */
+			if (!whole_device_partition.constructed() || whole_device_partition->idle()) {
+				whole_device_partition.construct(Partition::Args::whole_device(capacity));
+				report.for_each_sub_node("partition", [&] (Xml_node partition) {
+					if (partition.attribute_value("number", Partition::Number()) == "0")
+						whole_device_partition.construct(Partition::Args::from_xml(partition)); });
+			}
 
-		/* finish initial discovery phase */
-		if (state == UNKNOWN)
-			state = RELEASED;
+			/* finish initial discovery phase */
+			if (state == UNKNOWN)
+				state = RELEASED;
+		});
 	}
 
-	/**
-	 * Constructor
-	 *
-	 * \param label  label of block device
-	 * \param sigh   signal handler to be notified on partition-info updates
-	 */
-	Storage_device(Env &env, Allocator &alloc, Label const &label,
-	               Capacity capacity, Signal_context_capability sigh)
+	Storage_device(Env &env, Allocator &alloc, Driver const &driver,
+	               Port const &port, Capacity capacity, Action &action)
 	:
-		_alloc(alloc), label(label), capacity(capacity),
-		_partitions_rom(env, String<80>("report -> runtime/", label, ".part_block/partitions").string())
-	{
-		_partitions_rom.sigh(sigh);
-		process_part_block_report();
-	}
+		_env(env), _alloc(alloc), _action(action),
+		driver(driver), port(port), capacity(capacity)
+	{ }
 
 	~Storage_device()
 	{
@@ -142,23 +169,15 @@ struct Sculpt::Storage_device
 		return needed_for_access;
 	}
 
-	/**
-	 * Generate content of start node for part_block
-	 *
-	 * \param service_name  name of server that provides the block device, or
-	 *                      if invalid, request block device from parent.
-	 */
-	inline void gen_part_block_start_content(Xml_generator &xml, Label const &server_name) const;
+	inline void gen_part_block_start_content(Xml_generator &) const;
 
-	template <typename FN>
-	void for_each_partition(FN const &fn) const
+	void for_each_partition(auto const &fn) const
 	{
 		fn(*whole_device_partition);
 		partitions.for_each([&] (Partition const &partition) { fn(partition); });
 	}
 
-	template <typename FN>
-	void for_each_partition(FN const &fn)
+	void for_each_partition(auto const &fn)
 	{
 		fn(*whole_device_partition);
 		partitions.for_each([&] (Partition &partition) { fn(partition); });
@@ -202,31 +221,26 @@ struct Sculpt::Storage_device
 	}
 
 	bool discovery_in_progress() const { return state == UNKNOWN; }
-
-	Start_name part_block_start_name() const { return Start_name(label, ".part_block"); }
-	Start_name relabel_start_name()    const { return Start_name(label, ".relabel"); }
-	Start_name expand_start_name()     const { return Start_name(label, ".expand");  }
 };
 
 
-void Sculpt::Storage_device::gen_part_block_start_content(Xml_generator &xml,
-                                                          Label const &server_name) const
+void Sculpt::Storage_device::gen_part_block_start_content(Xml_generator &xml) const
 {
 	xml.attribute("version", _part_block_version);
 
-	gen_common_start_content(xml, Label(label, ".part_block"),
+	gen_common_start_content(xml, part_block_start_name(),
 	                         Cap_quota{100}, Ram_quota{8*1024*1024},
 	                         Priority::STORAGE);
 
 	gen_named_node(xml, "binary", "part_block");
 
-	xml.node("heartbeat", [&] () { });
+	xml.node("heartbeat", [&] { });
 
-	xml.node("config", [&] () {
-		xml.node("report", [&] () { xml.attribute("partitions", "yes"); });
+	xml.node("config", [&] {
+		xml.node("report", [&] { xml.attribute("partitions", "yes"); });
 
 		for (unsigned i = 1; i < 10; i++) {
-			xml.node("policy", [&] () {
+			xml.node("policy", [&] {
 				xml.attribute("label",     i);
 				xml.attribute("partition", i);
 				xml.attribute("writeable", "yes");
@@ -236,14 +250,11 @@ void Sculpt::Storage_device::gen_part_block_start_content(Xml_generator &xml,
 
 	gen_provides<Block::Session>(xml);
 
-	xml.node("route", [&] () {
+	xml.node("route", [&] {
 
-		gen_service_node<Block::Session>(xml, [&] () {
-			if (server_name.valid())
-				gen_named_node(xml, "child", server_name);
-			else
-				xml.node("parent", [&] () {
-					xml.attribute("label", label); }); });
+		gen_service_node<Block::Session>(xml, [&] {
+			gen_named_node(xml, "child", driver, [&] {
+				xml.attribute("label", port); }); });
 
 		gen_parent_rom_route(xml, "part_block");
 		gen_parent_rom_route(xml, "ld.lib.so");
@@ -251,9 +262,9 @@ void Sculpt::Storage_device::gen_part_block_start_content(Xml_generator &xml,
 		gen_parent_route<Pd_session>  (xml);
 		gen_parent_route<Log_session> (xml);
 
-		gen_service_node<Report::Session>(xml, [&] () {
+		gen_service_node<Report::Session>(xml, [&] {
 			xml.attribute("label", "partitions");
-			xml.node("parent", [&] () { }); });
+			xml.node("parent", [&] { }); });
 	});
 }
 

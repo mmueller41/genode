@@ -23,7 +23,6 @@
 /* local includes */
 #include <mac_allocator.h>
 #include <interface.h>
-#include <reference.h>
 #include <report.h>
 #include <session_env.h>
 #include <communication_buffer.h>
@@ -91,11 +90,17 @@ class Net::Nic_session_component : private Nic_session_component_base,
 					UP_DOWN_UP
 				};
 
-				Genode::Session_label    const  _label;
-				Const_reference<Configuration>  _config;
-				Genode::Session_env      const &_session_env;
-				Transient_link_state            _transient_link_state    { DOWN_ACKNOWLEDGED };
-				Signal_context_capability       _session_link_state_sigh { };
+				Genode::Session_label const  _label;
+				Configuration         const *_config_ptr;
+				Genode::Session_env   const &_session_env;
+				Transient_link_state         _transient_link_state    { DOWN_ACKNOWLEDGED };
+				Signal_context_capability    _session_link_state_sigh { };
+
+				/*
+				 * Noncopyable
+				 */
+				Interface_policy(Interface_policy const &);
+				Interface_policy &operator = (Interface_policy const &);
 
 				void _session_link_state_transition(Transient_link_state tls);
 
@@ -115,8 +120,9 @@ class Net::Nic_session_component : private Nic_session_component_base,
 				 ***************************/
 
 				Domain_name determine_domain_name() const override;
-				void handle_config(Configuration const &config) override { _config = config; }
+				void handle_config(Configuration const &config) override { _config_ptr = &config; }
 				Genode::Session_label const &label() const override { return _label; }
+				bool report_empty() const override { return _session_env.report_empty(); };
 				void report(Genode::Xml_generator &xml) const override { _session_env.report(xml); };
 				void handle_domain_ready_state(bool state) override;
 				bool interface_link_state() const override;
@@ -167,15 +173,21 @@ class Net::Nic_session_root
 
 		enum { MAC_ALLOC_BASE = 0x02 };
 
-		Genode::Env              &_env;
-		Cached_timer             &_timer;
-		Mac_allocator             _mac_alloc;
-		Mac_address        const  _router_mac;
-		Reference<Configuration>  _config;
-		Quota                    &_shared_quota;
-		Interface_list           &_interfaces;
+		Genode::Env                       &_env;
+		Cached_timer                      &_timer;
+		Mac_allocator                      _mac_alloc;
+		Genode::Constructible<Mac_address> _router_mac { };
+		Configuration                     *_config_ptr;
+		Quota                             &_shared_quota;
+		Interface_list                    &_interfaces;
 
 		void _invalid_downlink(char const *reason);
+
+		/*
+		 * Noncopyable
+		 */
+		Nic_session_root(Nic_session_root const &);
+		Nic_session_root &operator = (Nic_session_root const &);
 
 
 		/********************
@@ -194,7 +206,7 @@ class Net::Nic_session_root
 		                 Quota             &shared_quota,
 		                 Interface_list    &interfaces);
 
-		void handle_config(Configuration &config) { _config = Reference<Configuration>(config); }
+		void handle_config(Configuration &config) { _config_ptr = &config; }
 };
 
 #endif /* _NIC_SESSION_ROOT_H_ */

@@ -1,11 +1,12 @@
 /*
  * \brief  Sysctl facade
  * \author Emery Hemingway
+ * \author Benjamin Lamowski
  * \date   2016-04-27
  */
 
 /*
- * Copyright (C) 2016-2019 Genode Labs GmbH
+ * Copyright (C) 2016-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -15,18 +16,18 @@
 #include <util/string.h>
 #include <base/env.h>
 
-/* Genode-specific libc interfaces */
-#include <libc-plugin/plugin.h>
-#include <libc-plugin/fd_alloc.h>
-
 /* libc includes */
+#include <sys/types.h>
 #include <sys/sysctl.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pwd.h>
 
 /* libc-internal includes */
+#include <internal/plugin.h>
+#include <internal/fd_alloc.h>
 #include <internal/errno.h>
 #include <internal/init.h>
 
@@ -58,6 +59,8 @@ extern "C" long sysconf(int name)
 		Affinity::Space space = _global_env->cpu().affinity_space();
 		return space.total() ? : 1;
 	}
+	case _SC_GETPW_R_SIZE_MAX:
+		return -1;
 	default:
 		warning(__func__, "(", name, ") not implemented");
 		return Errno(EINVAL);
@@ -73,7 +76,12 @@ extern "C" int __sysctl(const int *name, u_int namelen,
 	if (!oldp) /* check for write attempt */
 		return Errno(newp ? EPERM : EINVAL);
 
-	if (namelen != 2) return Errno(ENOENT);
+	if (namelen != 2)
+		return Errno(ENOENT);
+
+	/* reject special interface for sysctlnametomib() */
+	if (name[0] == 0 && name[1] == 3)
+		return Errno(ENOENT);
 
 	char *buf = (char*)oldp;
 	int index_a = name[0];
@@ -85,6 +93,10 @@ extern "C" int __sysctl(const int *name, u_int namelen,
 	/* builtins */
 	{
 		switch(index_a) {
+		case CTL_KERN: switch(index_b) {
+			case KERN_ARND:
+				return getentropy(oldp, *oldlenp);
+		}
 		case CTL_HW: switch(index_b) {
 
 			case HW_REALMEM:

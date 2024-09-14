@@ -17,11 +17,11 @@
 #include <base/heap.h>
 #include <base/log.h>
 #include <base/sleep.h>
-#include <base/snprintf.h>
 #include <file_system_session/connection.h>
 #include <file_system/util.h>
 #include <util/string.h>
 #include <util/xml_node.h>
+#include <format/snprintf.h>
 
 extern "C" {
 #include "stdio.h"
@@ -29,7 +29,7 @@ extern "C" {
 
 using namespace Genode;
 
-typedef Path<File_system::MAX_PATH_LEN> Absolute_path;
+using Absolute_path = Path<File_system::MAX_PATH_LEN>;
 
 struct FILE { };
 
@@ -276,7 +276,7 @@ extern "C" FILE *fopen(const char *path, const char *mode)
 
 		libgcov_node.for_each_sub_node("annotate", [&] (Xml_node annotate_node) {
 
-			typedef String<File_system::MAX_PATH_LEN> Source;
+			using Source = String<File_system::MAX_PATH_LEN>;
 			Source const source = annotate_node.attribute_value("source", Source());
 
 			seek_offset += gcov_env->write(annotate_file_handle,
@@ -290,10 +290,9 @@ extern "C" FILE *fopen(const char *path, const char *mode)
 			                               seek_offset);
 		});
 
-		gcov_env->fs.close(annotate_file_handle);	
+		gcov_env->fs.close(annotate_file_handle);
 	}
 	catch (Xml_node::Nonexistent_sub_node) { }
-	catch (Xml_attribute::Nonexistent_attribute) { }
 
 	return &gcov_env->file;
 }
@@ -395,7 +394,7 @@ extern "C" void *malloc(size_t size)
 
 extern "C" int sprintf(char *str, const char *format, ...)
 {
-	using namespace Genode;
+	using namespace Format;
 
 	va_list list;
 	va_start(list, format);
@@ -459,7 +458,7 @@ extern "C" int vfprintf(FILE *stream, const char *format, va_list list)
 	if (stream != stderr)
 		return 0;
 
-	using namespace Genode;
+	using namespace Format;
 
 	char buf[1024] { };
 	String_console sc { buf, sizeof(buf) };

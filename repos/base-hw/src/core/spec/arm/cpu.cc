@@ -14,12 +14,12 @@
 /* base includes */
 #include <cpu/memory_barrier.h>
 
-/* base-hw Core includes */
+/* base-hw core includes */
 #include <kernel/cpu.h>
 #include <kernel/thread.h>
 #include <spec/arm/cpu_support.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 Arm_cpu::Context::Context(bool privileged)
@@ -46,7 +46,7 @@ Mmu_context(addr_t                             table,
 { }
 
 
-Genode::Arm_cpu::Mmu_context::~Mmu_context()
+Core::Arm_cpu::Mmu_context::~Mmu_context()
 {
 	/* flush TLB by ASID */
 	Cpu::Tlbiasid::write(id());
@@ -109,23 +109,17 @@ void Arm_cpu::switch_to(Arm_cpu::Mmu_context & ctx)
 }
 
 
-template <typename FUNC>
-static inline void cache_maintainance(addr_t const base,
-                                      size_t const size,
-                                      size_t const cache_line_size,
-                                      FUNC & func)
+static inline void cache_maintainance(addr_t const  base,
+                                      size_t const  size,
+                                      size_t const  cache_line_size,
+                                      auto   const &fn)
 {
-	/**
-	 * Although, the ARMv7 reference manual states that addresses does not
-	 * need to be cacheline aligned, we observed problems when not doing so
-	 * on i.MX6 Quad Sabrelite (maybe Cortex A9 generic issue?).
-	 * Therefore, we align it here.
-	 */
+	/* align the start address to catch all related cache lines */
 	addr_t start     = base & ~(cache_line_size-1);
 	addr_t const end = base + size;
 
 	/* iterate over all cachelines of the given region and apply the functor */
-	for (; start < end; start += cache_line_size) func(start);
+	for (; start < end; start += cache_line_size) fn(start);
 }
 
 
@@ -147,8 +141,8 @@ void Arm_cpu::cache_coherent_region(addr_t const base,
 	};
 
 	/* take the smallest cacheline, either from I-, or D-cache */
-	size_t const cache_line_size = Genode::min(Cpu::instruction_cache_line_size(),
-	                                           Cpu::data_cache_line_size());
+	size_t const cache_line_size = min(Cpu::instruction_cache_line_size(),
+	                                   Cpu::data_cache_line_size());
 	cache_maintainance(base, size, cache_line_size, lambda);
 }
 

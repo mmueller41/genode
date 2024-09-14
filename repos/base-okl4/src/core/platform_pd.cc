@@ -11,9 +11,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/lock_guard.h>
-
 /* core includes */
 #include <util.h>
 #include <platform_pd.h>
@@ -23,12 +20,8 @@
 /* base-internal includes */
 #include <base/internal/okl4.h>
 
-using namespace Genode;
+using namespace Core;
 
-
-/****************************
- ** Private object members **
- ****************************/
 
 void Platform_pd::_create_pd(bool syscall)
 {
@@ -186,7 +179,7 @@ bool Platform_pd::bind_thread(Platform_thread &thread)
 	l4_thread_id = make_l4_id(_pd_id, thread_id);
 
 	/* finally inform thread about binding */
-	thread.bind(thread_id, l4_thread_id, *this);
+	thread.bind(thread_id, l4_thread_id);
 	return true;
 }
 
@@ -207,7 +200,7 @@ void Platform_pd::space_pager(Platform_thread &thread)
 	using namespace Okl4;
 
 	L4_Word_t    control        = L4_SpaceCtrl_space_pager;
-	L4_SpaceId_t pager_space    = L4_SpaceId(thread.pd()->pd_id());
+	L4_SpaceId_t pager_space    = L4_SpaceId(thread.pd().pd_id());
 	L4_ClistId_t cap_list       = L4_rootclist;
 	L4_Word_t    utcb_area_size = L4_GetUtcbSize()*(1 << Thread_id_bits::THREAD);
 	L4_Word_t    utcb_location  = platform_specific().utcb_base()

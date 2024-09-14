@@ -20,9 +20,20 @@
 
 using namespace Genode;
 
-static Env                               *_env_ptr;
-static Allocator                         *_alloc_ptr;
-static Registry<Registered<genode_event>> _event_sessions { };
+struct Statics
+{
+	Env                                *env_ptr;
+	Allocator                          *alloc_ptr;
+	Registry<Registered<genode_event>>  event_sessions { };
+};
+
+
+static Statics & statics()
+{
+	static Statics instance { };
+
+	return instance;
+};
 
 
 struct genode_event : private Noncopyable, private Interface
@@ -56,8 +67,8 @@ struct genode_event : private Noncopyable, private Interface
 void genode_event_init(genode_env       *env_ptr,
                        genode_allocator *alloc_ptr)
 {
-	_env_ptr   = env_ptr;
-	_alloc_ptr = alloc_ptr;
+	statics().env_ptr   = env_ptr;
+	statics().alloc_ptr = alloc_ptr;
 }
 
 
@@ -91,6 +102,12 @@ namespace {
 				batch.submit(Input::Relative_motion { x, y }); });
 		}
 
+		static void _abs_motion(struct genode_event_submit *myself, int x, int y)
+		{
+			_with_batch(myself, [&] (Event::Session_client::Batch &batch) {
+				batch.submit(Input::Absolute_motion { x, y }); });
+		}
+
 		static void _touch(struct genode_event_submit *myself,
 		                   struct genode_event_touch_args const *args)
 		{
@@ -109,6 +126,12 @@ namespace {
 				batch.submit(Input::Touch_release { id }); });
 		}
 
+		static void _wheel(struct genode_event_submit *myself, int x, int y)
+		{
+			_with_batch(myself, [&] (Event::Session_client::Batch &batch) {
+				batch.submit(Input::Wheel { x, y }); });
+		}
+
 		Submit(Event::Session_client::Batch &batch)
 		:
 			batch(batch)
@@ -116,8 +139,10 @@ namespace {
 			press         = _press;
 			release       = _release;
 			rel_motion    = _rel_motion;
+			abs_motion    = _abs_motion;
 			touch         = _touch;
 			touch_release = _touch_release;
+			wheel         = _wheel;
 		};
 
 	};
@@ -139,18 +164,19 @@ void genode_event_generate(struct genode_event               *event_session,
 
 struct genode_event *genode_event_create(struct genode_event_args const *args)
 {
-	if (!_env_ptr || !_alloc_ptr) {
+	if (!statics().env_ptr || !statics().alloc_ptr) {
 		error("genode_event_create: missing call of genode_event_init");
 		return nullptr;
 	}
 
-	return new (*_alloc_ptr)
-		Registered<genode_event>(_event_sessions, *_env_ptr, *_alloc_ptr,
+	return new (*statics().alloc_ptr)
+		Registered<genode_event>(statics().event_sessions,
+		                         *statics().env_ptr, *statics().alloc_ptr,
 		                         Session_label(args->label));
 }
 
 
 void genode_event_destroy(struct genode_event *event_ptr)
 {
-	destroy(*_alloc_ptr, event_ptr);
+	destroy(*statics().alloc_ptr, event_ptr);
 }

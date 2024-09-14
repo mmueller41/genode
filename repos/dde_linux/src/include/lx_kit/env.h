@@ -32,13 +32,15 @@ namespace Lx_kit {
 	 *
 	 * \param env - pointer to Genode::Env used to construct object initially
 	 */
-	Env & env(Genode::Env * env = nullptr);
+	Env & env();
 }
 
 
 struct Lx_kit::Env
 {
-	Genode::Env        & env;
+	Genode::Env            & env;
+	Genode::Signal_context &_signal_dispatcher;
+
 	Genode::Heap         heap            { env.ram(), env.rm() };
 	Initcalls            initcalls       { heap                };
 	Pci_fixup_calls      pci_fixup_calls { heap                };
@@ -50,9 +52,13 @@ struct Lx_kit::Env
 	Scheduler            scheduler       { env.ep() };
 	Device_list          devices         { env.ep(), heap, platform };
 	Lx_kit::Timeout      timeout         { timer, scheduler };
-	unsigned int         last_irq        { 0 };
 
-	Env(Genode::Env & env) : env(env) { }
+	static void initialize(Genode::Env & env, Genode::Signal_context & sig_ctx);
+
+	Env(Genode::Env & env, Genode::Signal_context & sig_ctx)
+	: env(env), _signal_dispatcher(sig_ctx) { }
+
+	void submit_signal();
 };
 
 #endif /* _LX_KIT__ENV_H_ */

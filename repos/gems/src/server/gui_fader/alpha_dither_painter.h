@@ -21,10 +21,9 @@
 
 struct Alpha_dither_painter
 {
-	typedef Genode::Pixel_alpha8 Pixel_alpha8;
-
-	typedef Genode::Surface_base::Rect  Rect;
-	typedef Genode::Surface_base::Point Point;
+	using Pixel_alpha8 = Genode::Pixel_alpha8;
+	using Rect         = Genode::Surface_base::Rect;
+	using Point        = Genode::Surface_base::Point;
 
 	/*
 	 * \param fade  fade value in 16.16 fixpoint format
@@ -36,14 +35,14 @@ struct Alpha_dither_painter
 
 		if (!clipped.valid()) return;
 
-		Pixel_alpha8 *dst, *dst_line = surface.addr() + surface.size().w()*clipped.y1() + clipped.x1();
+		Pixel_alpha8 *dst, *dst_line = surface.addr() + surface.size().w*clipped.y1() + clipped.x1();
 
 		int y = clipped.y1();
 
 		/* scale fade value to range of alpha values */
 		fade *= 256;
 
-		for (int w, h = clipped.h() ; h--; dst_line += surface.size().w()) {
+		for (int w, h = clipped.h() ; h--; dst_line += surface.size().w) {
 
 			int x = clipped.x1();
 
@@ -73,8 +72,8 @@ struct Alpha_dither_painter
 
 		if (!clipped.valid()) return;
 
-		unsigned const src_line_w = texture.size().w(),
-		               dst_line_w = surface.size().w();
+		unsigned const src_line_w = texture.size().w,
+		               dst_line_w = surface.size().w;
 
 		unsigned const src_start = src_line_w*clipped.y1() + clipped.x1(),
 		               dst_start = dst_line_w*clipped.y1() + clipped.x1();

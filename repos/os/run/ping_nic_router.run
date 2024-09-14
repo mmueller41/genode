@@ -1,13 +1,4 @@
-if {[have_spec foc] || [have_spec linux] || [have_board rpi3] ||
-    [have_board imx53_qsb_tz]} {
-	puts "Run script is not supported on this platform."
-	exit 0
-}
-
-if {[get_cmd_switch --autopilot] && [have_board virt_qemu_riscv]} {
-	puts "Autopilot mode is not supported on this platform."
-	exit 0
-}
+source ${genode_dir}/repos/os/run/assert_nic.inc
 
 set on_hardware [expr ![have_include power_on/qemu]]
 
@@ -53,7 +44,7 @@ append config {
 		<provides><service name="Timer"/></provides>
 	</start>
 
-	<start name="drivers" caps="1000" managing_system="yes">
+	<start name="drivers" caps="1200" managing_system="yes">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -225,7 +216,8 @@ append config {
 </config>}
 
 install_config $config
-build_boot_image { ping }
+
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic "
 append_qemu_nic_args
@@ -238,4 +230,10 @@ append done_string ".*ping_22\] From 10.0.4.1 icmp_seq=.* Destination Unreachabl
 
 append_if $on_hardware done_string ".*ping_23\] From [good_dst_ip] Destination Unreachable.*\n"
 
-run_genode_until $done_string 30
+proc test_timeout { } {
+	if {[have_spec sel4] && [have_board pc]} { return 60 }
+	if {[have_spec pistachio] && [have_board pc]} { return 60 }
+	return 30
+}
+
+run_genode_until $done_string [test_timeout]

@@ -23,9 +23,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <libc/allocator.h>
-#include <libc-plugin/fd_alloc.h>
 
 /* libc-internal includes */
+#include <internal/fd_alloc.h>
 #include <internal/call_func.h>
 #include <internal/init.h>
 #include <internal/errno.h>
@@ -135,7 +135,7 @@ struct Libc::Interpreter
 		}
 	}
 
-	typedef String<Vfs::MAX_PATH_LEN> Path;
+	using Path = String<Vfs::MAX_PATH_LEN>;
 
 	Path path() const
 	{
@@ -205,7 +205,7 @@ struct Libc::Interpreter
  */
 struct Libc::String_array : Noncopyable
 {
-	typedef Genode::Allocator Allocator;
+	using Allocator = Genode::Allocator;
 
 	Allocator &_alloc;
 
@@ -372,9 +372,7 @@ extern "C" int execve(char const *filename,
 
 	for (unsigned i = 0; i < MAX_INTERPRETER_NESTING_LEVELS; i++) {
 
-		try {
-			Libc::resolve_symlinks(path.string(), resolved_path); }
-		catch (Libc::Symlink_resolve_error) {
+		if (Libc::resolve_symlinks(path.string(), resolved_path).failed()) {
 			warning("execve: executable binary '", filename, "' does not exist");
 			return Libc::Errno(ENOENT);
 		}

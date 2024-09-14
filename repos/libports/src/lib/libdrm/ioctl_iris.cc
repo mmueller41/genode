@@ -22,6 +22,7 @@
 
 #include <gpu_session/connection.h>
 #include <gpu/info_intel.h>
+#include <util/dictionary.h>
 #include <util/retry.h>
 
 #include <vfs_gpu.h>
@@ -30,7 +31,7 @@ extern "C" {
 #include <errno.h>
 #include <drm.h>
 #include <i915_drm.h>
-
+#include <xf86drm.h>
 #define DRM_NUMBER(req) ((req) & 0xff)
 }
 
@@ -38,8 +39,35 @@ namespace Libc {
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
 }
+
+/*
+ * This is currently not in upstream libdrm (2.4.120) but in internal Mesa
+ * 'i195_drm.h'
+ */
+#ifndef I915_PARAM_PXP_STATUS
+/*
+ * Query the status of PXP support in i915.
+ *
+ * The query can fail in the following scenarios with the listed error codes:
+ *     -ENODEV = PXP support is not available on the GPU device or in the
+ *               kernel due to missing component drivers or kernel configs.
+ *
+ * If the IOCTL is successful, the returned parameter will be set to one of
+ * the following values:
+ *     1 = PXP feature is supported and is ready for use.
+ *     2 = PXP feature is supported but should be ready soon (pending
+ *         initialization of non-i915 system dependencies).
+ *
+ * NOTE: When param is supported (positive return values), user space should
+ *       still refer to the GEM PXP context-creation UAPI header specs to be
+ *       aware of possible failure due to system state machine at the time.
+ */
+#define I915_PARAM_PXP_STATUS 58
+#endif
 
 using Genode::addr_t;
 using Genode::Attached_dataspace;
@@ -47,15 +75,26 @@ using Genode::Constructible;
 
 namespace Drm
 {
+	using namespace Gpu;
+	struct Call;
 	struct Context;
+	struct Buffer;
+
+	using Buffer_id = Genode::Id_space<Buffer>::Id;
+	using Buffer_space = Genode::Id_space<Buffer>;
 }
 
 enum { verbose_ioctl = false };
 
 namespace Utils
 {
-	uint64_t limit_to_48bit(uint64_t addr) {
-		return addr & ((1ULL << 48) - 1); }
+	Gpu::Virtual_address limit_to_48bit(Gpu::Virtual_address addr) {
+		return Gpu::Virtual_address { addr.value & ((1ULL << 48) - 1) }; }
+}
+
+namespace Gpu
+{
+	struct Vram_allocator;
 }
 
 
@@ -149,6 +188,7 @@ static const char *command_name(unsigned long request)
 	case DRM_I915_GET_RESET_STATS:       return "DRM_I915_GET_RESET_STATS";
 	case DRM_I915_GEM_CONTEXT_CREATE:    return "DRM_I915_GEM_CONTEXT_CREATE";
 	case DRM_I915_GEM_CONTEXT_DESTROY:   return "DRM_I915_GEM_CONTEXT_DESTROY";
+	case DRM_I915_GEM_SET_CACHING:       return "DRM_I915_GEM_SET_CACHING";
 	default:
 		return "<unknown driver>";
 	}
@@ -169,112 +209,198 @@ static void dump_ioctl(unsigned long request)
 
 namespace {
 	using Offset = unsigned long;
-
-	struct Gpu_virtual_address {
-		uint64_t addr;
-	};
-
 } /* anonymous namespace */
 
 
-struct Gpu::Buffer
+/*
+ * GPU graphics memory
+ */
+struct Gpu::Vram
 {
-	Gpu::Connection &_gpu;
+	Gpu::Vram_id_space::Element  const _elem;
+	Genode::Dataspace_capability const _cap;
+	Genode::Allocator_avl              _alloc;
 
-	Genode::Id_space<Gpu::Buffer>::Element const _elem;
-
-	Genode::Dataspace_capability           const cap;
-	Genode::size_t                         const size;
-
-	Constructible<Attached_dataspace> buffer_attached { };
-
-	Genode::Dataspace_capability map_cap    { };
-	Offset                       map_offset { 0 };
-
-	struct Tiling
+	Vram(Gpu::Connection    &gpu,
+	     Genode::Allocator  &md_alloc,
+	     Gpu::Vram_id_space &space,
+	     Genode::size_t      size)
+	: _elem(*this, space),
+	  _cap(gpu.alloc_vram(_elem.id(), size)),
+	  _alloc(&md_alloc)
 	{
-		bool     _valid;
-		uint32_t mode;
-		uint32_t stride;
-		uint32_t swizzle;
+		_alloc.add_range(0, Genode::Dataspace_client(_cap).size());
+	}
 
-		Tiling(uint32_t mode, uint32_t stride, uint32_t swizzle)
-		:
-			_valid  { true },
-			mode    { mode },
-			stride  { stride },
-			swizzle { swizzle }
-		{ }
+	struct Allocation
+	{
+		Gpu::Vram_id                 id;
+		Genode::Dataspace_capability cap;
+		Genode::off_t                offset;
+		Genode::size_t               size { 0 };
 
-		Tiling()
-		:
-			_valid { false }, mode { 0 }, stride { 0 }, swizzle { 0 }
-		{ }
-
-		bool valid() const { return _valid; }
+		bool valid() const { return size > 0; }
 	};
 
-	Tiling tiling { };
+	Allocation alloc(Genode::size_t size)
+	{
+		return _alloc.alloc_aligned(size, 12).convert<Allocation>(
+			[&] (void *offset) {
+				return Allocation { _elem.id(), _cap, Genode::off_t(offset), size };
+			},
+			[&] (Genode::Allocator::Alloc_error err) -> Allocation {
+				return Allocation();
+			});
+	}
 
-	Gpu_virtual_address  gpu_vaddr { };
-	Gpu::Sequence_number seqno { };
+	void free(Allocation &allocation) { _alloc.free((void *)allocation.offset); };
+};
 
-	bool                         gpu_vaddr_valid { false };
-	bool                         busy            { false };
 
-	Buffer(Gpu::Connection &gpu,
-	       Genode::size_t   size,
-	       Genode::Id_space<Buffer> &space)
-	:
-		_gpu   { gpu },
-		_elem  { *this, space },
-		cap    { _gpu.alloc_buffer(_elem.id(), size) },
-		size   { Genode::Dataspace_client(cap).size() }
+struct Gpu::Vram_allocator
+{
+	enum { VRAM_BLOCK_SIZE = 16*1024*1024 };
+	Gpu::Connection       &_gpu;
+	Genode::Allocator     &_md_alloc;
+	Gpu::Vram_id_space     _vram_space { };
+
+	Vram_allocator(Gpu::Connection &gpu, Genode::Allocator &md_alloc)
+	: _gpu(gpu), _md_alloc(md_alloc)
 	{ }
 
-	virtual ~Buffer()
+	Vram::Allocation alloc(Genode::size_t size)
 	{
-		_gpu.free_buffer(_elem.id());
+		Vram::Allocation allocation { };
+
+		if (size <= VRAM_BLOCK_SIZE)
+			_vram_space.for_each<Vram>([&] (Vram &vram) {
+				if (allocation.valid()) return;
+				allocation = vram.alloc(size);
+			});
+
+		if (allocation.valid()) return allocation;
+
+		/* alloc more Vram from session */
+		Vram *vram = new (_md_alloc) Vram(_gpu, _md_alloc, _vram_space,
+		                                  size <= VRAM_BLOCK_SIZE ? VRAM_BLOCK_SIZE : size);
+		return vram->alloc(size);
 	}
 
-	bool mmap(Genode::Env &env)
+	void free(Vram::Allocation &allocation)
 	{
-		if (!buffer_attached.constructed())
-			buffer_attached.construct(env.rm(), cap);
+		if (allocation.valid() == false) return;
 
-		return buffer_attached.constructed();
-	}
-
-	addr_t mmap_addr() {
-		return reinterpret_cast<addr_t>(buffer_attached->local_addr<addr_t>());
-	}
-
-	Gpu::Buffer_id id() const
-	{
-		return _elem.id();
+		try {
+			_vram_space.apply<Vram>(allocation.id, [&](Vram &vram) {
+				vram.free(allocation);
+			});
+		} catch (Gpu::Vram_id_space::Unknown_id) {
+			Genode::error(__func__, ": id ", allocation.id, " invalid");
+		}
 	}
 };
 
 
+/*
+ * Buffer object abstraction for Mesa/Iris
+ */
+struct Drm::Buffer
+{
+	Genode::Env &_env;
+	Genode::Id_space<Drm::Buffer>::Element const _elem;
+
+	Vram::Allocation _allocation;
+	Gpu::addr_t _local_addr { 0 };
+
+	/* handle id's have to start at 1 (0) is invalid */
+	static Drm::Buffer_id _new_id()
+	{
+		static unsigned long _id = 0;
+		return Drm::Buffer_id { ++_id };
+	}
+
+	Buffer(Genode::Env              &env,
+	       Genode::Id_space<Buffer> &space,
+	       Vram::Allocation          allocation)
+	:
+		_env { env }, _elem { *this, space, _new_id() }, _allocation { allocation }
+	{ }
+
+	~Buffer()
+	{
+		unmap();
+	}
+
+	bool mmap(Genode::Env &env)
+	{
+		using Region_map = Genode::Region_map;
+
+		if (!_local_addr)
+			env.rm().attach(_allocation.cap, {
+				.size       = _allocation.size,
+				.offset     = Genode::addr_t(_allocation.offset),
+				.use_at     = { },
+				.at         = { },
+				.executable = { },
+				.writeable  = true
+			}).with_result(
+				[&] (Region_map::Range range)  { _local_addr = range.start; },
+				[&] (Region_map::Attach_error) { Genode::error("Drm::Buffer::mmap failed"); }
+			);
+
+		return (_local_addr != 0);
+	}
+
+	void unmap()
+	{
+		if (_local_addr)
+			_env.rm().detach(_local_addr);
+
+		_local_addr = 0;
+	}
+
+	Gpu::addr_t mmap_addr() const { return _local_addr; }
+
+	Vram::Allocation &vram() { return _allocation; }
+
+	Drm::Buffer_id id() const
+	{
+		return Drm::Buffer_id { _elem.id().value };
+	}
+};
+
+
+/*
+ * Used to implement OpenGL contexts. Each context uses a dedictated GPU
+ * session which provides  a separate GPU context (e.g., page tables, exec
+ * lists, ...) within the intel_gpu driver.
+ */
 struct Drm::Context
 {
+	/*
+	 * A context has to make sure a buffer is mapped in it's address space (i.e.,
+	 * it's GPU page tables = PPGTT), a buffer is executed within this GPU
+	 * context.
+	 */
 	struct Buffer
 	{
 		using Id_space = Genode::Id_space<Buffer>;
 		Id_space::Element const elem;
 
-		Gpu_virtual_address  gpu_vaddr { };
+		Vram::Allocation     vram;
+		Gpu::Virtual_address  gpu_vaddr { };
 		Gpu::Sequence_number seqno { };
 		bool                 gpu_vaddr_valid { false };
 		bool                 busy            { false };
 
-		Buffer(Id_space &space, Gpu::Buffer_id id)
-		: elem(*this, space, Id_space::Id { .value = id.value })
+		Buffer(Id_space &space, Id_space::Id id, Vram::Allocation vram)
+		: elem(*this, space, id),
+		  vram(vram)
 		{ }
 
-		Gpu::Buffer_id buffer_id() const
+		Gpu::Vram_id vram_id() const
 		{
-			return Gpu::Buffer_id { .value = elem.id().value };
+			return Gpu::Vram_id { .value = elem.id().value };
 		}
 
 		Id_space::Id id() const
@@ -286,6 +412,7 @@ struct Drm::Context
 	Gpu::Connection   &_gpu;
 	Gpu::Connection   &_gpu_master;
 	Genode::Allocator &_alloc;
+	Drm::Buffer_space &_drm_buffer_space;
 
 	Gpu::Info_intel  const &_gpu_info {
 		*_gpu.attached_info<Gpu::Info_intel>() };
@@ -296,6 +423,15 @@ struct Drm::Context
 	Id_space::Element const _elem;
 
 	Genode::Id_space<Buffer> _buffer_space { };
+
+	struct Vram_map : Genode::Dictionary<Vram_map, unsigned long>::Element
+	{
+		Vram_map(Genode::Dictionary<Vram_map, unsigned long> &dict,
+		         Gpu::Vram_id const &id)
+		: Genode::Dictionary<Vram_map, unsigned long>::Element(dict, id.value) { }
+	};
+
+	Genode::Dictionary<Vram_map, unsigned long> _vram_map { };
 
 	void _wait_for_completion(Gpu::Sequence_number seqno)
 	{
@@ -341,13 +477,16 @@ struct Drm::Context
 		}
 	}
 
-	void _map_buffer_ppgtt(Buffer &buffer, Gpu_virtual_address vaddr)
+	void _map_buffer_gpu(Buffer &buffer, Gpu::Virtual_address vaddr)
 	{
 		Genode::retry<Gpu::Session::Out_of_ram>(
 		[&]() {
 			Genode::retry<Gpu::Session::Out_of_caps>(
 			[&] () {
-				_gpu.map_buffer_ppgtt(buffer.buffer_id(), Utils::limit_to_48bit(vaddr.addr));
+				_gpu.map_gpu(buffer.vram.id,
+				             buffer.vram.size,
+				             buffer.vram.offset,
+				             Utils::limit_to_48bit(vaddr));
 				buffer.gpu_vaddr       = vaddr;
 				buffer.gpu_vaddr_valid = true;
 			},
@@ -360,21 +499,63 @@ struct Drm::Context
 		});
 	}
 
-	void _unmap_buffer_ppgtt(Buffer &buffer)
+	void _unmap_buffer_gpu(Buffer &buffer)
 	{
 		if (!buffer.gpu_vaddr_valid)
 			return;
 
-		_gpu.unmap_buffer_ppgtt(buffer.buffer_id(), buffer.gpu_vaddr.addr);
+		_gpu.unmap_gpu(buffer.vram.id,
+		               buffer.vram.offset,
+		               Utils::limit_to_48bit(buffer.gpu_vaddr));
 		buffer.gpu_vaddr_valid = false;
+	}
+
+	void _import_vram(Gpu::Vram_id id)
+	{
+		if (_vram_map.exists(id.value)) return;
+
+		Gpu::Vram_capability cap = _gpu_master.export_vram(id);
+
+		Genode::retry<Gpu::Session::Out_of_ram>(
+		[&]() {
+			Genode::retry<Gpu::Session::Out_of_caps>(
+			[&] () {
+				_gpu.import_vram(cap, id);
+				new (_alloc) Vram_map(_vram_map, id);
+			},
+			[&] () {
+				_gpu.upgrade_caps(2);
+			});
+		},
+		[&] () {
+			_gpu.upgrade_ram(1024*1024);
+		});
+	}
+
+	void _import_buffer(Buffer::Id_space::Id id, Drm::Buffer &buffer)
+	{
+		/* import Vram if not present in this GPU connection */
+		_import_vram(buffer.vram().id);
+
+		new (_alloc) Buffer(_buffer_space, id, buffer.vram());
 	}
 
 	Context(Gpu::Connection &gpu, Gpu::Connection &gpu_master,
 	        Genode::Allocator &alloc, int fd,
-	        Genode::Id_space<Context> &space)
+	        Genode::Id_space<Context> &space,
+	        Drm::Buffer_space &drm_buffer_space)
 	:
-	  _gpu(gpu), _gpu_master(gpu_master), _alloc(alloc), _fd(fd),
-	  _elem (*this, space) { }
+	  _gpu(gpu), _gpu_master(gpu_master), _alloc(alloc),
+	  _drm_buffer_space(drm_buffer_space), _fd(fd), _elem (*this, space)
+	  { }
+
+	~Context()
+	{
+		while (_vram_map.with_any_element([&] (Vram_map &map) {
+			_gpu.free_vram(Gpu::Vram_id { .value = map.name });;
+			destroy(_alloc, &map);
+		})) { }
+	}
 
 	unsigned long id() const
 	{
@@ -388,52 +569,31 @@ struct Drm::Context
 
 	int fd() const { return _fd; }
 
-	void import_buffer(Gpu::Buffer_capability buffer_cap,
-	                   Gpu::Buffer_id id)
-	{
-		Genode::retry<Gpu::Session::Out_of_ram>(
-		[&]() {
-			Genode::retry<Gpu::Session::Out_of_caps>(
-			[&] () {
-				_gpu.import_buffer(buffer_cap, id);
-				new (_alloc) Buffer(_buffer_space, id);
-			},
-			[&] () {
-				_gpu.upgrade_caps(2);
-			});
-		},
-		[&] () {
-			_gpu.upgrade_ram(1024*1024);
-		});
-	}
-
-	void free_buffer(Gpu::Buffer_id id)
+	void free_buffer(Drm::Buffer_id id)
 	{
 		try {
 			_buffer_space.apply<Buffer>(Buffer::Id_space::Id { .value = id.value },
 			                            [&] (Buffer &buffer) {
+			  _unmap_buffer_gpu(buffer);
 				destroy(_alloc, &buffer);
 			});
 		} catch (Buffer::Id_space::Unknown_id) { return; }
-
-		_gpu.free_buffer(id);
 	}
 
 	void free_buffers()
 	{
 		while (_buffer_space.apply_any<Buffer>([&] (Buffer &buffer) {
-			Gpu::Buffer_id id = buffer.buffer_id();
+			_unmap_buffer_gpu(buffer);
 			destroy(_alloc, &buffer);
-			_gpu.free_buffer(id);
 		})) { }
 	}
 
-	void unmap_buffer_ppgtt(Gpu::Buffer_id id)
+	void unmap_buffer_gpu(Drm::Buffer_id id)
 	{
 		try {
 			_buffer_space.apply<Buffer>(Buffer::Id_space::Id { .value = id.value },
 			                            [&] (Buffer &buffer) {
-				_unmap_buffer_ppgtt(buffer);
+				_unmap_buffer_gpu(buffer);
 			});
 		} catch (Buffer::Id_space::Unknown_id) { }
 	}
@@ -468,12 +628,12 @@ struct Drm::Context
 					if (b.busy)
 						Genode::warning("handle: ", obj[i].handle, " reused but is busy");
 
-					if (b.gpu_vaddr_valid && b.gpu_vaddr.addr != obj[i].offset) {
-						_unmap_buffer_ppgtt(b);
+					if (b.gpu_vaddr_valid && b.gpu_vaddr.value != obj[i].offset) {
+						_unmap_buffer_gpu(b);
 					}
 
 					if (!b.gpu_vaddr_valid)
-						_map_buffer_ppgtt(b, Gpu_virtual_address { .addr = obj[i].offset });
+						_map_buffer_gpu(b, Gpu::Virtual_address { .value = obj[i].offset });
 
 					if (!b.gpu_vaddr_valid) {
 						Genode::error("handle: ", obj[i].handle,
@@ -489,9 +649,10 @@ struct Drm::Context
 					ret = 0;
 				});
 			} catch (Buffer::Id_space::Unknown_id) {
-					Gpu::Buffer_id buffer_id { .value = id.value };
-					Gpu::Buffer_capability buffer_cap = _gpu_master.export_buffer(buffer_id);
-					import_buffer(buffer_cap, buffer_id);
+					Drm::Buffer_id drm_id { .value = id.value };
+					_drm_buffer_space.apply<Drm::Buffer>(drm_id, [&](Drm::Buffer &buffer) {
+						_import_buffer(id, buffer);
+					});
 					i--;
 					continue;
 			}
@@ -505,8 +666,8 @@ struct Drm::Context
 		if (!command_buffer)
 			return -1;
 
-		command_buffer->seqno = _gpu.exec_buffer(command_buffer->buffer_id(),
-		                                         batch_length);
+		command_buffer->seqno = _gpu.execute(command_buffer->vram.id,
+		                                     command_buffer->vram.offset);
 
 		for (uint64_t i = 0; i < count; i++) {
 			Buffer::Id_space::Id const id { .value = obj[i].handle };
@@ -526,7 +687,7 @@ struct Drm::Context
 };
 
 
-class Drm_call
+class Drm::Call
 {
 	private:
 
@@ -539,16 +700,16 @@ class Drm_call
 
 		Gpu::Info_intel  const &_gpu_info {
 			*_gpu_session.attached_info<Gpu::Info_intel>() };
-		size_t            _available_gtt_size { _gpu_info.aperture_size };
 
-		using Buffer       = Gpu::Buffer;
-		using Buffer_space = Genode::Id_space<Buffer>;
+		size_t _available_gtt_size { _gpu_info.aperture_size };
+
+		Vram_allocator _vram_allocator { _gpu_session, _heap };
+
 		Buffer_space _buffer_space { };
 
 		using Context_id    = Genode::Id_space<Drm::Context>::Id;
 		using Context_space = Genode::Id_space<Drm::Context>;
 		Context_space _context_space { };
-
 
 		template <typename FN> void _gpu_op( FN const &fn)
 		{
@@ -582,81 +743,33 @@ class Drm_call
 
 		Genode::Id_space<Sync_obj> _sync_objects { };
 
-		Offset _map_buffer(Buffer &b)
-		{
-			Offset offset = 0;
-
-			if (b.map_cap.valid()) {
-				offset = b.map_offset;
-				return offset;
-			}
-
-			_gpu_op([&] () {
-				b.map_cap = _gpu_session.map_buffer(b.id(), true, Gpu::Mapping_attributes::rw());
-			});
-
-			// XXX attach might faile
-			b.map_offset = static_cast<Offset>(_env.rm().attach(b.map_cap));
-			offset       = b.map_offset;
-
-			_available_gtt_size -= b.size;
-
-			return offset;
-		}
-
-		Offset _map_buffer(Gpu::Buffer_id const id)
-		{
-			Offset offset = 0;
-			try {
-				_buffer_space.apply<Buffer>(id, [&] (Buffer &b) {
-					offset = _map_buffer(b);
-				});
-			} catch (Genode::Id_space<Buffer>::Unknown_id) {
-				Genode::error(__func__, ": invalid handle ", id.value);
-				Genode::sleep_forever();
-			}
-			return offset;
-		}
-
-		void _unmap_buffer(Buffer &buffer)
-		{
-			if (!buffer.map_cap.valid())
-				return;
-
-			_env.rm().detach(buffer.map_offset);
-			buffer.map_offset = 0;
-
-			_gpu_session.unmap_buffer(buffer.id());
-
-			buffer.map_cap = Genode::Dataspace_capability();
-
-			_available_gtt_size += buffer.size;
-		}
-
 		template <typename FUNC>
 		void _alloc_buffer(uint64_t const size, FUNC const &fn)
 		{
 			Buffer *buffer  { nullptr };
 
 			_gpu_op([&] () {
-				buffer = new (_heap) Buffer(_gpu_session, Genode::align_addr(size, 12),
-				                            _buffer_space);
+				Vram::Allocation vram = _vram_allocator.alloc(Genode::align_addr(size, 12));
+				if (vram.valid() == false) {
+					Genode::error("VRAM allocation of size ", size/1024, "KB failed");
+					return;
+				}
+				buffer = new (_heap) Buffer(_env, _buffer_space, vram);
 			});
 
 			if (buffer)
 				fn(*buffer);
 		}
 
-		int _free_buffer(Gpu::Buffer_id const id)
+		int _free_buffer(Drm::Buffer_id const id)
 		{
 			try {
 				_buffer_space.apply<Buffer>(id, [&] (Buffer &b) {
 
-					/* callee checks for mappings */
-					_unmap_buffer(b);
-
 					_context_space.for_each<Drm::Context>([&] (Drm::Context &context) {
 						context.free_buffer(b.id()); });
+
+					_vram_allocator.free(b.vram());
 					Genode::destroy(&_heap, &b);
 				});
 
@@ -682,6 +795,7 @@ class Drm_call
 
 		int _device_gem_create(void *arg)
 		{
+
 			auto const p = reinterpret_cast<drm_i915_gem_create*>(arg);
 
 			uint64_t const size = (p->size + 0xfff) & ~0xfff;
@@ -702,8 +816,9 @@ class Drm_call
 
 		int _device_gem_mmap(void *arg)
 		{
+
 			auto      const p      = reinterpret_cast<drm_i915_gem_mmap *>(arg);
-			Gpu::Buffer_id const id { .value = p->handle };
+			Drm::Buffer_id const id { .value = p->handle };
 
 			bool map_failed { true };
 
@@ -751,7 +866,7 @@ class Drm_call
 		{
 			/* XXX check read_domains/write_domain */
 			auto      const p  = reinterpret_cast<drm_i915_gem_set_domain*>(arg);
-			Gpu::Buffer_id const id { .value = p->handle };
+			Gpu::Vram_id const id { .value = p->handle };
 			uint32_t  const rd = p->read_domains;
 			uint32_t  const wd = p->write_domain;
 
@@ -793,9 +908,10 @@ class Drm_call
 				*value = _gpu_info.revision.value;
 				return 0;
 			case I915_PARAM_CS_TIMESTAMP_FREQUENCY:
-				if (verbose_ioctl)
+				*value = _gpu_info.clock_frequency.value;
+				if (verbose_ioctl && *value == 0)
 					Genode::error("I915_PARAM_CS_TIMESTAMP_FREQUENCY not supported");
-				return -1;
+				return *value ? 0 : -1;
 			case I915_PARAM_SLICE_MASK:
 				*value = _gpu_info.slice_mask.value;
 				return 0;
@@ -813,6 +929,18 @@ class Drm_call
 				if (verbose_ioctl)
 					Genode::warning("I915_PARAM_MMAP_GTT_VERSION ", *value);
 				return 0;
+			/* validates user pointer and size */
+			case I915_PARAM_HAS_USERPTR_PROBE:
+				*value = 0;
+				return 0;
+			/*
+			 * Protected Xe Path (PXP) hardware/ME feature (encrypted video memory, TEE,
+			 * ...)
+			 */
+			case I915_PARAM_PXP_STATUS:
+				*value = 0;
+				errno = ENODEV;
+				return -1;
 			default:
 				Genode::error("Unhandled device param:", Genode::Hex(param));
 				return -1;
@@ -823,6 +951,7 @@ class Drm_call
 
 		int _device_gem_context_create(void *arg)
 		{
+
 			drm_i915_gem_context_create * const p = reinterpret_cast<drm_i915_gem_context_create*>(arg);
 
 			int fd = Libc::open("/dev/gpu", 0);
@@ -847,7 +976,7 @@ class Drm_call
 			}
 
 			Drm::Context *context = new (_heap) Drm::Context(*gpu, _gpu_session, _heap,
-			                                                 fd, _context_space);
+			                                                 fd, _context_space, _buffer_space);
 
 			p->ctx_id = context->id();
 
@@ -856,14 +985,17 @@ class Drm_call
 
 		int _device_gem_context_destroy(void *arg)
 		{
+
 			unsigned long ctx_id = reinterpret_cast<drm_i915_gem_context_destroy *>(arg)->ctx_id;
 			Context_id const id  = Drm::Context::id(ctx_id);
 
 			try {
 				_context_space.apply<Drm::Context>(id, [&] (Drm::Context &context) {
 					context.free_buffers();
-					Libc::close(context.fd());
+					/* GPU session fd */
+					int fd = context.fd();
 					destroy(_heap, &context);
+					Libc::close(fd);
 				});
 			} catch (Drm::Context::Id_space::Unknown_id) { }
 
@@ -880,6 +1012,18 @@ class Drm_call
 				return 0;
 			case I915_CONTEXT_PARAM_RECOVERABLE:
 				return 0;
+			/*
+			 * The id of the associated virtual memory address space (ppGTT) of
+			 * this context. Can be retrieved and passed to another context
+			 * (on the same fd) for both to use the same ppGTT and so share
+			 * address layouts, and avoid reloading the page tables on context
+			 * switches between themselves.
+			 *
+			 * This is currently not supported.
+			 */
+			case I915_CONTEXT_PARAM_VM:
+				return 0;
+
 			default:
 				Genode::error(__func__, " unknown param=", p->param);
 				return -1;
@@ -893,6 +1037,16 @@ class Drm_call
 			switch (p->param) {
 			case I915_CONTEXT_PARAM_SSEU:
 				return 0;
+
+			/* addressable VM area (PPGTT 48Bit - one page) for GEN8+ */
+			case I915_CONTEXT_PARAM_GTT_SIZE:
+				p->value = (1ull << 48) - 0x1000;
+				return 0;
+
+			/* global VM used for sharing BOs between contexts -> not supported so far */
+			case I915_CONTEXT_PARAM_VM:
+				return 0;
+
 			default:
 				Genode::error(__func__, " ctx=", p->ctx_id, " param=", p->param, " size=", p->size, " value=", Genode::Hex(p->value));
 				return -1;
@@ -901,33 +1055,22 @@ class Drm_call
 
 		int _device_gem_set_tiling(void *arg)
 		{
-			auto      const p  = reinterpret_cast<drm_i915_gem_set_tiling*>(arg);
-			Gpu::Buffer_id const id { .value = p->handle };
-			uint32_t  const mode    = p->tiling_mode;
-			uint32_t  const stride  = p->stride;
-			uint32_t  const swizzle = p->swizzle_mode;
+			/*
+			 * Tiling is only relevant in case something is mapped through the
+			 * aperture. Iris sets tiling but never seems to establish mappings
+			 * through the GTT, i.e., _device_gem_mmap_gtt which displays a "not
+			 * implemented error"). In case this function is called again, tiling
+			 * becomes also relevant.
+			 */
+			auto const p = reinterpret_cast<drm_i915_gem_set_tiling*>(arg);
+			uint32_t const mode = p->tiling_mode;
 
-			if (verbose_ioctl) {
-				Genode::error(__func__, ": ",
-				              "handle: ", id.value, " "
-				              "mode: ", mode, " "
-				              "stride: ", stride , " "
-				              "swizzle: ", swizzle);
+			if (mode != I915_TILING_NONE) {
+				if (verbose_ioctl) Genode::warning(__func__, " mode != I915_TILING_NONE (", mode, ") unsupported");
+				return 0;
 			}
 
-			bool ok = false;
-			try {
-				_buffer_space.apply<Buffer>(id, [&] (Buffer &b) {
-
-					b.tiling = Gpu::Buffer::Tiling(mode, stride, swizzle);
-					ok = true;
-
-				});
-			} catch (Genode::Id_space<Buffer>::Unknown_id) {
-				Genode::error(__func__, ": invalid handle: ", id.value);
-			}
-
-			return ok ? 0 : -1;
+			return 0;
 		}
 
 		int _device_gem_sw_finish(void *)
@@ -965,28 +1108,9 @@ class Drm_call
 				return -1;
 			}
 
-			if (p->flags & I915_EXEC_FENCE_ARRAY) {
-				bool unsupported = false;
-
-				for (unsigned i = 0; i < p->num_cliprects; i++) {
-					auto &fence = reinterpret_cast<drm_i915_gem_exec_fence *>(p->cliprects_ptr)[i];
-
-					Sync_obj::Id const id { .value = fence.handle };
-					_sync_objects.apply<Sync_obj>(id, [&](Sync_obj &) {
-						/**
-						 * skipping signal fences should be save as long as
-						 * no one tries to wait for ...
-						 * - fence.flags & I915_EXEC_FENCE_SIGNAL
-						 */
-						if (fence.flags & I915_EXEC_FENCE_WAIT)
-							unsupported = true;
-					});
-				}
-
-				if (unsupported) {
-					Genode::error("fence wait not supported");
-					return -1;
-				}
+			if (verbose_ioctl && p->flags & I915_EXEC_FENCE_ARRAY) {
+				Genode::warning("unsupported: Fence array with Sync-objects with "
+				                "FENCE_WAIT/SIGNAL");
 			}
 
 			auto const obj =
@@ -995,17 +1119,16 @@ class Drm_call
 			return _context_space.apply<Drm::Context>(Drm::Context::id(ctx_id),
 			                                          [&] (Drm::Context &context) {
 				return context.exec_buffer(obj, p->buffer_count, bb_id, p->batch_len); });
-
 		}
 
 		int _device_gem_busy(void *arg)
 		{
 			auto      const p  = reinterpret_cast<drm_i915_gem_busy*>(arg);
-			Gpu::Buffer_id const id { .value = p->handle };
+			Drm::Buffer_id const id { .value = p->handle };
 
 			try {
 				_buffer_space.apply<Buffer>(id, [&](Buffer const &b) {
-					p->busy = b.busy;
+					p->busy = false;
 				});
 				return 0;
 			} catch (Genode::Id_space<Buffer>::Unknown_id) {
@@ -1023,15 +1146,61 @@ class Drm_call
 			return 0;
 		}
 
+
+		int _device_create_topology(void *arg)
+		{
+			auto topo = reinterpret_cast<drm_i915_query_topology_info *>(arg);
+
+			Gpu::Info_intel::Topology const &info = _gpu_info.topology;
+
+			size_t slice_length = sizeof(info.slice_mask);
+			size_t subslice_length = info.max_slices * info.ss_stride;
+			size_t eu_length = info.max_slices * info.max_subslices * info.eu_stride;
+
+			Genode::memset(topo, 0, sizeof(*topo));
+			topo->max_slices = info.max_slices;
+			topo->max_subslices = info.max_subslices;
+			topo->max_eus_per_subslice = info.max_eus_per_subslice;
+			topo->subslice_offset = slice_length;
+			topo->subslice_stride = info.ss_stride;
+			topo->eu_offset = slice_length + subslice_length;
+			topo->eu_stride = info.eu_stride;
+
+			Genode::memcpy(topo->data, &info.slice_mask, slice_length);
+			Genode::memcpy(topo->data + slice_length, info.subslice_mask,
+			               subslice_length);
+			Genode::memcpy(topo->data + slice_length + subslice_length,
+			               info.eu_mask, eu_length);
+
+			return 0;
+		}
+
 		int _device_query(void *arg)
 		{
 			auto const query = reinterpret_cast<drm_i915_query*>(arg);
 
-			if (verbose_ioctl)
-				Genode::error("device specific iocall DRM_I915_QUERY not supported"
-				              " - num_items=", query->num_items);
+			if (query->num_items != 1) {
+				if (verbose_ioctl)
+					Genode::error("device specific iocall DRM_I915_QUERY for num_items != 1 not supported"
+					              " - num_items=", query->num_items);
+				return -1;
+			}
 
-			return -1;
+			auto const item = reinterpret_cast<drm_i915_query_item *>(query->items_ptr);
+
+			if (item->query_id != DRM_I915_QUERY_TOPOLOGY_INFO || _gpu_info.topology.valid == false) {
+				if (verbose_ioctl)
+					Genode::error("device specific iocall DRM_I915_QUERY not supported for "
+					              " - query_id: ", Genode::Hex(item->query_id));
+				return -1;
+			}
+
+			if (!item->data_ptr) {
+				item->length = 1;
+				return 0;
+			}
+
+			return _device_create_topology((void *)item->data_ptr);
 		}
 
 		int _device_ioctl(unsigned cmd, void *arg)
@@ -1059,6 +1228,7 @@ class Drm_call
 			case DRM_I915_QUERY:                return _device_query(arg);
 			case DRM_I915_GEM_CONTEXT_SETPARAM: return _device_gem_context_set_param(arg);
 			case DRM_I915_GEM_CONTEXT_GETPARAM: return _device_gem_context_get_param(arg);
+			case DRM_I915_GEM_SET_CACHING:      return 0;
 			default:
 				if (verbose_ioctl)
 					Genode::error("Unhandled device specific ioctl:", Genode::Hex(cmd));
@@ -1070,8 +1240,9 @@ class Drm_call
 
 		int _generic_gem_close(void *arg)
 		{
+
 			auto      const p  = reinterpret_cast<drm_gem_close*>(arg);
-			Gpu::Buffer_id const id { .value = p->handle };
+			Drm::Buffer_id const id { .value = p->handle };
 			return _free_buffer(id);
 		}
 
@@ -1105,32 +1276,21 @@ class Drm_call
 				              " tiemout_nsec=", p.timeout_nsec,
 				              " flags=", p.flags);
 
-			if (p.count_handles > 1) {
-				Genode::error(__func__, " count handles > 1 - not supported");
-				return -1;
-			}
-
 			uint32_t * handles = reinterpret_cast<uint32_t *>(p.handles);
-			bool ok = false;
-
 			try {
-				Sync_obj::Id const id { .value = handles[0] };
-				_sync_objects.apply<Sync_obj>(id, [&](Sync_obj &) {
-					ok = true;
-				});
+				for (uint32_t i = 0; i < p.count_handles; i++) {
+					Sync_obj::Id const id { .value = handles[i] };
+					/* just make sure id's are valid */
+					_sync_objects.apply<Sync_obj>(id, [](Sync_obj &) {});
+				}
 			} catch (Sync_obj::Sync::Unknown_id) {
 				errno = EINVAL;
 				return -1;
 			}
 
-			if (ok) {
-				errno = 62 /* ETIME */;
-				return -1;
-			} else
-				Genode::error("unknown sync object handle ", handles[0]);
-
-			return -1;
+			return 0;
 		}
+
 		int _generic_syncobj_destroy(void *arg)
 		{
 			auto * const p = reinterpret_cast<drm_syncobj_destroy *>(arg);
@@ -1172,7 +1332,7 @@ class Drm_call
 		}
 
 		int       const prime_fd     { 44 };
-		Gpu::Buffer_id  prime_handle { };
+		Drm::Buffer_id  prime_handle { };
 
 		int _generic_prime_fd_to_handle(void *arg)
 		{
@@ -1189,7 +1349,7 @@ class Drm_call
 		{
 			auto const p = reinterpret_cast<drm_prime_handle *>(arg);
 
-			Gpu::Buffer_id const id { .value = p->handle };
+			Drm::Buffer_id const id { .value = p->handle };
 			try {
 				_buffer_space.apply<Buffer>(id, [&](Buffer const &) {
 
@@ -1205,8 +1365,32 @@ class Drm_call
 			 } catch (Genode::Id_space<Buffer>::Unknown_id) {
 				return -1;
 			}
-
 			p->fd = prime_fd;
+			return 0;
+		}
+
+
+		/*
+		 * This is used to distinguish between the "i915" and the "xe" kernel
+		 * drivers. Genode's driver is "i915" for now.
+		 */
+		int _generic_version(void *arg)
+		{
+			auto *version = reinterpret_cast<drm_version_t *>(arg);
+
+			char const *driver = "i915";
+
+			version->name_len = 5;
+			if (version->name)
+					Genode::copy_cstring(version->name, driver, 5);
+
+			/*
+			 * dummy alloc remaining member, since they are de-allocated using 'free'
+			 * in xf86drm.c
+			 */
+			if (!version->date) version->date = (char *)Libc::malloc(1);
+			if (!version->desc) version->desc = (char *)Libc::malloc(1);
+
 			return 0;
 		}
 
@@ -1218,13 +1402,14 @@ class Drm_call
 			}
 
 			switch (cmd) {
-			case DRM_NUMBER(DRM_IOCTL_GEM_CLOSE): return _generic_gem_close(arg);
-			case DRM_NUMBER(DRM_IOCTL_GEM_FLINK): return _generic_gem_flink(arg);
-			case DRM_NUMBER(DRM_IOCTL_SYNCOBJ_CREATE): return _generic_syncobj_create(arg);
-			case DRM_NUMBER(DRM_IOCTL_SYNCOBJ_WAIT): return _generic_syncobj_wait(arg);
+			case DRM_NUMBER(DRM_IOCTL_GEM_CLOSE):       return _generic_gem_close(arg);
+			case DRM_NUMBER(DRM_IOCTL_GEM_FLINK):       return _generic_gem_flink(arg);
+			case DRM_NUMBER(DRM_IOCTL_GEM_OPEN):        return _generic_gem_open(arg);
+			case DRM_NUMBER(DRM_IOCTL_GET_CAP):         return _generic_get_cap(arg);
+			case DRM_NUMBER(DRM_IOCTL_SYNCOBJ_CREATE):  return _generic_syncobj_create(arg);
 			case DRM_NUMBER(DRM_IOCTL_SYNCOBJ_DESTROY): return _generic_syncobj_destroy(arg);
-			case DRM_NUMBER(DRM_IOCTL_GEM_OPEN): return _generic_gem_open(arg);
-			case DRM_NUMBER(DRM_IOCTL_GET_CAP): return _generic_get_cap(arg);
+			case DRM_NUMBER(DRM_IOCTL_SYNCOBJ_WAIT):    return _generic_syncobj_wait(arg);
+			case DRM_NUMBER(DRM_IOCTL_VERSION):         return _generic_version(arg);
 			case DRM_NUMBER(DRM_IOCTL_PRIME_FD_TO_HANDLE):
 				return _generic_prime_fd_to_handle(arg);
 			case DRM_NUMBER(DRM_IOCTL_PRIME_HANDLE_TO_FD):
@@ -1239,7 +1424,7 @@ class Drm_call
 
 	public:
 
-		Drm_call()
+		Call()
 		{
 			/* make handle id 0 unavailable, handled as invalid by iris */
 			drm_syncobj_create reserve_id_0 { };
@@ -1247,7 +1432,7 @@ class Drm_call
 				Genode::warning("syncobject 0 not reserved");
 		}
 
-		~Drm_call()
+		~Call()
 		{
 			while(_buffer_space.apply_any<Buffer>([&] (Buffer &buffer) {
 				_free_buffer(buffer.id());
@@ -1262,14 +1447,32 @@ class Drm_call
 				destroy(_heap, &obj); }));
 		}
 
+		struct Mutex_guard
+		{
+			pthread_mutex_t &mutex;
+
+			Mutex_guard(pthread_mutex_t &mutex) : mutex(mutex)
+			{
+				Libc::pthread_mutex_lock(&mutex);
+			}
+
+			~Mutex_guard()
+			{
+				Libc::pthread_mutex_unlock(&mutex);
+			}
+		};
+
+		pthread_mutex_t _drm_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
 		int lseek(int fd, off_t offset, int whence)
 		{
 			if (fd != prime_fd || offset || whence != SEEK_END)
 				return -1;
 
 			int size = -1;
-			_buffer_space.apply<Buffer>(prime_handle, [&](Buffer const &b) {
-				size =(int)b.size;
+			_buffer_space.apply<Buffer>(prime_handle, [&](Buffer &b) {
+				size =(int)b.vram().size;
 			});
 
 			return size;
@@ -1277,25 +1480,24 @@ class Drm_call
 
 		void unmap_buffer(void *addr, size_t length)
 		{
+			Mutex_guard guard { _drm_mutex };
+
 			bool found = false;
 
 			_buffer_space.for_each<Buffer>([&] (Buffer &b) {
-				if (found || !b.buffer_attached.constructed())
+				if (found)
 					return;
 
 				if (reinterpret_cast<void *>(b.mmap_addr()) != addr)
 					return;
 
-				if (b.buffer_attached->size() != length) {
+				if (b.vram().size != length) {
 					Genode::warning(__func__, " size mismatch");
 					Genode::sleep_forever();
 					return;
 				}
 
-				if (b.map_cap.valid())
-					_unmap_buffer(b);
-
-				b.buffer_attached.destruct();
+				b.unmap();
 				found = true;
 			});
 
@@ -1308,22 +1510,38 @@ class Drm_call
 
 		void unmap_buffer_ppgtt(__u32 handle)
 		{
-			Gpu::Buffer_id const id = { .value = handle };
+			Mutex_guard guard { _drm_mutex };
+
+			Drm::Buffer_id const id = { .value = handle };
 			_context_space.for_each<Drm::Context>([&](Drm::Context &context) {
-				context.unmap_buffer_ppgtt(id);
+				context.unmap_buffer_gpu(id);
 			});
 		}
 
 		int ioctl(unsigned long request, void *arg)
 		{
+			Mutex_guard guard { _drm_mutex };
+
 			bool const device = device_ioctl(request);
 			return device ? _device_ioctl(device_number(request), arg)
 			              : _generic_ioctl(command_number(request), arg);
 		}
+
+		/*
+		 * Mesa 24+ way to retrieve device information (incomplete, expand as
+		 * needed). Before it was done via '_device_getparam'
+		 */
+		int drm_pci_device(drmDevicePtr device)
+		{
+			device->deviceinfo.pci->device_id   = _gpu_info.chip_id;
+			device->deviceinfo.pci->revision_id = _gpu_info.revision.value;
+
+			return 0;
+		}
 };
 
 
-static Genode::Constructible<Drm_call> _call;
+static Genode::Constructible<Drm::Call> _call;
 
 
 void drm_init()
@@ -1385,6 +1603,21 @@ extern "C" int genode_ioctl(int /* fd */, unsigned long request, void *arg)
 	if (verbose_ioctl) { dump_ioctl(request); }
 
 	int const ret = _call->ioctl(request, arg);
-	if (verbose_ioctl) { Genode::log("returned ", ret); }
+	if (verbose_ioctl) { Genode::log("returned ", ret, " from ", __builtin_return_address(0)); }
 	return ret;
+}
+
+
+extern "C"  int genode_drmGetPciDevice(int fd, uint32_t flags, drmDevicePtr device)
+{
+	if (_call.constructed() == false) { errno = EIO; return -1; }
+
+	enum { IRIS_FD = 10043 };
+
+	if (fd != IRIS_FD) {
+		Genode::error(__func__, " fd is not Genode Iris (", unsigned(IRIS_FD), ")");
+		return -ENODEV;
+	}
+
+	return _call->drm_pci_device(device);
 }

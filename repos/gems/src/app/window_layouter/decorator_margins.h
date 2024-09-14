@@ -37,8 +37,11 @@ struct Window_layouter::Decorator_margins
 	 */
 	Rect inner_geometry(Rect outer) const
 	{
-		return Rect(outer.p1() + Point(left,  top),
-		            outer.p2() - Point(right, bottom));
+		/* enforce assumption that outer must be larger than the decorations */
+		outer = Rect::compound(outer, { outer.p1(), Area { left + right + 1,
+		                                                   top + bottom + 1 } });
+		return Rect::compound(outer.p1() + Point(left,  top),
+		                      outer.p2() - Point(right, bottom));
 	}
 
 	/**
@@ -46,8 +49,8 @@ struct Window_layouter::Decorator_margins
 	 */
 	Rect outer_geometry(Rect inner) const
 	{
-		return Rect(inner.p1() - Point(left,  top),
-		            inner.p2() + Point(right, bottom));
+		return Rect::compound(inner.p1() - Point(left,  top),
+		                      inner.p2() + Point(right, bottom));
 	}
 };
 

@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2014-2019 Genode Labs GmbH
+ * Copyright (C) 2014-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -25,13 +25,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-/* libc plugin interface */
-#include <libc-plugin/plugin.h>
-#include <libc-plugin/fd_alloc.h>
-
 /* libc-internal includes */
+#include <internal/plugin.h>
+#include <internal/fd_alloc.h>
 #include <internal/errno.h>
-
 
 namespace Libc { class Vfs_plugin; }
 
@@ -84,14 +81,47 @@ class Libc::Vfs_plugin final : public Plugin
 			  reference_handle(reference_handle) { }
 		};
 
-		Genode::Allocator               &_alloc;
-		Vfs::File_system                &_root_fs;
-		Constructible<Genode::Directory> _root_dir { };
-		Vfs::Io_response_handler        &_response_handler;
-		Update_mtime               const _update_mtime;
-		Current_real_time               &_current_real_time;
-		bool                       const _pipe_configured;
-		Registry<Mmap_entry>             _mmap_registry;
+		Genode::Allocator                &_alloc;
+		Vfs::File_system                 &_root_fs;
+		Constructible<Genode::Directory>  _root_dir { };
+		Vfs::Read_ready_response_handler &_response_handler;
+		Update_mtime                const _update_mtime;
+		Current_real_time                &_current_real_time;
+		bool                        const _pipe_configured;
+		Registry<Mmap_entry>              _mmap_registry;
+
+		/*
+		 * Cache the latest info file to accomodate highly frequent 'ioctl'
+		 * calls as observed by the OSS plugin.
+		 */
+		struct Cached_ioctl_info : Noncopyable
+		{
+			Vfs_plugin                  &_vfs_plugin;
+			Constructible<Readonly_file> _file { };
+			Absolute_path                _path { };
+
+			template <typename FN>
+			void with_file(Absolute_path const &path, FN const &fn)
+			{
+				if (!_vfs_plugin._root_dir.constructed()) {
+					warning("Vfs_plugin::_root_dir unexpectedly not constructed");
+					return;
+				}
+
+				Directory &root_dir = *_vfs_plugin._root_dir;
+
+				if (path != _path && root_dir.file_exists(path.string())) {
+					_file.construct(root_dir, path);
+					_path = path;
+				}
+
+				if (path == _path && _file.constructed())
+					fn(*_file);
+			}
+
+			Cached_ioctl_info(Vfs_plugin &vfs_plugin) : _vfs_plugin(vfs_plugin) { }
+
+		} _cached_ioctl_info { *this };
 
 		/**
 		 * Sync a handle
@@ -102,8 +132,6 @@ class Libc::Vfs_plugin final : public Plugin
 		 * Update modification time
 		 */
 		void _vfs_write_mtime(Vfs::Vfs_handle&);
-
-		int _legacy_ioctl(File_descriptor *, unsigned long, char *);
 
 		struct Ioctl_result
 		{
@@ -152,16 +180,16 @@ class Libc::Vfs_plugin final : public Plugin
 
 	public:
 
-		Vfs_plugin(Libc::Env                &env,
-		           Vfs::Env                 &vfs_env,
-		           Genode::Allocator        &alloc,
-		           Vfs::Io_response_handler &handler,
-		           Update_mtime              update_mtime,
-		           Current_real_time        &current_real_time,
-		           Xml_node                  config)
+		Vfs_plugin(Libc::Env                        &env,
+		           Vfs::Env                         &vfs_env,
+		           Genode::Allocator                &alloc,
+		           Vfs::Read_ready_response_handler &handler,
+		           Update_mtime                     update_mtime,
+		           Current_real_time               &current_real_time,
+		           Xml_node                         config)
 		:
 			_alloc(alloc),
-			_root_fs(env.vfs()),
+			_root_fs(env.vfs_env().root_dir()),
 			_response_handler(handler),
 			_update_mtime(update_mtime),
 			_current_real_time(current_real_time),
@@ -195,10 +223,6 @@ class Libc::Vfs_plugin final : public Plugin
 		bool supports_unlink(const char *)                     override { return true; }
 		bool supports_mmap()                                   override { return true; }
 
-		bool supports_select(int nfds,
-		                     fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-		                     struct timeval *timeout) override;
-
 		/* kernel-specific API without monitor */
 		File_descriptor *open_from_kernel(const char *, int, int libc_fd);
 		int close_from_kernel(File_descriptor *);
@@ -220,7 +244,7 @@ class Libc::Vfs_plugin final : public Plugin
 		int     mkdir(const char *, mode_t) override;
 		File_descriptor *open(const char *path, int flags) override;
 		int     pipe(File_descriptor *pipefdo[2]) override;
-		bool    poll(File_descriptor &fdo, struct pollfd &pfd) override;
+		int     poll(Pollfd fds[], int nfds) override;
 		ssize_t read(File_descriptor *, void *, ::size_t) override;
 		ssize_t readlink(const char *, char *, ::size_t) override;
 		int     rename(const char *, const char *) override;
@@ -231,7 +255,6 @@ class Libc::Vfs_plugin final : public Plugin
 		ssize_t write(File_descriptor *, const void *, ::size_t ) override;
 		void   *mmap(void *, ::size_t, int, int, File_descriptor *, ::off_t) override;
 		int     munmap(void *, ::size_t) override;
-		int     select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout) override;
 };
 
 #endif /* _LIBC__INTERNAL__VFS_PLUGIN_H_ */

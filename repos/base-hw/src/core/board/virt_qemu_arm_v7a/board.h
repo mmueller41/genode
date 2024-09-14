@@ -14,19 +14,13 @@
 #ifndef _SRC__CORE__SPEC__VIRT__QEMU_H_
 #define _SRC__CORE__SPEC__VIRT__QEMU_H_
 
-/* base-hw internal includes */
+/* base-hw core includes */
 #include <hw/spec/arm/virt_qemu_board.h>
-
-/* base-hw Core includes */
 #include <spec/arm/virtualization/gicv2.h>
 #include <spec/arm/generic_timer.h>
-
-/* base-hw includes */
-#include <spec/arm/cpu/vm_state_virtualization.h>
-
-/* base-hw Core includes */
 #include <spec/arm/virtualization/board.h>
-#include <spec/cortex_a15/cpu.h>
+#include <spec/arm/cortex_a15_cpu.h>
+#include <spec/arm/cpu/vcpu_state_virtualization.h>
 
 namespace Kernel { class Cpu; }
 
@@ -40,8 +34,10 @@ namespace Board {
 		TIMER_IRQ           = 30 /* PPI IRQ 14 */,
 		VT_TIMER_IRQ        = 27,
 		VT_MAINTAINANCE_IRQ = 25,
-		VCPU_MAX            = 16
+		VCPU_MAX            = 16,
 	};
+
+	static constexpr Genode::size_t NR_OF_CPUS = 2;
 };
 
 #endif /* _SRC__CORE__SPEC__VIRT__QEMU_H_ */

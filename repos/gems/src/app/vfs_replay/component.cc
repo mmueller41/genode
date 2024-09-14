@@ -35,10 +35,10 @@ class Vfs_replay
 		Vfs_replay(const Vfs_replay&) = delete;
 		Vfs_replay& operator=(const Vfs_replay&) = delete;
 
-
 		Env &_env;
 
 		Vfs::File_system &_vfs;
+		Vfs::Env::Io     &_io;
 		Vfs::Vfs_handle  *_vfs_handle;
 
 		Attached_ram_dataspace _write_buffer;
@@ -97,11 +97,11 @@ class Vfs_replay
 			Type        type;
 			State       state;
 			file_offset offset;
-			file_size   count;
-			file_size   out_count;
+			size_t      count;
+			size_t      out_count;
 
 			file_offset current_offset;
-			file_size   current_count;
+			size_t      current_count;
 
 			bool        success;
 			bool        complete;
@@ -174,16 +174,16 @@ class Vfs_replay
 				using Result = Vfs::File_io_service::Read_result;
 
 				bool completed = false;
-				file_size out = 0;
+				size_t out = 0;
+
+				Byte_range_ptr const dst(_read_buffer.local_addr<char>(),
+				                         request.current_count);
 
 				Result const result =
-					_vfs_handle->fs().complete_read(_vfs_handle,
-					                                _read_buffer.local_addr<char>(),
-					                                request.current_count, out);
-				if (   result == Result::READ_QUEUED
-				    || result == Result::READ_ERR_INTERRUPT
-				    || result == Result::READ_ERR_AGAIN
-				    || result == Result::READ_ERR_WOULD_BLOCK) {
+					_vfs_handle->fs().complete_read(_vfs_handle, dst, out);
+
+				if (result == Result::READ_QUEUED
+				 || result == Result::READ_ERR_WOULD_BLOCK) {
 					return progress;
 				}
 
@@ -246,32 +246,30 @@ class Vfs_replay
 				using Result = Vfs::File_io_service::Write_result;
 
 				bool completed = false;
-				file_size out = 0;
+				size_t out = 0;
 
-				Result result = Result::WRITE_ERR_INVALID;
-				try {
-					result = _vfs_handle->fs().write(_vfs_handle,
-					                                 _write_buffer.local_addr<char>(),
-					                                 request.current_count, out);
-				} catch (Vfs::File_io_service::Insufficient_buffer) {
+				Const_byte_range_ptr const src(_write_buffer.local_addr<char>(),
+				                               request.current_count);
+
+				Result const result = _vfs_handle->fs().write(_vfs_handle, src, out);
+
+				switch (result) {
+				case Result::WRITE_ERR_WOULD_BLOCK:
 					return progress;
-				}
-				if (   result == Result::WRITE_ERR_AGAIN
-				    || result == Result::WRITE_ERR_INTERRUPT
-				    || result == Result::WRITE_ERR_WOULD_BLOCK) {
-					return progress;
-				}
-				if (result == Result::WRITE_OK) {
+
+				case Result::WRITE_OK:
 					request.current_offset += out;
 					request.current_count  -= out;
 					request.success = true;
-				}
+					break;
 
-				if (   result == Result::WRITE_ERR_IO
-				    || result == Result::WRITE_ERR_INVALID) {
+				case Result::WRITE_ERR_IO:
+				case Result::WRITE_ERR_INVALID:
 					request.success = false;
 					completed = true;
+					break;
 				}
+
 				if (request.current_count == 0 || completed) {
 					request.state = Request::State::WRITE_COMPLETE;
 				} else {
@@ -347,7 +345,7 @@ class Vfs_replay
 			if (!_current_request.pending()) {
 
 				file_offset const offset = node.attribute_value("offset", file_size(~0llu));
-				file_size   const count  = node.attribute_value("count",  file_size(~0llu));
+				size_t      const count  = node.attribute_value("count",  ~0lu);
 
 				using Type_String = String<16>;
 				Type_String   const type_string = node.attribute_value("type", Type_String());
@@ -421,31 +419,18 @@ class Vfs_replay
 			if (_finished) {
 				_env.parent().exit(failed ? 1 : 0);
 			}
+
+			_io.commit();
 		}
-
-		struct Io_response_handler : Vfs::Io_response_handler
-		{
-			Genode::Signal_context_capability sigh { };
-
-			void read_ready_response() override { }
-
-			void io_progress_response() override
-			{
-				if (sigh.valid()) {
-					Genode::Signal_transmitter(sigh).submit();
-				}
-			}
-		};
-
-		Io_response_handler _io_response_handler { };
 
 	public:
 
-		Vfs_replay(Vfs::File_system &vfs, Env &env,
+		Vfs_replay(Env &env, Vfs::File_system &vfs, Vfs::Env::Io &io,
 		           Xml_node const & config)
 		:
 			_env { env },
 			_vfs { vfs },
+			_io  { io },
 			_vfs_handle { nullptr },
 			_write_buffer { _env.ram(), _env.rm(),
 			                config.attribute_value("write_buffer_size", 1u << 20) },
@@ -458,10 +443,9 @@ class Vfs_replay
 			               _write_buffer.size());
 		}
 
-		void kick_off(Genode::Allocator &alloc, char const *file,
-		              Genode::Signal_context_capability sigh_cap)
+		void kick_off(Genode::Allocator &alloc, char const *file)
 		{
-			typedef Vfs::Directory_service::Open_result Open_result;
+			using Open_result = Vfs::Directory_service::Open_result;
 
 			Open_result res = _vfs.open(file,
 			                            Vfs::Directory_service::OPEN_MODE_RDWR,
@@ -469,10 +453,6 @@ class Vfs_replay
 			if (res != Open_result::OPEN_OK) {
 				throw Genode::Exception();
 			}
-
-			_io_response_handler.sigh = sigh_cap;
-
-			_vfs_handle->handler(&_io_response_handler);
 
 			_current_request = {
 				.type           = Request::Type::INVALID,
@@ -501,19 +481,25 @@ class Vfs_replay
 };
 
 
-struct Main : private Genode::Entrypoint::Io_progress_handler
+struct Main : private Genode::Entrypoint::Io_progress_handler,
+              private Vfs::Env::User
 {
 	Genode::Env  &_env;
 	Genode::Heap  _heap { _env.ram(), _env.rm() };
 
 	Genode::Attached_rom_dataspace  _config_rom { _env, "config" };
 
-	Vfs::Simple_env _vfs_env { _env, _heap, _config_rom.xml().sub_node("vfs") };
+	Vfs::Simple_env _vfs_env { _env, _heap, _config_rom.xml().sub_node("vfs"), *this };
 
 	Genode::Signal_handler<Main> _reactivate_handler {
 		_env.ep(), *this, &Main::handle_io_progress };
 
-	Vfs_replay _replay { _vfs_env.root_dir(), _env, _config_rom.xml() };
+	Vfs_replay _replay { _env, _vfs_env.root_dir(), _vfs_env.io(), _config_rom.xml() };
+
+	/**
+	 * Vfs::Env::User interface
+	 */
+	void wakeup_vfs_user() override { _reactivate_handler.local_submit(); }
 
 	Main(Genode::Env &env) : _env { env }
 	{
@@ -527,7 +513,9 @@ struct Main : private Genode::Entrypoint::Io_progress_handler
 
 		_env.ep().register_io_progress_handler(*this);
 
-		_replay.kick_off(_heap, file_name.string(), _reactivate_handler);
+		_replay.kick_off(_heap, file_name.string());
+
+		handle_io_progress();
 	}
 
 	void handle_io_progress() override

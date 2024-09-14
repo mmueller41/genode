@@ -34,8 +34,30 @@ void Sup::Gmm::_add_one_slice()
 
 	Ram_dataspace_capability ds = _env.ram().alloc(slice_size);
 
-	_map.connection.retry_with_upgrade(Ram_quota{8192}, Cap_quota{2}, [&] () {
-		_map.rm.attach_executable(ds, attach_base, slice_size); });
+	for (;;) {
+
+		Region_map::Attach_result const result = _map.rm.attach(ds, {
+			.size       = slice_size,
+			.offset     = { },
+			.use_at     = true,
+			.at         = attach_base,
+			.executable = true,
+			.writeable  = true
+		});
+
+		if (result.ok())
+			break;
+
+		using Error = Region_map::Attach_error;
+
+		if      (result == Error::OUT_OF_RAM)  _map.connection.upgrade_ram(8*1024);
+		else if (result == Error::OUT_OF_CAPS) _map.connection.upgrade_caps(2);
+		else {
+			error("Gmm::_add_one_slice failed to attach slice to map");
+			_env.ram().free(ds);
+			return;
+		}
+	}
 
 	_slices[_slice_index(Offset{attach_base})] = ds;
 
@@ -121,9 +143,9 @@ Sup::Gmm::Vmm_addr Sup::Gmm::alloc_from_reservation(Pages pages)
 }
 
 
-void Sup::Gmm::free(Vmm_addr addr, Pages pages)
+void Sup::Gmm::free(Vmm_addr addr)
 {
-	_alloc.free((void *)(addr.value - _map.base.value), 1);
+	_alloc.free((void *)(addr.value - _map.base.value));
 }
 
 
@@ -201,7 +223,12 @@ void Sup::Gmm::map_to_guest(Vmm_addr from, Guest_addr to, Pages pages, Protectio
 			.writeable  = prot.writeable
 		};
 
-		_vm_connection.attach(_slices[i], to.value, attr);
+		try { _vm_connection.attach(_slices[i], to.value, attr); }
+		catch (Vm_session::Region_conflict const &) {
+			error("region conflict while mapping guest memory",
+			      " (offset=", (void *)(attr.offset), " size=", Hex(attr.size),
+			      " to=", (void *)to.value, ")");
+		}
 
 		to.value += attr.size;
 	}

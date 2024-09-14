@@ -66,7 +66,6 @@ Genode::Vm_connection::Exit_config const Sup::Svm::exit_config { /* ... */ };
                                        | SVM_CTRL_INTERCEPT_MSR_PROT
                                        | SVM_CTRL_INTERCEPT_INVLPGA
                                        | SVM_CTRL_INTERCEPT_SHUTDOWN
-                                       | SVM_CTRL_INTERCEPT_RDTSC
                                        | SVM_CTRL_INTERCEPT_FERR_FREEZE
                                        | SVM_CTRL_INTERCEPT_VMRUN
                                        | SVM_CTRL_INTERCEPT_VMMCALL
@@ -154,7 +153,7 @@ void Sup::Svm::transfer_state_to_vbox(Genode::Vcpu_state const &state, VMCPU &vm
 
 void Sup::Svm::transfer_state_to_vcpu(Genode::Vcpu_state &state, CPUMCTX const &ctx)
 {
-	typedef Genode::Vcpu_state::Segment Segment;
+	using Segment = Genode::Vcpu_state::Segment;
 
 	state.efer.charge(state.efer.value() | MSR_K6_EFER_SVME);
 

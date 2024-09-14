@@ -29,11 +29,11 @@ class Vfs::Readonly_value_file_system : public Vfs::Single_file_system
 {
 	public:
 
-		typedef Genode::String<64> Name;
+		using Name = Genode::String<64>;
 
 	private:
 
-		typedef Genode::String<BUF_SIZE + 1> Buffer;
+		using Buffer = Genode::String<BUF_SIZE + 1>;
 
 		Name const _file_name;
 
@@ -51,8 +51,7 @@ class Vfs::Readonly_value_file_system : public Vfs::Single_file_system
 				Single_vfs_handle(ds, fs, alloc, 0), _buffer(buffer)
 			{ }
 
-			Read_result read(char *dst, file_size count,
-			                 file_size &out_count) override
+			Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 			{
 				out_count = 0;
 
@@ -60,22 +59,23 @@ class Vfs::Readonly_value_file_system : public Vfs::Single_file_system
 					return READ_ERR_INVALID;
 
 				char const * const src = _buffer.string() + seek();
-				size_t const len = min((size_t)(_buffer.length() - seek()), (size_t)count);
-				Genode::memcpy(dst, src, len);
+				size_t const len = min(size_t(_buffer.length() - seek()), dst.num_bytes);
+				Genode::memcpy(dst.start, src, len);
 
 				out_count = len;
 				return READ_OK;
 			}
 
-			Write_result write(char const *, file_size, file_size &) override
+			Write_result write(Const_byte_range_ptr const &, size_t &) override
 			{
 				return WRITE_ERR_IO;
 			}
 
-			bool read_ready() override { return true; }
+			bool read_ready()  const override { return true; }
+			bool write_ready() const override { return false; }
 		};
 
-		typedef Genode::String<200> Config;
+		using Config = Genode::String<200>;
 		Config _config(Name const &name) const
 		{
 			char buf[Config::capacity()] { };
@@ -84,8 +84,8 @@ class Vfs::Readonly_value_file_system : public Vfs::Single_file_system
 			return Config(Genode::Cstring(buf));
 		}
 
-		typedef Genode::Registered<Vfs_watch_handle>      Registered_watch_handle;
-		typedef Genode::Registry<Registered_watch_handle> Watch_handle_registry;
+		using Registered_watch_handle = Genode::Registered<Vfs_watch_handle>;
+		using Watch_handle_registry   = Genode::Registry<Registered_watch_handle>;
 
 		Watch_handle_registry _handle_registry { };
 

@@ -21,6 +21,7 @@
 #include <util/list.h>
 #include <base/semaphore.h>
 #include <base/capability.h>
+#include <base/exception.h>
 
 /* only needed for base-hw */
 namespace Kernel { struct Signal_receiver; }
@@ -29,6 +30,7 @@ namespace Genode {
 
 	class Entrypoint;
 	class Rpc_entrypoint;
+	class Pd_session;
 	class Signal_source;
 
 	class Signal_receiver;
@@ -41,7 +43,7 @@ namespace Genode {
 	template <typename, typename> class Signal_handler;
 	template <typename, typename> class Io_signal_handler;
 
-	typedef Capability<Signal_context> Signal_context_capability;
+	using Signal_context_capability = Capability<Signal_context>;
 }
 
 
@@ -299,19 +301,22 @@ class Genode::Signal_receiver : Noncopyable
 
 				void remove(Signal_context const *re);
 
-				template <typename FUNC>
-				void for_each_locked(FUNC && functor) const
+				void for_each_locked(auto const &fn) const
 				{
 					Signal_context *context = _head;
-					if (!context) return;
+					if (!context)
+						return;
 
 					do {
 						Mutex::Guard mutex_guard(context->_mutex);
-						if (functor(*context)) return;
+						if (fn(*context))
+							return;
 						context = context->_next;
 					} while (context != _head);
 				}
 		};
+
+		Pd_session &_pd;
 
 		/**
 		 * Semaphore used to indicate that signal(s) are ready to be picked
@@ -338,7 +343,7 @@ class Genode::Signal_receiver : Noncopyable
 		 * and 'dissolve'. Note that '_contexts_mutex' must be held when
 		 * calling this method.
 		 */
-		void _unsynchronized_dissolve(Signal_context *context);
+		void _unsynchronized_dissolve(Signal_context &);
 
 		/**
 		 * Hook to platform specific destructor parts
@@ -348,25 +353,12 @@ class Genode::Signal_receiver : Noncopyable
 		/**
 		 * Hooks to platform specific dissolve parts
 		 */
-		void _platform_begin_dissolve(Signal_context * const c);
-		void _platform_finish_dissolve(Signal_context * const c);
+		void _platform_begin_dissolve (Signal_context &);
+		void _platform_finish_dissolve(Signal_context &);
 
 	public:
 
-		/**
-		 * Exception class
-		 */
-		class Context_already_in_use { };
-		class Context_not_associated { };
-
-		/**
-		 * Constructor
-		 */
 		Signal_receiver();
-
-		/**
-		 * Destructor
-		 */
 		~Signal_receiver();
 
 		/**
@@ -374,19 +366,17 @@ class Genode::Signal_receiver : Noncopyable
 		 *
 		 * \param context  context associated with signals delivered to the
 		 *                 receiver
-		 * \throw          'Context_already_in_use'
 		 * \return         new signal-context capability that can be
 		 *                 passed to a signal transmitter
 		 */
-		Signal_context_capability manage(Signal_context *context);
+		Signal_context_capability manage(Signal_context &context);
 
 		/**
 		 * Dissolve signal context from receiver
 		 *
 		 * \param context  context to remove from receiver
-		 * \throw          'Context_not_associated'
 		 */
-		void dissolve(Signal_context *context);
+		void dissolve(Signal_context &context);
 
 		/**
 		 * Block until a signal is received and return the signal
@@ -428,7 +418,7 @@ class Genode::Signal_receiver : Noncopyable
 		 * source associated with the process. It must not be used for other
 		 * purposes.
 		 */
-		static void dispatch_signals(Signal_source *);
+		static void dispatch_signals(Signal_source &);
 };
 
 

@@ -27,10 +27,11 @@
 /* base internal includes */
 #include <base/internal/align_at.h>
 
-/* base-hw Core includes */
+/* core includes */
+#include <types.h>
 #include <spec/x86_64/fpu.h>
 #include <spec/x86_64/address_space_id_allocator.h>
-#include <spec/x86_64/translation_table.h>
+#include <hw/spec/x86_64/page_table.h>
 
 namespace Kernel { struct Thread_fault; }
 
@@ -38,14 +39,13 @@ namespace Kernel { struct Thread_fault; }
 namespace Board { class Address_space_id_allocator; }
 
 
-namespace Genode {
+namespace Core {
 
 	class Cpu;
-	using sizet_arithm_t = __uint128_t;
 }
 
 
-class Genode::Cpu : public Hw::X86_64_cpu
+class Core::Cpu : public Hw::X86_64_cpu
 {
 	public:
 
@@ -91,15 +91,10 @@ class Genode::Cpu : public Hw::X86_64_cpu
 		} __attribute__((packed)) gdt { };
 
 
-		/**
-		 * Extend basic CPU state by members relevant for 'base-hw' only
-		 */
-		struct Kernel_stack { unsigned long kernel_stack { }; };
-
-		/* exception_vector.s depends on the position of the Kernel_stack */
-		struct alignas(16) Context : Cpu_state, Kernel_stack, Fpu_context
+		struct alignas(16) Context : Cpu_state, Fpu_context
 		{
 			enum Eflags {
+				EFLAGS_TF     = 1 << 8,
 				EFLAGS_IF_SET = 1 << 9,
 				EFLAGS_IOPL_3 = 3 << 12,
 			};
@@ -133,12 +128,12 @@ class Genode::Cpu : public Hw::X86_64_cpu
 
 		static void mmu_fault(Context & regs, Kernel::Thread_fault & fault);
 
+		static void single_step(Context &regs, bool on);
+
 		/**
 		 * Invalidate the whole TLB
 		 */
-		static void invalidate_tlb() {
-			Genode::Cpu::Cr3::write(Genode::Cpu::Cr3::read()); }
-
+		static void invalidate_tlb() { Cr3::write(Cr3::read()); }
 
 		static void clear_memory_region(addr_t const addr,
 		                                size_t const size,

@@ -29,11 +29,10 @@ namespace Vfs_server {
 	using namespace File_system;
 	using namespace Vfs;
 
-	typedef Vfs::File_io_service::Write_result Write_result;
-	typedef Vfs::File_io_service::Read_result Read_result;
-	typedef Vfs::File_io_service::Sync_result Sync_result;
-
-	typedef ::File_system::Session::Tx::Sink Packet_stream;
+	using Write_result  = Vfs::File_io_service::Write_result;
+	using Read_result   = Vfs::File_io_service::Read_result;
+	using Sync_result   = Vfs::File_io_service::Sync_result;
+	using Packet_stream = ::File_system::Session::Tx::Sink;
 
 	class Node;
 	class Io_node;
@@ -42,15 +41,15 @@ namespace Vfs_server {
 	class File;
 	class Symlink;
 
-	typedef Genode::Id_space<Node> Node_space;
-	typedef Genode::Fifo<Node>     Node_queue;
+	using Node_space = Genode::Id_space<Node>;
+	using Node_queue = Genode::Fifo<Node>;
 
 	/* Vfs::MAX_PATH is shorter than File_system::MAX_PATH */
 	enum { MAX_PATH_LEN = Vfs::MAX_PATH_LEN };
 
-	typedef Genode::Path<MAX_PATH_LEN> Path;
+	using Path = Genode::Path<MAX_PATH_LEN>;
 
-	typedef Genode::Allocator::Out_of_memory Out_of_memory;
+	using Out_of_memory = Genode::Allocator::Out_of_memory;
 
 	struct Payload_ptr { char *ptr; };
 
@@ -58,21 +57,21 @@ namespace Vfs_server {
 	 * Type trait for determining the node type for a given handle type
 	 */
 	template<typename T> struct Node_type;
-	template<> struct Node_type<Node_handle>    { typedef Io_node    Type; };
-	template<> struct Node_type<Dir_handle>     { typedef Directory  Type; };
-	template<> struct Node_type<File_handle>    { typedef File       Type; };
-	template<> struct Node_type<Symlink_handle> { typedef Symlink    Type; };
-	template<> struct Node_type<Watch_handle>   { typedef Watch_node Type; };
+	template<> struct Node_type<Node_handle>    { using Type = Io_node; };
+	template<> struct Node_type<Dir_handle>     { using Type = Directory; };
+	template<> struct Node_type<File_handle>    { using Type = File; };
+	template<> struct Node_type<Symlink_handle> { using Type = Symlink; };
+	template<> struct Node_type<Watch_handle>   { using Type = Watch_node; };
 
 	/**
 	 * Type trait for determining the handle type for a given node type
 	 */
 	template<typename T> struct Handle_type;
-	template<> struct Handle_type<Io_node>   { typedef Node_handle    Type; };
-	template<> struct Handle_type<Directory> { typedef Dir_handle     Type; };
-	template<> struct Handle_type<File>      { typedef File_handle    Type; };
-	template<> struct Handle_type<Symlink>   { typedef Symlink_handle Type; };
-	template<> struct Handle_type<Watch>     { typedef Watch_handle   Type; };
+	template<> struct Handle_type<Io_node>   { using Type = Node_handle; };
+	template<> struct Handle_type<Directory> { using Type = Dir_handle; };
+	template<> struct Handle_type<File>      { using Type = File_handle; };
+	template<> struct Handle_type<Symlink>   { using Type = Symlink_handle; };
+	template<> struct Handle_type<Watch>     { using Type = Watch_handle; };
 
 	/*
 	 * Note that the file objects are created at the
@@ -228,7 +227,7 @@ class Vfs_server::Node : Node_space::Element, Node_queue::Element
  * Super-class for nodes that process read/write packets
  */
 class Vfs_server::Io_node : public Vfs_server::Node,
-                            public Vfs::Io_response_handler
+                            public Vfs::Read_ready_response_handler
 {
 	private:
 
@@ -351,7 +350,7 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 		{
 			_read_ready_state = Read_ready_state::REQUESTED;
 
-			if (_handle.fs().read_ready(&_handle)) {
+			if (_handle.fs().read_ready(_handle)) {
 				/* if the handle is ready, send a packet back immediately */
 				read_ready_response();
 			} else {
@@ -378,10 +377,12 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 
 		void _execute_read()
 		{
-			file_size out_count = 0;
+			size_t out_count = 0;
 
-			switch (_handle.fs().complete_read(&_handle, _payload_ptr.ptr,
-			                                   _packet.length(), out_count)) {
+			Byte_range_ptr dst { _payload_ptr.ptr, _packet.length() };
+
+			switch (_handle.fs().complete_read(&_handle, dst, out_count)) {
+
 			case Read_result::READ_OK:
 				_acknowledge_as_success((size_t)out_count);
 				break;
@@ -392,8 +393,6 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 				break;
 
 			case Read_result::READ_ERR_WOULD_BLOCK:
-			case Read_result::READ_ERR_AGAIN:
-			case Read_result::READ_ERR_INTERRUPT:
 			case Read_result::READ_QUEUED:
 				break;
 			}
@@ -404,33 +403,28 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 		 *
 		 * \return number of consumed bytes
 		 */
-		size_t _execute_write(char const *src_ptr, size_t length,
-		                      seek_off_t write_pos)
+		size_t _execute_write(Const_byte_range_ptr const &src, seek_off_t write_pos)
 		{
-			file_size out_count = 0;
-			try {
-				_handle.seek(_initial_write_seek_offset + write_pos);
+			size_t out_count = 0;
+			_handle.seek(_initial_write_seek_offset + write_pos);
 
-				switch (_handle.fs().write(&_handle, src_ptr, length, out_count)) {
-				case Write_result::WRITE_ERR_AGAIN:
-				case Write_result::WRITE_ERR_WOULD_BLOCK:
-					break;
+			switch (_handle.fs().write(&_handle, src, out_count)) {
 
-				case Write_result::WRITE_ERR_INVALID:
-				case Write_result::WRITE_ERR_IO:
-				case Write_result::WRITE_ERR_INTERRUPT:
-					_acknowledge_as_failure();
-					break;
+			case Write_result::WRITE_ERR_WOULD_BLOCK:
+				break;
 
-				case Write_result::WRITE_OK:
-					break;
-				}
+			case Write_result::WRITE_ERR_INVALID:
+			case Write_result::WRITE_ERR_IO:
+				_acknowledge_as_failure();
+				break;
+
+			case Write_result::WRITE_OK:
+				break;
 			}
-			catch (Vfs::File_io_service::Insufficient_buffer) { /* re-execute */ }
 
 			_modified = true;
 
-			return (size_t)out_count;
+			return out_count;
 		}
 
 		void _execute_sync()
@@ -452,14 +446,11 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 
 		void _execute_write_timestamp()
 		{
-			try {
-				_packet.with_timestamp([&] (::File_system::Timestamp const time) {
-					Vfs::Timestamp ts { .value = time.value };
-					_handle.fs().update_modification_timestamp(&_handle, ts);
-				});
-				_acknowledge_as_success(0);
-			}
-			catch (Vfs::File_io_service::Insufficient_buffer) { }
+			_packet.with_timestamp([&] (::File_system::Timestamp const time) {
+				Vfs::Timestamp ts { .value = time.value };
+				_handle.fs().update_modification_timestamp(&_handle, ts);
+			});
+			_acknowledge_as_success(0);
 
 			_modified = true;
 		}
@@ -508,11 +499,6 @@ class Vfs_server::Io_node : public Vfs_server::Node,
 			if (_read_ready_state == Read_ready_state::REQUESTED)
 				_read_ready_state =  Read_ready_state::READY;
 		}
-
-		/**
-		 * Called by the VFS plugin of this handle
-		 */
-		void io_progress_response() override { }
 };
 
 
@@ -597,7 +583,7 @@ struct Vfs_server::Symlink : Io_node
 {
 	private:
 
-		typedef Genode::String<MAX_PATH_LEN + 1> Write_buffer;
+		using Write_buffer = Genode::String<MAX_PATH_LEN + 1>;
 
 		Write_buffer _write_buffer { };
 
@@ -684,10 +670,11 @@ struct Vfs_server::Symlink : Io_node
 			 */
 			case Packet_descriptor::WRITE:
 				{
-					size_t const count = _write_buffer.length();
+					Const_byte_range_ptr const src { _write_buffer.string(),
+					                                 _write_buffer.length() };
 
-					if (_execute_write(_write_buffer.string(), count, 0) == count)
-						_acknowledge_as_success(count);
+					if (_execute_write(src, 0) == src.num_bytes)
+						_acknowledge_as_success(src.num_bytes);
 					else
 						_acknowledge_as_failure();
 					break;
@@ -719,12 +706,12 @@ class Vfs_server::File : public Io_node
 
 		char const * const _leaf_path = nullptr; /* offset pointer to Node::_path */
 
-		typedef Directory_service::Stat Stat;
+		using Stat = Directory_service::Stat;
 
 		template <typename FN>
 		void _with_stat(FN const &fn)
 		{
-			typedef Directory_service::Stat_result Result;
+			using Result = Directory_service::Stat_result;
 
 			Vfs::Directory_service::Stat stat { };
 			if (_handle.ds().stat(_leaf_path, stat) == Result::STAT_OK)
@@ -751,7 +738,7 @@ class Vfs_server::File : public Io_node
 		 *
 		 * Used for the incremental write to continuous files.
 		 */
-		seek_off_t _write_pos = 0;
+		size_t _write_pos = 0;
 
 		bool _watch_read_ready = false;
 
@@ -815,13 +802,13 @@ class Vfs_server::File : public Io_node
 
 			case Packet_descriptor::WRITE:
 				{
-					size_t       const count    = (size_t)(_packet.length() - _write_pos);
-					char const * const src_ptr  = _payload_ptr.ptr + _write_pos;
-					size_t       const consumed = _execute_write(src_ptr, count,
-					                                             _write_pos);
+					Const_byte_range_ptr const src { _payload_ptr.ptr + _write_pos,
+					                                 _packet.length() - _write_pos };
 
-					if (consumed == count) {
-						_acknowledge_as_success(count);
+					size_t const consumed = _execute_write(src, _write_pos);
+
+					if (consumed == src.num_bytes) {
+						_acknowledge_as_success(src.num_bytes);
 						break;
 					}
 
@@ -876,8 +863,8 @@ struct Vfs_server::Directory : Io_node
 
 		Session_writeable const _writeable;
 
-		typedef Directory_service::Dirent    Vfs_dirent;
-		typedef ::File_system::Directory_entry Fs_dirent;
+		using Vfs_dirent = Directory_service::Dirent;
+		using Fs_dirent  = ::File_system::Directory_entry;
 
 		bool _position_and_length_aligned_with_dirent_size()
 		{

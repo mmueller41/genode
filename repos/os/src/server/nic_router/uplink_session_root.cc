@@ -17,6 +17,7 @@
 /* local includes */
 #include <uplink_session_root.h>
 #include <configuration.h>
+#include <session_creation.h>
 
 using namespace Net;
 using namespace Genode;
@@ -49,7 +50,7 @@ Interface_policy::Interface_policy(Genode::Session_label const &label,
                                    Configuration         const &config)
 :
 	_label       { label },
-	_config      { config },
+	_config_ptr  { &config },
 	_session_env { session_env }
 { }
 
@@ -59,18 +60,14 @@ Net::Uplink_session_component::Interface_policy::determine_domain_name() const
 {
 	Domain_name domain_name;
 	try {
-		Session_policy policy(_label, _config().node());
+		Session_policy policy(_label, _config_ptr->node());
 		domain_name = policy.attribute_value("domain", Domain_name());
+		if (domain_name == Domain_name() && _config_ptr->verbose())
+			log("[?] no domain attribute in policy for downlink label \"", _label, "\"");
 	}
 	catch (Session_policy::No_policy_defined) {
-		if (_config().verbose()) {
+		if (_config_ptr->verbose()) {
 			log("[?] no policy for downlink label \"", _label, "\""); }
-	}
-	catch (Xml_node::Nonexistent_attribute) {
-		if (_config().verbose()) {
-			log("[?] no domain attribute in policy for downlink label \"",
-			    _label, "\"");
-		}
 	}
 	return domain_name;
 }
@@ -127,7 +124,7 @@ Net::Uplink_session_root::Uplink_session_root(Env               &env,
 	Root_component<Uplink_session_component> { &env.ep().rpc_ep(), &alloc },
 	_env                                     { env },
 	_timer                                   { timer },
-	_config                                  { config },
+	_config_ptr                              { &config },
 	_shared_quota                            { shared_quota },
 	_interfaces                              { interfaces }
 { }
@@ -136,88 +133,35 @@ Net::Uplink_session_root::Uplink_session_root(Env               &env,
 Uplink_session_component *
 Net::Uplink_session_root::_create_session(char const *args)
 {
+	Session_creation<Uplink_session_component> session_creation { };
 	try {
-		/* create session environment temporarily on the stack */
-		Session_env session_env_stack { _env, _shared_quota,
-			Ram_quota { Arg_string::find_arg(args, "ram_quota").ulong_value(0) },
-			Cap_quota { Arg_string::find_arg(args, "cap_quota").ulong_value(0) } };
+		return session_creation.execute(
+			_env, _shared_quota, args,
+			[&] (Session_env &session_env, void *session_at, Ram_dataspace_capability ram_ds)
+			{
+				Session_label const label { label_from_args(args) };
 
-		/* alloc/attach RAM block and move session env to base of the block */
-		Ram_dataspace_capability ram_ds {
-			session_env_stack.alloc(sizeof(Session_env) +
-			                        sizeof(Uplink_session_component), CACHED) };
-		try {
-			void * const ram_ptr { session_env_stack.attach(ram_ds) };
-			Session_env &session_env {
-				*construct_at<Session_env>(ram_ptr, session_env_stack) };
+				enum { MAC_STR_LENGTH = 19 };
+				char mac_str [MAC_STR_LENGTH];
+				Arg mac_arg { Arg_string::find_arg(args, "mac_address") };
 
-			Session_label const label { label_from_args(args) };
-
-			enum { MAC_STR_LENGTH = 19 };
-			char mac_str [MAC_STR_LENGTH];
-			Arg mac_arg { Arg_string::find_arg(args, "mac_address") };
-
-			if (!mac_arg.valid()) {
-				Session_env session_env_stack { session_env };
-				session_env_stack.detach(ram_ptr);
-				session_env_stack.free(ram_ds);
-				_invalid_downlink("failed to find 'mac_address' arg");
-				throw Service_denied();
-			}
-			mac_arg.string(mac_str, MAC_STR_LENGTH, "");
-			Mac_address mac { };
-			ascii_to(mac_str, mac);
-			if (mac == Mac_address { }) {
-				Session_env session_env_stack { session_env };
-				session_env_stack.detach(ram_ptr);
-				session_env_stack.free(ram_ds);
-				_invalid_downlink("malformed 'mac_address' arg");
-				throw Service_denied();
-			}
-			/* create new session object behind session env in the RAM block */
-			try {
+				if (!mac_arg.valid()) {
+					_invalid_downlink("failed to find 'mac_address' arg");
+					throw Service_denied();
+				}
+				mac_arg.string(mac_str, MAC_STR_LENGTH, "");
+				Mac_address mac { };
+				ascii_to(mac_str, mac);
+				if (mac == Mac_address { }) {
+					_invalid_downlink("malformed 'mac_address' arg");
+					throw Service_denied();
+				}
 				return construct_at<Uplink_session_component>(
-					(void*)((addr_t)ram_ptr + sizeof(Session_env)),
-					session_env,
+					session_at, session_env,
 					Arg_string::find_arg(args, "tx_buf_size").ulong_value(0),
 					Arg_string::find_arg(args, "rx_buf_size").ulong_value(0),
-					_timer, mac, label, _interfaces, _config(), ram_ds);
-			}
-			catch (Out_of_ram) {
-				Session_env session_env_stack { session_env };
-				session_env_stack.detach(ram_ptr);
-				session_env_stack.free(ram_ds);
-				_invalid_downlink("Uplink session RAM quota");
-				throw Insufficient_ram_quota();
-			}
-			catch (Out_of_caps) {
-				Session_env session_env_stack { session_env };
-				session_env_stack.detach(ram_ptr);
-				session_env_stack.free(ram_ds);
-				_invalid_downlink("Uplink session CAP quota");
-				throw Insufficient_cap_quota();
-			}
-		}
-		catch (Region_map::Invalid_dataspace) {
-			session_env_stack.free(ram_ds);
-			_invalid_downlink("Failed to attach RAM");
-			throw Service_denied();
-		}
-		catch (Region_map::Region_conflict) {
-			session_env_stack.free(ram_ds);
-			_invalid_downlink("Failed to attach RAM");
-			throw Service_denied();
-		}
-		catch (Out_of_ram) {
-			session_env_stack.free(ram_ds);
-			_invalid_downlink("Uplink session RAM quota");
-			throw Insufficient_ram_quota();
-		}
-		catch (Out_of_caps) {
-			session_env_stack.free(ram_ds);
-			_invalid_downlink("Uplink session CAP quota");
-			throw Insufficient_cap_quota();
-		}
+					_timer, mac, label, _interfaces, *_config_ptr, ram_ds);
+			});
 	}
 	catch (Out_of_ram) {
 		_invalid_downlink("Uplink session RAM quota");
@@ -240,8 +184,8 @@ Net::Uplink_session_root::_destroy_session(Uplink_session_component *session)
 
 	/* copy session env to stack and detach/free all session data */
 	Session_env session_env_stack { session_env };
-	session_env_stack.detach(session);
-	session_env_stack.detach(&session_env);
+	session_env_stack.detach(addr_t(session));
+	session_env_stack.detach(addr_t(&session_env));
 	session_env_stack.free(ram_ds);
 
 	/* check for leaked quota */
@@ -256,6 +200,6 @@ Net::Uplink_session_root::_destroy_session(Uplink_session_component *session)
 
 void Net::Uplink_session_root::_invalid_downlink(char const *reason)
 {
-	if (_config().verbose()) {
+	if (_config_ptr->verbose()) {
 		log("[?] invalid downlink (", reason, ")"); }
 }

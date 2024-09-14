@@ -32,7 +32,13 @@ extern "C" {
 #include <time.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <signal.h>
+#include <setjmp.h>
+#include <pthread.h>
 }
+
+static void test_sigalt();
 
 int main(int argc, char **argv)
 {
@@ -87,13 +93,16 @@ int main(int argc, char **argv)
 
 	printf("Malloc: check realloc\n");
 	{
+		static char realloc_data[32];
+		memset(realloc_data, 13, 32);
+
 		void *addr = malloc(32);
-		memset(addr, 13, 32);
+		memcpy(addr, realloc_data, 32);
 
 		for (unsigned i = 0; i < ROUNDS; ++i) {
 			size_t const size = 32 + 11*i;
 			char *a = (char *)realloc(addr, size);
-			if (memcmp(addr, a, 32) || a[32] != 0) {
+			if (memcmp(realloc_data, a, 32) || a[32] != 0) {
 				printf("realloc data error");
 				++error_count;
 			}
@@ -108,7 +117,7 @@ int main(int argc, char **argv)
 		for (int i = ROUNDS - 1; i >= 0; --i) {
 			size_t const size = 32 + 11*i;
 			char *a = (char *)realloc(addr, size);
-			if (memcmp(addr, a, 32) || a[32] != 0) {
+			if (memcmp(realloc_data, a, 32) || a[32] != 0) {
 				printf("realloc data error");
 				++error_count;
 			}
@@ -126,12 +135,12 @@ int main(int argc, char **argv)
 	for (unsigned i = 0; i < 4; ++i) {
 		size_t const size = 250*1024*1024;
 		void *addr = malloc(size);
-		free(addr);
-
 		if ((unsigned long)addr & 0xf) {
 			printf("large malloc(%zu) returned addr = %p - ERROR\n", size, addr);
 			++error_count;
 		}
+
+		free(addr);
 	}
 
 	{
@@ -259,5 +268,92 @@ int main(int argc, char **argv)
 		puts("Check mktime: success");
 	} while (0);
 
+	test_sigalt();
+
 	exit(error_count);
+}
+
+
+static struct State {
+	         sigjmp_buf   reenter;
+	volatile sig_atomic_t called;
+} thread_state;
+
+
+static void test_signal_handler(int const signal)
+{
+	thread_state.called = 1;
+
+	void * var = nullptr;
+	printf("%s stack=%p\n", __func__, &var);
+
+	if (!sigsetjmp(thread_state.reenter, 0)) {
+		/* do something useful here */
+
+		/* finally jump back */
+		siglongjmp(thread_state.reenter, 1);
+    }
+
+	printf("%s done\n", __func__);
+}
+
+
+static void test_sigalt()
+{
+	struct sigaction sa     { };
+	struct sigaction sa_old { };
+	stack_t          ss     { };
+	stack_t          ss_old { };
+	sigset_t         sigs   { };
+
+	printf("%s         stack=%p\n", __func__, &sa);
+
+	sa.sa_handler = test_signal_handler;
+	sa.sa_flags   = SA_ONSTACK;
+	sigfillset(&sa.sa_mask);
+
+	if (sigaction(SIGUSR2, &sa, &sa_old) != 0) {
+		abort();
+	}
+
+	/**
+	 * Here the contrib code provides the self allocated stack pointer,
+	 * which we can not support by now. Ported software needs here to be
+	 * patched to use the nullptr.
+	 * XXX to be changed if it is clear how to support better XXX
+	 */
+	ss.ss_sp    = 0; /* <-- patch contrib code here XXX */
+	ss.ss_size  = 64 * 1024; /* STACK_SIZE; */
+	ss.ss_flags = 0;
+	if (sigaltstack(&ss, &ss_old) < 0) {
+		abort();
+	}
+
+	/* trigger SIGUSR2 */
+	thread_state.called = 0;
+	kill(getpid(), SIGUSR2);
+
+	/* wait for signal executed */
+	sigfillset(&sigs);
+	sigdelset (&sigs, SIGUSR2);
+	while (!thread_state.called) {
+		sigsuspend(&sigs);
+	}
+
+	/* disable alternative signal test */
+	sigaltstack(NULL, &ss);
+	ss.ss_flags = SS_DISABLE;
+	if (sigaltstack(&ss, NULL) < 0) {
+		abort();
+	}
+
+	sigaltstack(NULL, &ss);
+	if (!(ss_old.ss_flags & SS_DISABLE)) {
+		sigaltstack(&ss_old, NULL);
+	}
+
+	/* restore old sigusr2 signal handler */
+	sigaction(SIGUSR2, &sa_old, NULL);
+
+	printf("%s done\n", __func__);
 }

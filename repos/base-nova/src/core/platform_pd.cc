@@ -12,32 +12,13 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <util/flex_iterator.h>
 
 /* core includes */
 #include <platform.h>
 #include <platform_pd.h>
 
-using namespace Genode;
-
-
-/***************************
- ** Public object members **
- ***************************/
-
-bool Platform_pd::bind_thread(Platform_thread &thread)
-{
-	thread.bind_to_pd(this, _thread_cnt == 0);
-	_thread_cnt++;
-	return true;
-}
-
-
-void Platform_pd::unbind_thread(Platform_thread &)
-{
-	warning(__func__, "not implemented");
-}
+using namespace Core;
 
 
 void Platform_pd::assign_parent(Native_capability parent)
@@ -48,7 +29,8 @@ void Platform_pd::assign_parent(Native_capability parent)
 
 
 Platform_pd::Platform_pd(Allocator &, char const *label, signed, bool)
-: _thread_cnt(0), _pd_sel(cap_map().insert()), _label(label)
+:
+	_pd_sel(cap_map().insert()), _label(label)
 {
 	if (_pd_sel == Native_thread::INVALID_INDEX) {
 		error("platform pd creation failed ");

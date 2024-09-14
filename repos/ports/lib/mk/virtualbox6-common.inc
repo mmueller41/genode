@@ -26,6 +26,7 @@ VBOX_CC_OPT += -DUSING_VMM_COMMON_DEFS
 VBOX_CC_OPT += -DVBOX_WITH_64_BITS_GUESTS
 VBOX_CC_OPT += -DIN_SUP_R3 -DIN_VMM_R3
 VBOX_CC_OPT += -DVBOX_WITH_NATIVE_NEM
+VBOX_CC_OPT += -DNEM_WIN_WITH_A20
 
 # we use the libc headers from FreeBSD
 VBOX_CC_OPT += -DRT_OS_FREEBSD
@@ -61,6 +62,12 @@ VBOX_CC_OPT += -DVBOX_WITH_GUEST_PROPS
 
 # prevent access to port content at the dependency stage of the build system
 ifeq ($(called_from_lib_mk),yes)
+include $(VIRTUALBOX_DIR)/Version.kmk
+CC_CXX_OPT_STD = -std=gnu++17 -fconcepts
+endif
+
+# if included from virtualbox6/target.mk provide version but leave CC_CXX_OPT_STD alone
+ifeq ($(included_from_target_mk),yes)
 include $(VIRTUALBOX_DIR)/Version.kmk
 endif
 

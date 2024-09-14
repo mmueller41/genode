@@ -24,31 +24,24 @@
 namespace Vfs { class Fs_file_system; }
 
 
-class Vfs::Fs_file_system : public File_system
+class Vfs::Fs_file_system : public File_system, private Remote_io
 {
 	private:
-
-		/*
-		 * Mutex used to serialize the interaction with the packet stream of the
-		 * file-system session.
-		 *
-		 * XXX Once, we change the VFS file-system interface to use
-		 *     asynchronous read/write operations, we can possibly remove it.
-		 */
-		Mutex _mutex { };
 
 		Vfs::Env              &_env;
 		Genode::Allocator_avl  _fs_packet_alloc { &_env.alloc() };
 
-		typedef Genode::String<64> Label_string;
+		using Label_string = Genode::String<64>;
 		Label_string _label;
 
-		typedef Genode::String<::File_system::MAX_NAME_LEN> Root_string;
+		using Root_string = Genode::String<::File_system::MAX_NAME_LEN>;
 		Root_string _root;
 
 		::File_system::Connection _fs;
 
-		typedef Genode::Id_space<::File_system::Node> Handle_space;
+		bool _write_would_block = false;
+
+		using Handle_space = Genode::Id_space<::File_system::Node>;
 
 		Handle_space _handle_space { };
 		Handle_space _watch_handle_space { };
@@ -67,7 +60,34 @@ class Vfs::Fs_file_system : public File_system
 		};
 
 		struct Fs_vfs_handle;
-		typedef Genode::Fifo<Fs_vfs_handle> Fs_vfs_handle_queue;
+		using Fs_vfs_handle_queue = Genode::Fifo<Fs_vfs_handle>;
+
+		Remote_io::Peer _peer { _env.deferred_wakeups(), *this };
+
+		/**
+		 * Remote_io interface
+		 */
+		void wakeup_remote_peer() override { _fs.tx()->wakeup(); }
+
+		/*
+		 * Pass packet to server side
+		 *
+		 * The caller is expected to check 'ready_to_submit' before calling
+		 * this function.
+		 */
+		void _submit_packet(::File_system::Packet_descriptor const &packet)
+		{
+			/*
+			 * The warning should never occur if the precondition above is
+			 * satisfied.
+			 */
+			if (!_fs.tx()->ready_to_submit())
+				Genode::warning("submit queue of file-system session unexpectedly full");
+			else
+				_fs.tx()->try_submit_packet(packet);
+
+			_peer.schedule_wakeup();
+		}
 
 		/**
 		 * Convert 'File_system::Node_type' to 'Dirent_type'
@@ -116,12 +136,10 @@ class Vfs::Fs_file_system : public File_system
 		struct Fs_vfs_handle : Vfs_handle,
 		                       private ::File_system::Node,
 		                       private Handle_space::Element,
-		                       private Fs_vfs_handle_queue::Element,
 		                       private Handle_state
 		{
 			friend Genode::Id_space<::File_system::Node>;
 			friend Fs_vfs_handle_queue;
-			using  Fs_vfs_handle_queue::Element::enqueued;
 
 			using Handle_state::queued_read_state;
 			using Handle_state::queued_read_packet;
@@ -129,21 +147,21 @@ class Vfs::Fs_file_system : public File_system
 			using Handle_state::queued_sync_state;
 			using Handle_state::read_ready_state;
 
-			::File_system::Connection &_fs;
+			Fs_file_system &_vfs_fs;
 
-			bool _queue_read(file_size count, file_size const seek_offset)
+			bool _queue_read(size_t count, file_size const seek_offset)
 			{
 				if (queued_read_state != Handle_state::Queued_state::IDLE)
 					return false;
 
-				::File_system::Session::Tx::Source &source = *_fs.tx();
+				::File_system::Session::Tx::Source &source = *_vfs_fs._fs.tx();
 
 				/* if not ready to submit suggest retry */
 				if (!source.ready_to_submit())
 					return false;
 
-				file_size const max_packet_size = source.bulk_buffer_size() / 2;
-				file_size const clipped_count = min(max_packet_size, count);
+				size_t const max_packet_size = source.bulk_buffer_size() / 2;
+				size_t const clipped_count = min(max_packet_size, count);
 
 				::File_system::Packet_descriptor p;
 				try {
@@ -161,18 +179,17 @@ class Vfs::Fs_file_system : public File_system
 				queued_read_state = Handle_state::Queued_state::QUEUED;
 
 				/* pass packet to server side */
-				source.submit_packet(packet);
+				_vfs_fs._submit_packet(packet);
 
 				return true;
 			}
 
-			Read_result _complete_read(void *dst, file_size count,
-			                           file_size &out_count)
+			Read_result _complete_read(Byte_range_ptr const &dst, size_t &out_count)
 			{
 				if (queued_read_state != Handle_state::Queued_state::ACK)
 					return READ_QUEUED;
 
-				::File_system::Session::Tx::Source &source = *_fs.tx();
+				::File_system::Session::Tx::Source &source = *_vfs_fs._fs.tx();
 
 				/* obtain result packet descriptor with updated status info */
 				::File_system::Packet_descriptor const
@@ -181,11 +198,11 @@ class Vfs::Fs_file_system : public File_system
 				Read_result result = packet.succeeded() ? READ_OK : READ_ERR_IO;
 
 				if (result == READ_OK) {
-					file_size const read_num_bytes = min((file_size)packet.length(), count);
+					size_t const read_num_bytes = min(packet.length(), dst.num_bytes);
 
-					memcpy(dst, source.packet_content(packet), (size_t)read_num_bytes);
+					memcpy(dst.start, source.packet_content(packet), (size_t)read_num_bytes);
 
-					out_count  = read_num_bytes;
+					out_count = read_num_bytes;
 				}
 
 				queued_read_state  = Handle_state::Queued_state::IDLE;
@@ -199,25 +216,24 @@ class Vfs::Fs_file_system : public File_system
 			Fs_vfs_handle(File_system &fs, Allocator &alloc,
 			              int status_flags, Handle_space &space,
 			              ::File_system::Node_handle node_handle,
-			              ::File_system::Connection &fs_connection)
+			              Fs_file_system &vfs_fs)
 			:
 				Vfs_handle(fs, fs, alloc, status_flags),
 				Handle_space::Element(*this, space, node_handle),
-				_fs(fs_connection)
+				_vfs_fs(vfs_fs)
 			{ }
 
 			::File_system::File_handle file_handle() const
 			{ return ::File_system::File_handle { id().value }; }
 
-			virtual bool queue_read(file_size /* count */)
+			virtual bool queue_read(size_t /* count */)
 			{
 				Genode::error("Fs_vfs_handle::queue_read() called");
 				return true;
 			}
 
-			virtual Read_result complete_read(char *,
-			                                  file_size /* in count */,
-			                                  file_size & /* out count */)
+			virtual Read_result complete_read(Byte_range_ptr const &,
+			                                  size_t & /* out count */)
 			{
 				Genode::error("Fs_vfs_handle::complete_read() called");
 				return READ_ERR_INVALID;
@@ -228,7 +244,7 @@ class Vfs::Fs_file_system : public File_system
 				if (queued_sync_state != Handle_state::Queued_state::IDLE)
 					return true;
 
-				::File_system::Session::Tx::Source &source = *_fs.tx();
+				::File_system::Session::Tx::Source &source = *_vfs_fs._fs.tx();
 
 				/* if not ready to submit suggest retry */
 				if (!source.ready_to_submit()) return false;
@@ -247,7 +263,7 @@ class Vfs::Fs_file_system : public File_system
 				queued_sync_state = Handle_state::Queued_state::QUEUED;
 
 				/* pass packet to server side */
-				source.submit_packet(packet);
+				_vfs_fs._submit_packet(packet);
 
 				return true;
 			}
@@ -261,7 +277,7 @@ class Vfs::Fs_file_system : public File_system
 				::File_system::Packet_descriptor const
 					packet = queued_sync_packet;
 
-				::File_system::Session::Tx::Source &source = *_fs.tx();
+				::File_system::Session::Tx::Source &source = *_vfs_fs._fs.tx();
 
 				Sync_result result = packet.succeeded()
 					? SYNC_OK : SYNC_ERR_INVALID;
@@ -276,7 +292,7 @@ class Vfs::Fs_file_system : public File_system
 
 			bool update_modification_timestamp(Vfs::Timestamp time)
 			{
-				::File_system::Session::Tx::Source &source = *_fs.tx();
+				::File_system::Session::Tx::Source &source = *_vfs_fs._fs.tx();
 				using ::File_system::Packet_descriptor;
 
 				if (!source.ready_to_submit()) {
@@ -289,8 +305,7 @@ class Vfs::Fs_file_system : public File_system
 					                    Packet_descriptor::WRITE_TIMESTAMP,
 					                    ::File_system::Timestamp { .value = time.value });
 
-					/* pass packet to server side */
-					source.submit_packet(p);
+					_vfs_fs._submit_packet(p);
 				} catch (::File_system::Session::Tx::Source::Packet_alloc_failed) {
 					return false;
 				}
@@ -303,15 +318,14 @@ class Vfs::Fs_file_system : public File_system
 		{
 			using Fs_vfs_handle::Fs_vfs_handle;
 
-			bool queue_read(file_size count) override
+			bool queue_read(size_t count) override
 			{
 				return _queue_read(count, seek());
 			}
 
-			Read_result complete_read(char *dst, file_size count,
-			                          file_size &out_count) override
+			Read_result complete_read(Byte_range_ptr const &dst, size_t &out_count) override
 			{
-				return _complete_read(dst, count, out_count);
+				return _complete_read(dst, out_count);
 			}
 		};
 
@@ -321,7 +335,7 @@ class Vfs::Fs_file_system : public File_system
 
 			using Fs_vfs_handle::Fs_vfs_handle;
 
-			bool queue_read(file_size count) override
+			bool queue_read(size_t count) override
 			{
 				if (count < sizeof(Dirent))
 					return true;
@@ -330,26 +344,27 @@ class Vfs::Fs_file_system : public File_system
 				                   (seek() / sizeof(Dirent) * DIRENT_SIZE));
 			}
 
-			Read_result complete_read(char *dst, file_size count,
-			                          file_size &out_count) override
+			Read_result complete_read(Byte_range_ptr const &dst, size_t &out_count) override
 			{
-				if (count < sizeof(Dirent))
+				if (dst.num_bytes < sizeof(Dirent))
 					return READ_ERR_INVALID;
 
 				using ::File_system::Directory_entry;
 
 				Directory_entry entry { };
-				file_size       entry_out_count = 0;
+
+				size_t entry_out_count = 0;
 
 				Read_result const read_result =
-					_complete_read(&entry, DIRENT_SIZE, entry_out_count);
+					_complete_read(Byte_range_ptr((char *)(&entry), DIRENT_SIZE),
+					               entry_out_count);
 
 				if (read_result != READ_OK)
 					return read_result;
 
 				entry.sanitize();
 
-				Dirent &dirent = *(Dirent*)dst;
+				Dirent &dirent = *(Dirent*)dst.start;
 
 				if (entry_out_count < DIRENT_SIZE) {
 
@@ -381,15 +396,15 @@ class Vfs::Fs_file_system : public File_system
 		{
 			using Fs_vfs_handle::Fs_vfs_handle;
 
-			bool queue_read(file_size count) override
+			bool queue_read(size_t count) override
 			{
 				return _queue_read(count, seek());
 			}
 
-			Read_result complete_read(char *dst, file_size count,
-			                          file_size &out_count) override
+			Read_result complete_read(Byte_range_ptr const &dst,
+			                          size_t &out_count) override
 			{
-				return _complete_read(dst, count, out_count);
+				return _complete_read(dst, out_count);
 			}
 		};
 
@@ -398,22 +413,17 @@ class Vfs::Fs_file_system : public File_system
 		 */
 		struct Fs_handle_guard : Fs_vfs_handle
 		{
-			::File_system::Session &_fs_session;
-
 			Fs_handle_guard(File_system &fs,
-			                ::File_system::Session &fs_session,
 			                ::File_system::Node_handle fs_handle,
 			                Handle_space &space,
-			                ::File_system::Connection &fs_connection)
+			                Fs_file_system &vfs_fs)
 			:
-				Fs_vfs_handle(fs, *(Allocator*)nullptr, 0, space, fs_handle,
-				              fs_connection),
-				_fs_session(fs_session)
+				Fs_vfs_handle(fs, *(Allocator*)nullptr, 0, space, fs_handle, vfs_fs)
 			{ }
 
 			~Fs_handle_guard()
 			{
-				_fs_session.close(file_handle());
+				_vfs_fs._fs.close(file_handle());
 			}
 		};
 
@@ -436,103 +446,44 @@ class Vfs::Fs_file_system : public File_system
 			{ }
 		};
 
-		Fs_vfs_handle_queue _congested_handles { };
-
-		file_size _read(Fs_vfs_handle &handle, void *buf,
-		                file_size const count, file_size const seek_offset)
+		Write_result _write(Fs_vfs_handle &handle, file_size const seek_offset,
+		                    Const_byte_range_ptr const &src, size_t &out_count)
 		{
-			::File_system::Session::Tx::Source &source = *_fs.tx();
-			using ::File_system::Packet_descriptor;
-
-			file_size const max_packet_size = source.bulk_buffer_size() / 2;
-			file_size const clipped_count = min(max_packet_size, count);
-
-			/* XXX check if alloc_packet() and submit_packet() will succeed! */
-
-			Packet_descriptor const packet_in(source.alloc_packet((size_t)clipped_count),
-			                                  handle.file_handle(),
-			                                  Packet_descriptor::READ,
-			                                  (size_t)clipped_count,
-			                                  seek_offset);
-
-			/* wait until packet was acknowledged */
-			handle.queued_read_state = Handle_state::Queued_state::QUEUED;
-
-			/* pass packet to server side */
-			source.submit_packet(packet_in);
-
-			while (handle.queued_read_state != Handle_state::Queued_state::ACK)
-				_env.env().ep().wait_and_dispatch_one_io_signal();
-
-			/* obtain result packet descriptor with updated status info */
-			Packet_descriptor const packet_out = handle.queued_read_packet;
-
-			handle.queued_read_state  = Handle_state::Queued_state::IDLE;
-			handle.queued_read_packet = Packet_descriptor();
-
-			if (!packet_out.succeeded()) {
-				/* could be EOF or a real error */
-				try {
-					::File_system::Status status = _fs.status(handle.file_handle());
-					if (seek_offset < status.size)
-						Genode::warning("unexpected failure on file-system read");
-				}
-				catch (::File_system::Invalid_handle) { }
-				catch (::File_system::Unavailable)    { }
-			}
-
-			file_size const read_num_bytes = min((file_size)packet_out.length(), count);
-
-			memcpy(buf, source.packet_content(packet_out), (size_t)read_num_bytes);
-
-			source.release_packet(packet_out);
-
-			return read_num_bytes;
-		}
-
-		file_size _write(Fs_vfs_handle &handle,
-		                 const char *buf, file_size count, file_size seek_offset)
-		{
-			/*
-			 * TODO
-			 * a sustained write loop will congest the packet buffer,
-			 * perhaps acks should be processed before submission?
-			 *
-			 * _handle_ack();
-			 */
+			/* reclaim as much space in the packet stream as possible */
+			_handle_ack();
 
 			::File_system::Session::Tx::Source &source = *_fs.tx();
 			using ::File_system::Packet_descriptor;
 
-			file_size const max_packet_size = source.bulk_buffer_size() / 2;
-			count = min(max_packet_size, count);
+			size_t const max_packet_size = source.bulk_buffer_size() / 2;
+			size_t const count = min(max_packet_size, src.num_bytes);
 
 			if (!source.ready_to_submit()) {
-				if (!handle.enqueued())
-					_congested_handles.enqueue(handle);
-				throw Insufficient_buffer();
+				_write_would_block = true;
+				return Write_result::WRITE_ERR_WOULD_BLOCK;
 			}
 
 			try {
-				Packet_descriptor packet_in(source.alloc_packet((size_t)count),
+				Packet_descriptor packet_in(source.alloc_packet(count),
 				                            handle.file_handle(),
 				                            Packet_descriptor::WRITE,
-				                            (size_t)count,
+				                            count,
 				                            seek_offset);
 
-				memcpy(source.packet_content(packet_in), buf, (size_t)count);
+				memcpy(source.packet_content(packet_in), src.start, count);
 
-				/* pass packet to server side */
-				source.submit_packet(packet_in);
-			} catch (::File_system::Session::Tx::Source::Packet_alloc_failed) {
-				if (!handle.enqueued())
-					_congested_handles.enqueue(handle);
-				throw Insufficient_buffer();
-			} catch (...) {
-				Genode::error("unhandled exception");
-				return 0;
+				_submit_packet(packet_in);
 			}
-			return count;
+			catch (::File_system::Session::Tx::Source::Packet_alloc_failed) {
+				_write_would_block = true;
+				return Write_result::WRITE_ERR_WOULD_BLOCK;
+			}
+			catch (...) {
+				Genode::error("unhandled exception");
+				return Write_result::WRITE_ERR_IO;
+			}
+			out_count = count;
+			return Write_result::WRITE_OK;
 		}
 
 		void _handle_ack()
@@ -540,14 +491,18 @@ class Vfs::Fs_file_system : public File_system
 			::File_system::Session::Tx::Source &source = *_fs.tx();
 			using ::File_system::Packet_descriptor;
 
+			bool any_ack_handled = false;
+
 			while (source.ack_avail()) {
 
-				Packet_descriptor const packet = source.get_acked_packet();
+				Packet_descriptor const packet = source.try_get_acked_packet();
+				_write_would_block = false;
+				_peer.schedule_wakeup();
 
 				Handle_space::Id const id(packet.handle());
 
-				auto handle_read = [&] (Fs_vfs_handle &handle) {
-
+				auto handle_fn = [&] (Fs_vfs_handle &handle)
+				{
 					if (!packet.succeeded())
 						Genode::error("packet operation=", (int)packet.operation(), " failed");
 
@@ -560,29 +515,22 @@ class Vfs::Fs_file_system : public File_system
 					case Packet_descriptor::READ:
 						handle.queued_read_packet = packet;
 						handle.queued_read_state  = Handle_state::Queued_state::ACK;
-						handle.io_progress_response();
 						break;
 
 					case Packet_descriptor::WRITE:
-						/*
-						 * Notify anyone who might have failed on
-						 * 'alloc_packet()'
-						 */
-						handle.io_progress_response();
+						source.release_packet(packet);
 						break;
 
 					case Packet_descriptor::SYNC:
 						handle.queued_sync_packet = packet;
 						handle.queued_sync_state  = Handle_state::Queued_state::ACK;
-						handle.io_progress_response();
 						break;
 
 					case Packet_descriptor::CONTENT_CHANGED:
-						/* previously handled */
 						break;
 
 					case Packet_descriptor::WRITE_TIMESTAMP:
-						/* previously handled */
+						source.release_packet(packet);
 						break;
 					}
 				};
@@ -592,35 +540,22 @@ class Vfs::Fs_file_system : public File_system
 						_watch_handle_space.apply<Fs_vfs_watch_handle>(id, [&] (Fs_vfs_watch_handle &handle) {
 							handle.watch_response(); });
 					} else {
-						_handle_space.apply<Fs_vfs_handle>(id, handle_read);
+						_handle_space.apply<Fs_vfs_handle>(id, handle_fn);
 					}
 				}
 				catch (Handle_space::Unknown_id) {
 					Genode::warning("ack for unknown File_system handle ", id); }
 
-				if (packet.operation() == Packet_descriptor::WRITE) {
-					Mutex::Guard guard(_mutex);
-					source.release_packet(packet);
-				}
-
-				if (packet.operation() == Packet_descriptor::WRITE_TIMESTAMP) {
-					Mutex::Guard guard(_mutex);
-					source.release_packet(packet);
-				}
+				if (packet.succeeded())
+					any_ack_handled = true;
 			}
-		}
 
-		void _handle_signal()
-		{
-			_handle_ack();
-
-			_congested_handles.dequeue_all([] (Fs_vfs_handle &handle) {
-				handle.io_progress_response(); });
-
+			if (any_ack_handled)
+				_env.user().wakeup_vfs_user();
 		}
 
 		Genode::Io_signal_handler<Fs_file_system> _signal_handler {
-			_env.env().ep(), *this, &Fs_file_system::_handle_signal };
+			_env.env().ep(), *this, &Fs_file_system::_handle_ack };
 
 		static size_t buffer_size(Genode::Xml_node const &config)
 		{
@@ -661,7 +596,7 @@ class Vfs::Fs_file_system : public File_system
 
 			try {
 				::File_system::Node_handle node = _fs.node(path);
-				Fs_handle_guard node_guard(*this, _fs, node, _handle_space, _fs);
+				Fs_handle_guard node_guard(*this, node, _handle_space, *this);
 				status = _fs.status(node);
 			}
 			catch (Genode::Out_of_ram)  {
@@ -696,7 +631,7 @@ class Vfs::Fs_file_system : public File_system
 
 			try {
 				::File_system::Dir_handle dir = _fs.dir(dir_path.base(), false);
-				Fs_handle_guard dir_guard(*this, _fs, dir, _handle_space, _fs);
+				Fs_handle_guard dir_guard(*this, dir, _handle_space, *this);
 
 				_fs.unlink(dir, file_name.base() + 1);
 			}
@@ -731,13 +666,12 @@ class Vfs::Fs_file_system : public File_system
 				::File_system::Dir_handle from_dir =
 					_fs.dir(from_dir_path.base(), false);
 
-				Fs_handle_guard from_dir_guard(*this, _fs, from_dir,
-				                               _handle_space, _fs);
+				Fs_handle_guard from_dir_guard(*this, from_dir, _handle_space, *this);
 
 				::File_system::Dir_handle to_dir = _fs.dir(to_dir_path.base(),
 				                                           false);
 				Fs_handle_guard to_dir_guard(
-					*this, _fs, to_dir, _handle_space, _fs);
+					*this, to_dir, _handle_space, *this);
 
 				_fs.move(from_dir, from_file_name.base() + 1,
 				         to_dir,   to_file_name.base() + 1);
@@ -755,8 +689,7 @@ class Vfs::Fs_file_system : public File_system
 
 			try {
 				::File_system::Dir_handle dir = _fs.dir(path, false);
-				Fs_handle_guard node_guard(*this, _fs, dir,
-				                           _handle_space, _fs);
+				Fs_handle_guard node_guard(*this, dir, _handle_space, *this);
 
 				return _fs.num_entries(dir);
 			}
@@ -768,7 +701,7 @@ class Vfs::Fs_file_system : public File_system
 		{
 			try {
 				::File_system::Node_handle node = _fs.node(path);
-				Fs_handle_guard node_guard(*this, _fs, node, _handle_space, _fs);
+				Fs_handle_guard node_guard(*this, node, _handle_space, *this);
 
 				::File_system::Status status = _fs.status(node);
 
@@ -793,8 +726,6 @@ class Vfs::Fs_file_system : public File_system
 		Open_result open(char const *path, unsigned vfs_mode, Vfs_handle **out_handle,
 		                 Genode::Allocator& alloc) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Absolute_path dir_path(path);
 			dir_path.strip_last_element();
 
@@ -814,14 +745,14 @@ class Vfs::Fs_file_system : public File_system
 
 			try {
 				::File_system::Dir_handle dir = _fs.dir(dir_path.base(), false);
-				Fs_handle_guard dir_guard(*this, _fs, dir, _handle_space, _fs);
+				Fs_handle_guard dir_guard(*this, dir, _handle_space, *this);
 
 				::File_system::File_handle file = _fs.file(dir,
 				                                           file_name.base() + 1,
 				                                           mode, create);
 
 				*out_handle = new (alloc)
-					Fs_vfs_file_handle(*this, alloc, vfs_mode, _handle_space, file, _fs);
+					Fs_vfs_file_handle(*this, alloc, vfs_mode, _handle_space, file, *this);
 			}
 			catch (::File_system::Lookup_failed)       { return OPEN_ERR_UNACCESSIBLE;  }
 			catch (::File_system::Permission_denied)   { return OPEN_ERR_NO_PERM;       }
@@ -840,8 +771,6 @@ class Vfs::Fs_file_system : public File_system
 		Opendir_result opendir(char const *path, bool create,
 		                       Vfs_handle **out_handle, Allocator &alloc) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Absolute_path dir_path(path);
 
 			try {
@@ -849,7 +778,7 @@ class Vfs::Fs_file_system : public File_system
 
 				*out_handle = new (alloc)
 					Fs_vfs_dir_handle(*this, alloc, ::File_system::READ_ONLY,
-					                  _handle_space, dir, _fs);
+					                  _handle_space, dir, *this);
 			}
 			catch (::File_system::Lookup_failed)       { return OPENDIR_ERR_LOOKUP_FAILED;       }
 			catch (::File_system::Name_too_long)       { return OPENDIR_ERR_NAME_TOO_LONG;       }
@@ -865,8 +794,6 @@ class Vfs::Fs_file_system : public File_system
 		Openlink_result openlink(char const *path, bool create,
 		                         Vfs_handle **out_handle, Allocator &alloc) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			/*
 			 * Canonicalize path (i.e., path must start with '/')
 			 */
@@ -880,8 +807,7 @@ class Vfs::Fs_file_system : public File_system
 				::File_system::Dir_handle dir_handle = _fs.dir(abs_path.base(),
 				                                               false);
 
-				Fs_handle_guard from_dir_guard(*this, _fs, dir_handle,
-				                               _handle_space, _fs);
+				Fs_handle_guard from_dir_guard(*this, dir_handle, _handle_space, *this);
 
 				::File_system::Symlink_handle symlink_handle =
 				    _fs.symlink(dir_handle, symlink_name.base() + 1, create);
@@ -889,7 +815,7 @@ class Vfs::Fs_file_system : public File_system
 				*out_handle = new (alloc)
 					Fs_vfs_symlink_handle(*this, alloc,
 					                      ::File_system::READ_ONLY,
-					                      _handle_space, symlink_handle, _fs);
+					                      _handle_space, symlink_handle, *this);
 
 				return OPENLINK_OK;
 			}
@@ -906,11 +832,7 @@ class Vfs::Fs_file_system : public File_system
 
 		void close(Vfs_handle *vfs_handle) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle *fs_handle = static_cast<Fs_vfs_handle *>(vfs_handle);
-			if (fs_handle->enqueued())
-				_congested_handles.remove(*fs_handle);
 
 			_fs.close(fs_handle->file_handle());
 			destroy(fs_handle->alloc(), fs_handle);
@@ -965,49 +887,41 @@ class Vfs::Fs_file_system : public File_system
 		 ** File I/O service interface **
 		 ********************************/
 
-		Write_result write(Vfs_handle *vfs_handle, char const *buf,
-		                   file_size buf_size, file_size &out_count) override
+		Write_result write(Vfs_handle *vfs_handle, Const_byte_range_ptr const &src,
+		                   size_t &out_count) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle &handle = static_cast<Fs_vfs_handle &>(*vfs_handle);
 
-			out_count = _write(handle, buf, buf_size, handle.seek());
-			return WRITE_OK;
+			return _write(handle, handle.seek(), src, out_count);
 		}
 
-		bool queue_read(Vfs_handle *vfs_handle, file_size count) override
+		bool queue_read(Vfs_handle *vfs_handle, size_t count) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
 
-			bool result = handle->queue_read(count);
-			if (!result && !handle->enqueued())
-				_congested_handles.enqueue(*handle);
-			return result;
+			return handle->queue_read(count);
 		}
 
-		Read_result complete_read(Vfs_handle *vfs_handle, char *dst, file_size count,
-		                          file_size &out_count) override
+		Read_result complete_read(Vfs_handle *vfs_handle, Byte_range_ptr const &dst,
+		                          size_t &out_count) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			out_count = 0;
 
 			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
 
-			Read_result result = handle->complete_read(dst, count, out_count);
-			if (result == READ_QUEUED && !handle->enqueued())
-				_congested_handles.enqueue(*handle);
-			return result;
+			return handle->complete_read(dst, out_count);
 		}
 
-		bool read_ready(Vfs_handle *vfs_handle) override
+		bool read_ready(Vfs_handle const &vfs_handle) const override
 		{
-			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
+			Fs_vfs_handle const &handle = static_cast<Fs_vfs_handle const &>(vfs_handle);
 
-			return handle->read_ready_state == Handle_state::Read_ready_state::READY;
+			return handle.read_ready_state == Handle_state::Read_ready_state::READY;
+		}
+
+		bool write_ready(Vfs_handle const &) const override
+		{
+			return !_write_would_block;
 		}
 
 		bool notify_read_ready(Vfs_handle *vfs_handle) override
@@ -1030,7 +944,7 @@ class Vfs::Fs_file_system : public File_system
 
 			handle->read_ready_state = Handle_state::Read_ready_state::PENDING;
 
-			source.submit_packet(packet);
+			_submit_packet(packet);
 
 			/*
 			 * When the packet is acknowledged the application is notified via
@@ -1056,8 +970,6 @@ class Vfs::Fs_file_system : public File_system
 
 		bool queue_sync(Vfs_handle *vfs_handle) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
 
 			return handle->queue_sync();
@@ -1065,8 +977,6 @@ class Vfs::Fs_file_system : public File_system
 
 		Sync_result complete_sync(Vfs_handle *vfs_handle) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
 
 			return handle->complete_sync();
@@ -1074,8 +984,6 @@ class Vfs::Fs_file_system : public File_system
 
 		bool update_modification_timestamp(Vfs_handle *vfs_handle, Vfs::Timestamp time) override
 		{
-			Mutex::Guard guard(_mutex);
-
 			Fs_vfs_handle *handle = static_cast<Fs_vfs_handle *>(vfs_handle);
 
 			return handle->update_modification_timestamp(time);

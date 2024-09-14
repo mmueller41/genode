@@ -14,7 +14,6 @@
 
 /* Genode includes */
 #include <base/attached_dataspace.h>
-#include <base/debug.h>
 #include <base/heap.h>
 #include <base/log.h>
 #include <gpu_session/connection.h>
@@ -30,6 +29,7 @@ extern "C" {
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
+#include <pthread.h>
 
 #include <drm.h>
 #include <drm-uapi/lima_drm.h>
@@ -37,7 +37,7 @@ extern "C" {
 }
 
 
-enum { verbose_ioctl = false };
+static constexpr bool verbose_ioctl = false;
 
 
 /**
@@ -121,6 +121,17 @@ namespace Lima {
 
 	void serialize(drm_lima_gem_submit *submit, char *content);
 
+	template <typename FN>
+	void for_each_submit_bo(drm_lima_gem_submit const &submit, FN const &fn)
+	{
+		auto access_bo = [&] (drm_lima_gem_submit_bo const *bo) {
+			fn(*bo);
+		};
+
+		for_each_object((drm_lima_gem_submit_bo*)submit.bos,
+		                submit.nr_bos, access_bo);
+	}
+
 	size_t get_payload_size(drm_version const &version);
 
 } /* anonymous namespace */
@@ -188,33 +199,53 @@ namespace Lima {
 	using namespace Gpu;
 
 	struct Call;
-} /* namespace Gpu */
+} /* namespace Lima */
 
 
-struct Gpu::Buffer
+/*
+ * Gpu::Vram encapsulates a buffer object allocation
+ */
+struct Gpu::Vram
 {
+	struct Allocation_failed : Genode::Exception { };
+
 	Gpu::Connection &_gpu;
 
-	Genode::Id_space<Gpu::Buffer>::Element const _elem;
+	Vram_id_space::Element const _elem;
 
-	Genode::Dataspace_capability const cap;
-	size_t                       const size;
+	size_t const size;
+	Gpu::Virtual_address va;
+	Genode::Dataspace_capability cap { };
 
 	Genode::Constructible<Genode::Attached_dataspace> _attached_buffer { };
 
-	Buffer(Gpu::Connection               &gpu,
-	       size_t                         size,
-	       Genode::Id_space<Gpu::Buffer> &space)
+	Vram(Gpu::Connection      &gpu,
+	     size_t                size,
+	     Gpu::Virtual_address  va,
+	     Vram_id_space        &space)
 	:
 		_gpu  { gpu },
 		_elem { *this, space },
-		 cap  { _gpu.alloc_buffer(_elem.id(), size) },
-		 size { size }
-	{ }
-
-	virtual ~Buffer()
+		 size { size },
+		 va   { va }
 	{
-		_gpu.free_buffer(_elem.id());
+		/*
+		 * As we cannot easily enforce an GPU virtual-address after the
+		 * fact when using the DRM Lima API we instead use 'map_gpu' to
+		 * create the buffer object.
+		*
+		 * A valid virtual-address needs to be enforced before attempting
+		 * the allocation.
+		 */
+		if (!_gpu.map_gpu(_elem.id(), size, 0, va))
+			throw Allocation_failed();
+
+		cap = _gpu.map_cpu(_elem.id(), Gpu::Mapping_attributes());
+	}
+
+	~Vram()
+	{
+		_gpu.unmap_gpu(_elem.id(), 0, Virtual_address());
 	}
 
 	bool mmap(Genode::Env &env)
@@ -228,10 +259,10 @@ struct Gpu::Buffer
 
 	Genode::addr_t mmap_addr()
 	{
-		return reinterpret_cast<addr_t>(_attached_buffer->local_addr<addr_t>());
+		return reinterpret_cast<Gpu::addr_t>(_attached_buffer->local_addr<Gpu::addr_t>());
 	}
 
-	Gpu::Buffer_id id() const
+	Gpu::Vram_id id() const
 	{
 		return _elem.id();
 	}
@@ -251,63 +282,297 @@ class Lima::Call
 		Genode::Env  &_env { *vfs_gpu_env() };
 		Genode::Heap  _heap { _env.ram(), _env.rm() };
 
+		/*
+		 * The virtual-address allocator manages all GPU virtual
+		 * addresses, which are shared by all contexts.
+		 */
+		struct Va_allocator
+		{
+			Genode::Allocator_avl _alloc;
+
+			Va_allocator(Genode::Allocator &alloc)
+			:
+				_alloc { &alloc }
+			{
+				/*
+				 * The end of range correspondes to LIMA_VA_RESERVE_START
+				 * in Linux minus the page we omit at the start.
+				 */
+				_alloc.add_range(0x1000, 0xfff00000ul - 0x1000);
+			}
+
+			Gpu::Virtual_address alloc(uint32_t size)
+			{
+				return Gpu::Virtual_address { _alloc.alloc_aligned(size, 12).convert<::uint64_t>(
+					[&] (void *ptr) { return (::uint64_t)ptr; },
+					[&] (Range_allocator::Alloc_error) -> ::uint64_t {
+						error("Could not allocate GPU virtual address for size: ", size);
+						return 0;
+					}) };
+			}
+
+			void free(Gpu::Virtual_address va)
+			{
+				_alloc.free((void*)va.value);
+			}
+		};
+
+		Va_allocator _va_alloc { _heap };
+
 		/*****************
 		 ** Gpu session **
 		 *****************/
 
+		/*
+		 * A Buffer wraps the actual Vram object and is used
+		 * locally in each Gpu_context.
+		 */
+		struct Buffer
+		{
+			Genode::Id_space<Buffer>::Element const _elem;
+
+			Gpu::Vram const &_vram;
+
+			Buffer(Genode::Id_space<Buffer>       &space,
+			       Gpu::Vram                const &vram)
+			:
+				_elem { *this, space,
+				        Genode::Id_space<Buffer>::Id { .value = vram.id().value } },
+				_vram { vram },
+
+				busy { false }
+			{ }
+
+			~Buffer() { }
+
+			bool busy;
+		};
+
+		using Buffer_space = Genode::Id_space<Buffer>;
+
 		struct Gpu_context
 		{
-			int const fd;
-			unsigned long const _gpu_id;
+			private:
 
-			Gpu::Connection &_gpu { *vfs_gpu_connection(_gpu_id) };
+				/*
+				 * Noncopyable
+				 */
+				Gpu_context(Gpu_context const &) = delete;
+				Gpu_context &operator=(Gpu_context const &) = delete;
 
-			using Id_space = Genode::Id_space<Gpu_context>;
-			Id_space::Element const _elem;
+				Genode::Allocator &_alloc;
 
-			Gpu_context(int fd, unsigned long gpu,
-			            Genode::Id_space<Gpu_context> &space)
-			: fd { fd }, _gpu_id { gpu }, _elem { *this, space } { }
+				static int _open_gpu()
+				{
+					int const fd = ::open("/dev/gpu", 0);
+					if (fd < 0) {
+						error("Failed to open '/dev/gpu': ",
+						      "try configure '<gpu>' in 'dev' directory of VFS'");
+						throw Gpu::Session::Invalid_state();
+					}
+					return fd;
+				}
 
-			virtual ~Gpu_context()
-			{
-				::close(fd);
-			}
+				static unsigned long _stat_gpu(int fd)
+				{
+					struct ::stat buf;
+					if (::fstat(fd, &buf) < 0) {
+						error("Could not stat '/dev/gpu'");
+						::close(fd);
+						throw Gpu::Session::Invalid_state();
+					}
+					return buf.st_ino;
+				}
 
-			unsigned long id() const
-			{
-				return _elem.id().value;
-			}
+				int           const _fd;
+				unsigned long const _id;
 
-			Gpu::Connection& gpu()
-			{
-				return _gpu;
-			}
+				Gpu::Connection &_gpu { *vfs_gpu_connection(_id) };
+
+				Genode::Id_space<Gpu_context>::Element const _elem;
+
+				/*
+				 * The virtual-address allocator is solely used for
+				 * the construction of the context-local exec buffer
+				 * as the Gpu session requires a valid Vram object
+				 * for it.
+				 */
+				Va_allocator &_va_alloc;
+
+				/*
+				 * The vram space is used for actual memory allocations.
+				 * Each and every Gpu_context is able to allocate memory
+				 * at the Gpu session although normally the main context
+				 * is going to alloc memory for buffer objects.
+				 */
+				Gpu::Vram_id_space _vram_space { };
+
+				template <typename FN>
+				void _try_apply(Gpu::Vram_id id, FN const &fn)
+				{
+					try {
+						_vram_space.apply<Vram>(id, fn);
+					} catch (Vram_id_space::Unknown_id) { }
+				}
+
+
+				/*
+				 * The buffer space is used to attach a given buffer
+				 * object backed by an vram allocation - normally from the
+				 * main context - to the given context, i.e., it is mapped
+				 * when SUBMIT is executed.
+				 */
+				Buffer_space _buffer_space { };
+
+				template <typename FN>
+				void _try_apply(Buffer_space::Id id, FN const &fn)
+				{
+					try {
+						_buffer_space.apply<Buffer>(id, fn);
+					} catch (Buffer_space::Unknown_id) { }
+				}
+
+				/*
+				 * Each context contains its on exec buffer object that is
+				 * required by the Gpu session to pass on driver specific
+				 * command buffer.
+				 */
+				Gpu::Vram *_exec_buffer;
+
+
+			public:
+
+				bool defer_destruction { false };
+
+				static constexpr size_t _exec_buffer_size = { 256u << 10 };
+
+				Gpu_context(Genode::Allocator &alloc,
+				            Genode::Id_space<Gpu_context> &space,
+				            Va_allocator &va_alloc)
+				:
+					_alloc { alloc },
+					_fd { _open_gpu() },
+					_id { _stat_gpu(_fd) },
+					_elem { *this, space },
+					_va_alloc { va_alloc },
+					_exec_buffer { new (alloc) Gpu::Vram(_gpu, _exec_buffer_size,
+						                                 _va_alloc.alloc(_exec_buffer_size),
+						                                 _vram_space) }
+				{ }
+
+				~Gpu_context()
+				{
+					while (_buffer_space.apply_any<Buffer>([&] (Buffer &b) {
+						Genode::destroy(_alloc, &b);
+					})) { ; }
+
+					/*
+					 * 'close' below will destroy the Gpu session belonging
+					 * to this context so free the exec buffer beforehand.
+					 */
+					while (_vram_space.apply_any<Vram>([&] (Vram &v) {
+						Genode::destroy(_alloc, &v);
+					})) { ; }
+
+					::close(_fd);
+				}
+
+				Gpu::Connection& gpu()
+				{
+					return _gpu;
+				}
+
+				Gpu::Vram_capability export_vram(Gpu::Vram_id id)
+				{
+					Gpu::Vram_capability cap { };
+					_try_apply(id, [&] (Gpu::Vram const &b) {
+						cap = _gpu.export_vram(b.id());
+					});
+					return cap;
+				}
+
+				Buffer *import_vram(Gpu::Vram_capability cap, Gpu::Vram const &v)
+				{
+					Buffer *b = nullptr;
+
+					try { _gpu.import_vram(cap, v.id()); }
+					catch (... /* should only throw Invalid_state*/) {
+						return nullptr; }
+
+					try { b = new (_alloc) Buffer(_buffer_space, v); }
+					catch (... /* either conflicting id or alloc failure */) {
+						return nullptr; }
+
+					return b;
+				}
+
+				void free_buffer(Buffer_space::Id id)
+				{
+					_try_apply(id, [&] (Buffer &b) {
+
+						/*
+						 * We have to invalidate any imported buffer as otherwise
+						 * the object stays ref-counted in the driver and the
+						 * VA occupied by the object is not freed.
+						 *
+						 * For that we repurpose 'unmap_cpu' that otherwise is
+						 * not used.
+						 */
+						_gpu.unmap_cpu(Gpu::Vram_id { .value = id.value });
+						Genode::destroy(_alloc, &b);
+					});
+				}
+
+				bool buffer_space_contains(Buffer_space::Id id)
+				{
+					bool found = false;
+					_try_apply(id, [&] (Buffer const &) { found = true; });
+					return found;
+				}
+
+				Gpu::Vram_id_space &vram_space()
+				{
+					return _vram_space;
+				}
+
+				template <typename FN>
+				void with_vram_space(Gpu::Vram_id id, FN const &fn)
+				{
+					_try_apply(id, fn);
+				}
+
+				template <typename FN>
+				void access_exec_buffer(Genode::Env &env, FN const &fn)
+				{
+					/*
+					 * 'env' is solely needed for mapping the exec buffer
+					 * and is therefor used here locally.
+					 */
+					if (_exec_buffer->mmap(env)) {
+						char *ptr = (char*)_exec_buffer->mmap_addr();
+						if (ptr)
+							fn(ptr, _exec_buffer_size);
+					}
+				}
+
+				Gpu::Vram_id exec_buffer_id() const
+				{
+					return _exec_buffer->id();
+				}
+
+				unsigned long id() const
+				{
+					return _elem.id().value;
+				}
+
+				int fd() const
+				{
+					return _fd;
+				}
 		};
 
 		using Gpu_context_space = Genode::Id_space<Gpu_context>;
 		Gpu_context_space _gpu_context_space { };
-
-		Gpu_context &_create_ctx()
-		{
-			int const fd = ::open("/dev/gpu", 0);
-			if (fd < 0) {
-				Genode::error("Failed to open '/dev/gpu': ",
-				              "try configure '<gpu>' in 'dev' directory of VFS'");
-				throw Gpu::Session::Invalid_state();
-			}
-
-			struct ::stat buf;
-			if (::fstat(fd, &buf) < 0) {
-				Genode::error("Could not stat '/dev/gpu'");
-				::close(fd);
-				throw Gpu::Session::Invalid_state();
-			}
-			Gpu_context * context =
-				new (_heap) Gpu_context(fd, buf.st_ino, _gpu_context_space);
-
-			return *context;
-		}
 
 		struct Syncobj
 		{
@@ -318,34 +583,33 @@ class Lima::Call
 			Syncobj &operator=(Syncobj const &) = delete;
 
 
-			Gpu_context          *_gc    { nullptr };
+			Gpu_context_space::Id _gc_id { .value = ~0u };
+
 			Gpu::Sequence_number  _seqno { 0 };
 
-			using Id_space = Genode::Id_space<Syncobj>;
-			Id_space::Element const _elem;
+			Genode::Id_space<Syncobj>::Element const _elem;
 
-			Syncobj(Id_space &space)
+
+			bool sync_fd          { false };
+			bool defer_destruction { false };
+
+			Syncobj(Genode::Id_space<Syncobj> &space)
 			: _elem { *this, space } { }
 
-			unsigned long id() const
+			void adopt(Gpu_context_space::Id id, Gpu::Sequence_number seqno)
 			{
-				return _elem.id().value;
-			}
-
-			void adopt(Gpu_context &gc, Gpu::Sequence_number seqno)
-			{
-				_gc = &gc;
+				_gc_id = id;
 				_seqno = seqno;
 			}
 
-			Gpu_context &gpu_context()
+			Genode::Id_space<Syncobj>::Id id() const
 			{
-				if (!_gc) {
-					struct Invalid_gpu_context { };
-					throw Invalid_gpu_context();
-				}
+				return _elem.id();
+			}
 
-				return *_gc;
+			Gpu_context_space::Id ctx_id() const
+			{
+				return _gc_id;
 			}
 
 			Gpu::Sequence_number seqno() const
@@ -353,100 +617,22 @@ class Lima::Call
 				return _seqno;
 			}
 		};
-		Genode::Id_space<Syncobj> _syncobj_space { };
+		using Syncobj_space = Genode::Id_space<Syncobj>;
+		Syncobj_space _syncobj_space { };
 
-		struct Gpu_session
-		{
-			int const fd;
-			unsigned long const id;
+		Gpu_context *_main_ctx {
+			new (_heap) Gpu_context(_heap, _gpu_context_space, _va_alloc) };
 
-			Gpu_session(int fd, unsigned long id)
-			: fd { fd }, id { id } { }
-
-			virtual ~Gpu_session()
-			{
-				::close(fd);
-			}
-
-			Gpu::Connection &gpu()
-			{
-				return *vfs_gpu_connection(id);
-			}
-		};
-
-		Gpu_session _open_gpu()
-		{
-			int const fd = ::open("/dev/gpu", 0);
-			if (fd < 0) {
-				Genode::error("Failed to open '/dev/gpu': ",
-				              "try configure '<gpu>' in 'dev' directory of VFS'");
-				throw Gpu::Session::Invalid_state();
-			}
-
-			struct ::stat buf;
-			if (::fstat(fd, &buf) < 0) {
-				Genode::error("Could not stat '/dev/gpu'");
-				::close(fd);
-				throw Gpu::Session::Invalid_state();
-			}
-
-			return Gpu_session { fd, buf.st_ino };
-		}
-
-		Gpu_session _gpu_session { _open_gpu() };
-
-		Gpu::Connection &_gpu { _gpu_session.gpu() };
 		Gpu::Info_lima const &_gpu_info {
-			*_gpu.attached_info<Gpu::Info_lima>() };
-
-		Id_space<Buffer> _buffer_space { };
-
-		/*
-		 * Play it safe, glmark2 apparently submits araound 110 KiB at
-		 * some point.
-		 */
-		enum { EXEC_BUFFER_SIZE = 256u << 10 };
-		Constructible<Buffer> _exec_buffer { };
-
-		void _wait_for_mapping(uint32_t handle, unsigned op)
-		{
-			Buffer_id const id { .value = handle };
-			do {
-				if (_gpu.set_tiling(id, op))
-					break;
-
-				char buf;
-				(void)::read(_gpu_session.fd, &buf, sizeof(buf));
-			} while (true);
-		}
-
-		void _wait_for_syncobj(unsigned int handle)
-		{
-			Syncobj::Id_space::Id syncobj_id { .value = handle };
-
-			try {
-				auto wait = [&] (Syncobj &sync_obj) {
-
-					Gpu_context &gc = sync_obj.gpu_context();
-					do {
-						if (gc.gpu().complete(sync_obj.seqno()))
-							break;
-
-						char buf;
-						(void)::read(gc.fd, &buf, sizeof(buf));
-					} while (true);
-				};
-				_syncobj_space.apply<Syncobj>(syncobj_id, wait);
-			} catch (Genode::Id_space<Lima::Call::Syncobj>::Unknown_id) { }
-		}
+			*_main_ctx->gpu().attached_info<Gpu::Info_lima>() };
 
 		template <typename FN>
 		bool _apply_handle(uint32_t handle, FN const &fn)
 		{
-			Buffer_id const id { .value = handle };
+			Vram_id const id { .value = handle };
 
 			bool found = false;
-			_buffer_space.apply<Buffer>(id, [&] (Buffer &b) {
+			_main_ctx->with_vram_space(id, [&] (Vram &b) {
 				fn(b);
 				found = true;
 			});
@@ -454,10 +640,75 @@ class Lima::Call
 			return found;
 		}
 
+		void _wait_for_mapping(uint32_t handle, unsigned op)
+		{
+			(void)_apply_handle(handle, [&] (Vram &b) {
+				do {
+					if (_main_ctx->gpu().set_tiling_gpu(b.id(), 0, op))
+						break;
+
+					char buf;
+					(void)::read(_main_ctx->fd(), &buf, sizeof(buf));
+				} while (true);
+			});
+		}
+
+		int _wait_for_syncobj(int fd)
+		{
+			if (fd < SYNC_FD) {
+				Genode::warning("ignore invalid sync fd: ", fd);
+				return -1;
+			}
+
+			unsigned const handle = fd - SYNC_FD;
+			Syncobj_space::Id syncobj_id { .value = handle };
+
+			try {
+				auto wait = [&] (Syncobj &sync_obj) {
+
+					auto poll_completion = [&] (Gpu_context &gc) {
+						do {
+							if (gc.gpu().complete(sync_obj.seqno()))
+								break;
+
+							char buf;
+							(void)::read(gc.fd(), &buf, sizeof(buf));
+						} while (true);
+
+						if (gc.defer_destruction)
+							Genode::destroy(_heap, &gc);
+					};
+					_gpu_context_space.apply<Gpu_context>(sync_obj.ctx_id(),
+					                                      poll_completion);
+
+					if (sync_obj.defer_destruction)
+						Genode::destroy(_heap, &sync_obj);
+				};
+				_syncobj_space.apply<Syncobj>(syncobj_id, wait);
+
+			} catch (Syncobj_space::Unknown_id) {
+				/*
+				 * We could end up here on the last wait when Mesa already
+				 * destroyed the syncobj. For that reason we deferred the
+				 * destruction of the syncobj as well as the referenced ctx.
+				 */
+				return -1;
+			} catch (Gpu_context_space::Unknown_id) {
+				/*
+				 * We will end up here in case the GP or PP job could not
+				 * be submitted as Mesa does not check for successful
+				 * submission.
+				 */
+				return -1;
+			}
+
+			return 0;
+		}
+
 		Dataspace_capability _lookup_cap_from_handle(uint32_t handle)
 		{
 			Dataspace_capability cap { };
-			auto lookup_cap = [&] (Buffer const &b) {
+			auto lookup_cap = [&] (Vram const &b) {
 				cap = b.cap;
 			};
 			(void)_apply_handle(handle, lookup_cap);
@@ -471,15 +722,15 @@ class Lima::Call
 		int _drm_lima_gem_info(drm_lima_gem_info &arg)
 		{
 			int result = -1;
-			(void)_apply_handle(arg.handle, [&] (Buffer &b) {
+			(void)_apply_handle(arg.handle, [&] (Vram &b) {
 				if (!b.mmap(_env))
 					return;
 				arg.offset = reinterpret_cast<::uint64_t>(b.mmap_addr());
 
-				Gpu::addr_t const va = _gpu.query_buffer_ppgtt(b.id());
-				if (va == (Gpu::addr_t)-1)
+				Gpu::Virtual_address const va = b.va;
+				if (va.value == (Gpu::addr_t)-1)
 					return;
-				arg.va = (uint32_t)va;
+				arg.va = (uint32_t)va.value;
 
 				result = 0;
 			});
@@ -491,23 +742,32 @@ class Lima::Call
 		void _alloc_buffer(::uint64_t const size, FUNC const &fn)
 		{
 			size_t donate = size;
-			Buffer *buffer = nullptr;
+			Vram *buffer = nullptr;
 
-			retry<Gpu::Session::Out_of_ram>(
-			[&] () {
-				retry<Gpu::Session::Out_of_caps>(
+			Gpu::Virtual_address const va = _va_alloc.alloc(size);
+			if (!va.value)
+				return;
+
+			try {
+				retry<Gpu::Session::Out_of_ram>(
 				[&] () {
-					buffer =
-						new (&_heap) Buffer(_gpu, size,
-						                    _buffer_space);
+					retry<Gpu::Session::Out_of_caps>(
+					[&] () {
+						buffer =
+							new (&_heap) Vram(_main_ctx->gpu(), size, va,
+							                  _main_ctx->vram_space());
+					},
+					[&] () {
+						_main_ctx->gpu().upgrade_caps(2);
+					});
 				},
 				[&] () {
-					_gpu.upgrade_caps(2);
+					_main_ctx->gpu().upgrade_ram(donate);
 				});
-			},
-			[&] () {
-				_gpu.upgrade_ram(donate);
-			});
+			} catch (Gpu::Vram::Allocation_failed) {
+				_va_alloc.free(va);
+				return;
+			}
 
 			if (buffer)
 				fn(*buffer);
@@ -517,52 +777,106 @@ class Lima::Call
 		{
 			::uint64_t const size = arg.size;
 
-			try {
-				_alloc_buffer(size, [&](Buffer const &b) {
-					arg.handle = b.id().value;
-				});
-				return 0;
-			} catch (...) {
-				return -1;
-			}
+			bool result = false;
+			_alloc_buffer(size, [&](Vram const &b) {
+				arg.handle = b.id().value;
+				result = true;
+			});
+			return result ? 0 : -1;
 		}
 
 		int _drm_lima_gem_submit(drm_lima_gem_submit &arg)
 		{
-			Gpu_context::Id_space::Id ctx_id { .value = arg.ctx };
+			Gpu_context_space::Id ctx_id { .value = arg.ctx };
 
-			Syncobj::Id_space::Id syncobj_id { .value = arg.out_sync };
+			Syncobj_space::Id syncobj_id { .value = arg.out_sync };
 
 			bool result = false;
 			_syncobj_space.apply<Syncobj>(syncobj_id, [&] (Syncobj &sync_obj) {
 
 				_gpu_context_space.apply<Gpu_context>(ctx_id, [&] (Gpu_context &gc) {
 
-					size_t const payload_size = Lima::get_payload_size(arg);
-					if (payload_size > EXEC_BUFFER_SIZE) {
-						Genode::error(__func__, ": exec buffer too small (",
-									  (unsigned)EXEC_BUFFER_SIZE, ") needed ", payload_size);
-						return;
+					/* XXX always map buffer id 1 to prevent GP MMU faults */
+					{
+						uint32_t const handle = 1;
+						Buffer_space::Id const id = { .value = handle };
+						if (!gc.buffer_space_contains(id)) {
+
+							(void)_apply_handle(handle, [&] (Gpu::Vram const &v) {
+								Gpu::Vram_capability cap = _main_ctx->export_vram(v.id());
+								if (gc.import_vram(cap, v) == nullptr) {
+									Genode::error("could force mapping of buffer ", handle);
+									return;
+								}
+							});
+						}
 					}
 
 					/*
-					 * Copy each array flat to the exec buffer and adjust the
-					 * addresses in the submit object.
+					 * Check if we have access to all needed buffer objects and
+					 * if not import them from the main context that normaly performs
+					 * all allocations.
 					 */
-					char *local_exec_buffer = (char*)_exec_buffer->mmap_addr();
-					Genode::memset(local_exec_buffer, 0, EXEC_BUFFER_SIZE);
-					Lima::serialize(&arg, local_exec_buffer);
+
+					bool all_buffer_mapped = true;
+					Lima::for_each_submit_bo(arg, [&] (drm_lima_gem_submit_bo const &bo) {
+						Buffer_space::Id const id = { .value = bo.handle };
+						if (!gc.buffer_space_contains(id)) {
+
+							bool imported = false;
+							(void)_apply_handle(bo.handle, [&] (Gpu::Vram const &v) {
+								Gpu::Vram_capability cap = _main_ctx->export_vram(v.id());
+								if (gc.import_vram(cap, v) == nullptr)
+									return;
+
+								imported = true;
+							});
+
+							if (!imported)
+								all_buffer_mapped = false;
+						}
+					});
+
+					if (!all_buffer_mapped)
+						return;
+
+					bool serialized = false;
+					gc.access_exec_buffer(_env, [&] (char *ptr, size_t size) {
+
+						size_t const payload_size = Lima::get_payload_size(arg);
+						if (payload_size > size) {
+							error("exec buffer for context ", ctx_id.value,
+							      " too small, got ", size, " but needed ",
+							      payload_size);
+							return;
+						}
+
+						/*
+						 * Copy each array flat to the exec buffer and adjust the
+						 * addresses in the submit object.
+						 */
+						Genode::memset(ptr, 0, size);
+						Lima::serialize(&arg, ptr);
+
+						serialized = true;
+					});
+
+					if (!serialized)
+						return;
 
 					try {
 						Gpu::Connection &gpu = gc.gpu();
 
 						Gpu::Sequence_number const seqno =
-							gpu.exec_buffer(_exec_buffer->id(), EXEC_BUFFER_SIZE);
+							gpu.execute(gc.exec_buffer_id(), 0);
 
-						sync_obj.adopt(gc, seqno);
+						sync_obj.adopt(Gpu_context_space::Id { .value = gc.id() },
+						               seqno);
 
 						result = true;
-					} catch (Gpu::Session::Invalid_state) { }
+					} catch (Gpu::Session::Invalid_state) {
+						warning(": could not execute: ", gc.exec_buffer_id().value);
+					}
 				});
 			});
 
@@ -593,9 +907,10 @@ class Lima::Call
 		int _drm_lima_ctx_create(drm_lima_ctx_create &arg)
 		{
 			try {
-				Gpu_context &ctx = _create_ctx();
+				Gpu_context * ctx =
+					new (_heap) Gpu_context(_heap, _gpu_context_space, _va_alloc);
 
-				arg.id = ctx.id();
+				arg.id = ctx->id();
 				return 0;
 			} catch (... /* intentional catch-all ... */) {
 				/* ... as the lima GPU driver will not throw */
@@ -605,13 +920,25 @@ class Lima::Call
 
 		int _drm_lima_ctx_free(drm_lima_ctx_free &arg)
 		{
-			Gpu_context::Id_space::Id id { .value = arg.id };
+			Gpu_context_space::Id id { .value = arg.id };
 
 			bool result = false;
 			auto free_ctx = [&] (Gpu_context &ctx) {
-				::close(ctx.fd);
-				Genode::destroy(_heap, &ctx);
+
 				result = true;
+
+				/*
+				 * If the ctx is currently referenced by a syncobj its
+				 * destruction gets deferred until the final wait-for-syncobj
+				 * call.
+				 */
+				_syncobj_space.for_each<Syncobj>([&] (Syncobj &obj) {
+					if (obj.ctx_id().value == ctx.id())
+						ctx.defer_destruction = true;
+				});
+
+				if (!ctx.defer_destruction)
+					Genode::destroy(_heap, &ctx);
 			};
 			_gpu_context_space.apply<Gpu_context>(id, free_ctx);
 
@@ -652,8 +979,15 @@ class Lima::Call
 
 		int _drm_gem_close(drm_gem_close const &gem_close)
 		{
+			auto free_buffer = [&] (Gpu_context &ctx) {
+				Buffer_space::Id const id { .value = gem_close.handle };
+				ctx.free_buffer(id);
+			};
+			_gpu_context_space.for_each<Gpu_context>(free_buffer);
+
 			return _apply_handle(gem_close.handle,
-				[&] (Gpu::Buffer &b) {
+				[&] (Gpu::Vram &b) {
+					_va_alloc.free(b.va);
 					destroy(_heap, &b);
 				}) ? 0 : -1;
 		}
@@ -686,7 +1020,7 @@ class Lima::Call
 		{
 			try {
 				Syncobj *obj = new (_heap) Syncobj(_syncobj_space);
-				arg.handle = (uint32_t)obj->id();
+				arg.handle = (uint32_t)obj->id().value;
 				return 0;
 			} catch (... /* XXX which exceptions can occur? */) { }
 			return -1;
@@ -694,20 +1028,38 @@ class Lima::Call
 
 		int _drm_syncobj_destroy(drm_syncobj_destroy &arg)
 		{
-			Syncobj::Id_space::Id id { .value = arg.handle };
+			Syncobj_space::Id id { .value = arg.handle };
 
 			bool result = false;
 			_syncobj_space.apply<Syncobj>(id, [&] (Syncobj &obj) {
-				Genode::destroy(_heap, &obj);
 				result = true;
+
+				/*
+				 * In case the syncobj was once exported destruction
+				 * gets deferred until the final wait-for-syncobj call.
+				 */
+				if (obj.sync_fd) {
+					obj.defer_destruction = true;
+					return;
+				}
+
+				Genode::destroy(_heap, &obj);
 			});
 			return result ? 0 : -1;
 		}
 
 		int _drm_syncobj_handle_to_fd(drm_syncobj_handle &arg)
 		{
-			arg.fd = arg.handle + SYNC_FD;
-			return 0;
+			arg.fd = -1;
+
+			Syncobj_space::Id id { .value = arg.handle };
+			_syncobj_space.apply<Syncobj>(id, [&] (Syncobj &obj) {
+				obj.sync_fd = true;
+
+				arg.fd = arg.handle + SYNC_FD;
+			});
+
+			return arg.fd != -1 ? 0 : -1;
 		}
 
 		int _generic_ioctl(unsigned cmd, void *arg)
@@ -739,28 +1091,18 @@ class Lima::Call
 
 	public:
 
-		static constexpr int const SYNC_FD { 384 };
+		/* arbitrary start value out of the libc's FD alloc range */
+		static constexpr int const SYNC_FD { 10000 };
 
-		Call()
-		{
-			try {
-				_exec_buffer.construct(_gpu,
-				                       (size_t)EXEC_BUFFER_SIZE,
-				                       _buffer_space);
-			} catch (...) {
-				throw Gpu::Session::Invalid_state();
-			}
-			if (!_exec_buffer->mmap(_env))
-				throw Gpu::Session::Invalid_state();
-		}
+		Call() { }
 
 		~Call()
 		{
-			while (_gpu_context_space.apply_any<Gpu_context>([&] (Gpu_context &ctx) {
-				Genode::destroy(_heap, &ctx); })) { ; }
-
 			while (_syncobj_space.apply_any<Syncobj>([&] (Syncobj &obj) {
 				Genode::destroy(_heap, &obj); })) { ; }
+
+			while (_gpu_context_space.apply_any<Gpu_context>([&] (Gpu_context &ctx) {
+				Genode::destroy(_heap, &ctx); })) { ; }
 		}
 
 		int ioctl(unsigned long request, void *arg)
@@ -768,6 +1110,11 @@ class Lima::Call
 			bool const device_request = device_ioctl(request);
 			return device_request ? _device_ioctl(device_number(request), arg)
 			                      : _generic_ioctl(command_number(request), arg);
+		}
+
+		int wait_for_syncobj(int fd)
+		{
+			return _wait_for_syncobj(fd);
 		}
 
 		void *mmap(unsigned long offset, unsigned long /* size */)
@@ -804,7 +1151,7 @@ void lima_drm_init()
 	struct ::stat buf;
 	if (stat("/dev/gpu", &buf) < 0) {
 		Genode::error("'/dev/gpu' not accessible: ",
-				          "try configure '<gpu>' in 'dev' directory of VFS'");
+		              "try configure '<gpu>' in 'dev' directory of VFS'");
 		return;
 	}
 
@@ -827,19 +1174,23 @@ static void dump_ioctl(unsigned long request)
 
 int lima_drm_ioctl(unsigned long request, void *arg)
 {
+	static pthread_mutex_t ioctl_mutex = PTHREAD_MUTEX_INITIALIZER;
+	int const err = pthread_mutex_lock(&ioctl_mutex);
+	if (err) {
+		Genode::error("could not lock ioctl mutex: ", err);
+		return -1;
+	}
+
 	if (verbose_ioctl)
 		dump_ioctl(request);
 
-	try {
-		int ret = _drm->ioctl(request, arg);
+	int const ret = _drm->ioctl(request, arg);
 
-		if (verbose_ioctl)
-			Genode::log("returned ", ret);
+	if (verbose_ioctl)
+		Genode::log("returned ", ret);
 
-		return ret;
-	} catch (...) { }
-
-	return -1;
+	pthread_mutex_unlock(&ioctl_mutex);
+	return ret;
 }
 
 
@@ -858,7 +1209,15 @@ int lima_drm_munmap(void *addr)
 
 int lima_drm_poll(int fd)
 {
-	int const handle = fd - Lima::Call::SYNC_FD;
-	_drm->wait_for_syncobj((unsigned)handle);
-	return 0;
+	static pthread_mutex_t poll_mutex = PTHREAD_MUTEX_INITIALIZER;
+	int const err = pthread_mutex_lock(&poll_mutex);
+	if (err) {
+		Genode::error("could not lock poll mutex: ", err);
+		return -1;
+	}
+
+	int const ret = _drm->wait_for_syncobj(fd);
+
+	pthread_mutex_unlock(&poll_mutex);
+	return ret;
 }

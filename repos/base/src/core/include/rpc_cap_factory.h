@@ -18,9 +18,13 @@
 #include <base/capability.h>
 #include <base/mutex.h>
 
-namespace Genode { class Rpc_cap_factory; }
+/* core includes */
+#include <types.h>
 
-class Genode::Rpc_cap_factory
+namespace Core { class Rpc_cap_factory; }
+
+
+class Core::Rpc_cap_factory
 {
 	private:
 

@@ -11,13 +11,11 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes */
 #include <pd_session_component.h>
+#include <cpu_session_component.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 Ram_allocator::Alloc_result
@@ -102,78 +100,88 @@ size_t Pd_session_component::dataspace_size(Ram_dataspace_capability ds_cap) con
 }
 
 
-void Pd_session_component::ref_account(Capability<Pd_session> pd_cap)
+Pd_session::Ref_account_result Pd_session_component::ref_account(Capability<Pd_session> pd_cap)
 {
 	/* the reference account can be defined only once */
 	if (_cap_account.constructed())
-		return;
+		return Ref_account_result::OK;
 
 	if (this->cap() == pd_cap)
-		return;
+		return Ref_account_result::OK;
+
+	Ref_account_result result = Ref_account_result::INVALID_SESSION;
 
 	_ep.apply(pd_cap, [&] (Pd_session_component *pd) {
 
-		if (!pd || !pd->_ram_account.constructed()) {
-			error("invalid PD session specified as ref account");
-			throw Invalid_session();
-		}
+		if (!pd || !pd->_ram_account.constructed())
+			return;
 
 		_cap_account.construct(_cap_quota_guard(), _label, *pd->_cap_account);
 		_ram_account.construct(_ram_quota_guard(), _label, *pd->_ram_account);
+
+		result = Ref_account_result::OK;
 	});
+	return result;
 }
 
 
-void Pd_session_component::transfer_quota(Capability<Pd_session> pd_cap,
-                                          Cap_quota amount)
+Pd_session::Transfer_cap_quota_result
+Pd_session_component::transfer_quota(Capability<Pd_session> pd_cap, Cap_quota amount)
 {
 	if (!_cap_account.constructed())
-		throw Undefined_ref_account();
+		return Transfer_cap_quota_result::NO_REF_ACCOUNT;
 
 	if (this->cap() == pd_cap)
-		return;
+		return Transfer_cap_quota_result::OK;
+
+	Transfer_cap_quota_result result = Transfer_cap_quota_result::INVALID_SESSION;
 
 	_ep.apply(pd_cap, [&] (Pd_session_component *pd) {
 
 		if (!pd || !pd->_cap_account.constructed())
-			throw Invalid_session();
+			return;
 
 		try {
 			_cap_account->transfer_quota(*pd->_cap_account, amount);
 			diag("transferred ", amount, " caps "
 			     "to '", pd->_cap_account->label(), "' (", _cap_account, ")");
+			result = Transfer_cap_quota_result::OK;
 		}
-		catch (Account<Cap_quota>::Unrelated_account) {
-			warning("attempt to transfer cap quota to unrelated PD session");
-			throw Invalid_session(); }
+		catch (Account<Cap_quota>::Unrelated_account) { }
 		catch (Account<Cap_quota>::Limit_exceeded) {
-			throw Out_of_caps(); }
+			result = Transfer_cap_quota_result::OUT_OF_CAPS;
+		}
 	});
+	return result;
 }
 
 
-void Pd_session_component::transfer_quota(Capability<Pd_session> pd_cap,
-                                          Ram_quota amount)
+Pd_session::Transfer_ram_quota_result
+Pd_session_component::transfer_quota(Capability<Pd_session> pd_cap, Ram_quota amount)
 {
 	if (!_ram_account.constructed())
-		throw Undefined_ref_account();
+		return Transfer_ram_quota_result::NO_REF_ACCOUNT;
 
 	if (this->cap() == pd_cap)
-		return;
+		return Transfer_ram_quota_result::OK;
+
+	Transfer_ram_quota_result result = Transfer_ram_quota_result::INVALID_SESSION;
 
 	_ep.apply(pd_cap, [&] (Pd_session_component *pd) {
 
 		if (!pd || !pd->_ram_account.constructed())
-			throw Invalid_session();
+			return;
 
 		try {
-			_ram_account->transfer_quota(*pd->_ram_account, amount); }
-		catch (Account<Ram_quota>::Unrelated_account) {
-			warning("attempt to transfer RAM quota to unrelated PD session");
-			throw Invalid_session(); }
+			_ram_account->transfer_quota(*pd->_ram_account, amount);
+			result = Transfer_ram_quota_result::OK;
+		}
+		catch (Account<Ram_quota>::Unrelated_account) { }
 		catch (Account<Ram_quota>::Limit_exceeded) {
-			throw Out_of_ram(); }
+			result = Transfer_ram_quota_result::OUT_OF_RAM;
+		 }
 	});
+	return result;
 }
 
 
@@ -199,4 +207,16 @@ Pd_session_component::attach_dma(Dataspace_capability ds_cap, addr_t at)
 		return Attach_dma_error::DENIED;
 
 	return _address_space.attach_dma(ds_cap, at);
+}
+
+
+Pd_session_component::~Pd_session_component()
+{
+	/*
+	 * As `Platform_thread` objects point to their corresponding `Platform_pd`
+	 * objects, we need to destroy the threads when the `Platform_pd` ceases to
+	 * exist.
+	 */
+	_threads.for_each([&] (Cpu_thread_component &thread) {
+		thread.destroy(); });
 }

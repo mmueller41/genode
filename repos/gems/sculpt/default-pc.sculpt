@@ -1,14 +1,18 @@
 # configuration decisions
 drivers: pc
 system:  pc
-gpu_drv: intel
+gpu:     intel
 
 # supplemental depot content added to the system image
-import: pkg/drivers_managed-pc pkg/wifi src/ipxe_nic_drv
+import: pkg/sculpt_drivers-pc
 
 # selection of launcher-menu entries
-launcher: vm_fs shared_fs usb_devices_rom
+launcher: vm_fs shared_fs download_debug_info black_hole trace_logger
+launcher: audio mixer system_clock acpi_support recall_fs touchpad
 
 # selection of accepted depot-package providers
 depot: genodelabs cnuke alex-ab mstein nfeske cproc chelmuth jschlatow
 depot: ssumpf skalk
+
+# preconfigured example scenarios
+presets: empty nano3d window_manager falkon_web_browser goa_testbed

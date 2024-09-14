@@ -29,14 +29,15 @@ struct Sculpt::Managed_config
 {
 	Env &_env;
 
-	typedef String<20> Xml_node_name;
-	typedef String<32> Rom_name;
+	using Xml_node_name = String<20>;
+	using Rom_name      = String<32>;
+	using Label         = Session_label;
 
 	enum Mode { MANAGED, MANUAL } _mode { MANAGED };
 
 	HANDLER &_obj;
 
-	void (HANDLER::*_handle) (Xml_node);
+	void (HANDLER::*_handle) (Xml_node const &);
 
 	/*
 	 * Configuration supplied by the user
@@ -68,8 +69,7 @@ struct Sculpt::Managed_config
 		(_obj.*_handle)(_manual_config_rom.xml());
 	}
 
-	template <typename FN>
-	void with_manual_config(FN const &fn) const
+	void with_manual_config(auto const &fn) const
 	{
 		fn(_manual_config_rom.xml());
 	}
@@ -90,15 +90,14 @@ struct Sculpt::Managed_config
 		return true;
 	}
 
-	template <typename FN>
-	void generate(FN const &fn)
+	void generate(auto const &fn)
 	{
 		_config.generate([&] (Xml_generator &xml) { fn(xml); });
 	}
 
 	Managed_config(Env &env, Xml_node_name const &xml_node_name,
 	               Rom_name const &rom_name,
-	               HANDLER &obj, void (HANDLER::*handle) (Xml_node))
+	               HANDLER &obj, void (HANDLER::*handle) (Xml_node const &))
 	:
 		_env(env), _obj(obj), _handle(handle),
 		_manual_config_rom(_env, Label("config -> ", rom_name).string()),
@@ -109,6 +108,8 @@ struct Sculpt::Managed_config
 		/* determine initial '_mode' */
 		_update_manual_config_rom();
 	}
+
+	void trigger_update() { _manual_config_handler.local_submit(); }
 };
 
 #endif /* _MANAGED_CONFIG_H_ */

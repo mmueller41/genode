@@ -37,8 +37,8 @@ class Genode::Session_state : public Parent::Client, public Parent::Server
 
 		class Factory;
 
-		typedef String<32>  Name;
-		typedef String<256> Args;
+		using Name = String<32>;
+		using Args = String<256>;
 
 		struct Ready_callback : Interface
 		{
@@ -323,8 +323,7 @@ class Genode::Session_state::Factory : Noncopyable
 		 *
 		 * \throw Allocator::Out_of_memory
 		 */
-		template <typename... ARGS>
-		Session_state &create(ARGS &&... args)
+		Session_state &create(auto &&... args)
 		{
 			Session_state &session = *new (_slab) Session_state(args...);
 			session.owner(*this);

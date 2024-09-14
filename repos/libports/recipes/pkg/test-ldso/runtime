@@ -2,9 +2,8 @@
 
 	<requires> <timer/> </requires>
 
-	<events>
-		<timeout meaning="failed" sec="20" />
-		<log meaning="succeeded">
+	<fail after_seconds="20"/>
+	<succeed>
 			[init -> test-ldso] Lib_2_global 0x11223343*
 			[init -> test-ldso] Lib_1_global_1 0x5060707*
 			[init -> test-ldso] Lib_1_global_2 0x1020303*
@@ -41,8 +40,8 @@
 			[init -> test-ldso] *
 			[init -> test-ldso] Catch exceptions in program*
 			[init -> test-ldso] ---------------------------*
-			[init -> test-ldso] *Error: ROM-session creation failed (ram_quota=*, cap_quota=*, label="unknown_rom")*
-			[init -> test-ldso] *Error: Could not open ROM session for "unknown_rom"*
+			[init -> test-ldso] *Error: ROM-session creation failed*label="unknown_rom"*
+			[init -> test-ldso] *Error: could not open ROM session for "unknown_rom"*
 			[init -> test-ldso] exception in remote procedure call: caught*
 			[init -> test-ldso] exception in program: caught*
 			[init -> test-ldso] exception in shared lib: caught*
@@ -102,8 +101,7 @@
 			[init -> test-ldso] attr_destructor_2 0x4030200d*
 			[init -> test-ldso] attr_destructor_1 0x8070604c*
 			[init] child "test-ldso" exited with exit value 123
-		</log>
-	</events>
+	</succeed>
 
 	<content>
 		<rom label="ld.lib.so"/>

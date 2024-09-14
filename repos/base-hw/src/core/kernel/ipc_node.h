@@ -35,140 +35,122 @@ class Kernel::Ipc_node
 		using Queue_item = Genode::Fifo_element<Ipc_node>;
 		using Queue      = Genode::Fifo<Queue_item>;
 
-		enum State
+		struct In
 		{
-			INACTIVE      = 1,
-			AWAIT_REPLY   = 2,
-			AWAIT_REQUEST = 3,
+			enum State { READY, WAIT, REPLY, REPLY_NO_SENDER, DESTRUCT };
+
+			State state { READY };
+			Queue queue { };
+
+			bool waiting() const
+			{
+				return state == WAIT;
+			}
+		};
+
+		struct Out
+		{
+			enum State { READY, SEND, SEND_HELPING, DESTRUCT };
+
+			State     state { READY   };
+			Ipc_node *node  { nullptr };
+
+			bool sending() const
+			{
+				return state == SEND_HELPING || state == SEND;
+			}
 		};
 
 		Thread     &_thread;
-		Queue_item  _request_queue_item { *this };
-		State       _state              { INACTIVE };
-		Ipc_node   *_caller             { nullptr };
-		Ipc_node   *_callee             { nullptr };
-		bool        _help               { false };
-		Queue       _request_queue      { };
+		Queue_item  _queue_item { *this };
+		Out         _out        { };
+		In          _in         { };
 
 		/**
-		 * Buffer next request from request queue in 'r' to handle it
+		 * Receive a message from another IPC node
 		 */
-		void _receive_request(Ipc_node &caller);
+		void _receive_from(Ipc_node &node);
 
 		/**
-		 * Receive a given reply if one is expected
+		 * Cancel an ongoing send operation
 		 */
-		void _receive_reply(Ipc_node &callee);
+		void _cancel_send();
 
 		/**
-		 * Insert 'r' into request queue, buffer it if we were waiting for it
+		 * Return wether this IPC node is helping another one
 		 */
-		void _announce_request(Ipc_node &node);
+		bool _helping() const;
 
 		/**
-		 * Cancel all requests in request queue
-		 */
-		void _cancel_request_queue();
-
-		/**
-		 * Cancel request in outgoing buffer
-		 */
-		void _cancel_outbuf_request();
-
-		/**
-		 * Cancel request in incoming buffer
-		 */
-		void _cancel_inbuf_request();
-
-		/**
-		 * A request 'r' in inbuf or request queue was cancelled by sender
-		 */
-		void _announced_request_cancelled(Ipc_node &node);
-
-		/**
-		 * The request in the outbuf was cancelled by receiver
-		 */
-		void _outbuf_request_cancelled();
-
-		/**
-		 * Return wether we are the source of a helping relationship
-		 */
-		bool _helps_outbuf_dst();
-
-		/**
-		 * Make the class noncopyable because it has pointer members
+		 * Noncopyable
 		 */
 		Ipc_node(const Ipc_node&) = delete;
-
-		/**
-		 * Make the class noncopyable because it has pointer members
-		 */
 		const Ipc_node& operator=(const Ipc_node&) = delete;
 
 	public:
 
-		/**
-		 * Destructor
-		 */
+		Ipc_node(Thread &thread);
+
 		~Ipc_node();
 
 		/**
-		 * Constructor
+		 * Return whether this IPC node is ready to send a message
 		 */
-		Ipc_node(Thread &thread);
+		bool ready_to_send() const;
 
 		/**
-		 * Send a request and wait for the according reply
+		 * Send a message and wait for the according reply
 		 *
-		 * \param callee    targeted IPC node
-		 * \param help      wether the request implies a helping relationship
+		 * \param node  targeted IPC node
+		 * \param help  wether the request implies a helping relationship
 		 */
-		bool can_send_request();
-		void send_request(Ipc_node &callee,
-		                  bool      help);
+		void send(Ipc_node &node, bool help);
 
 		/**
-		 * Return root destination of the helping-relation tree we are in
+		 * Return final destination of the helping-chain
+		 * this IPC node is part of, or its own thread otherwise
 		 */
-		Thread &helping_sink();
+		Thread &helping_destination();
 
 		/**
-		 * Call function 'f' of type 'void (Ipc_node *)' for each helper
+		 * Call 'fn' of type 'void (Ipc_node *)' for each helper
 		 */
-		template <typename F> void for_each_helper(F f)
+		void for_each_helper(auto const &fn)
 		{
-			/* if we have a helper in the receive buffer, call 'f' for it */
-			if (_caller && _caller->_help)
-				f(_caller->_thread);
-
-			/* call 'f' for each helper in our request queue */
-			_request_queue.for_each([f] (Queue_item &item) {
+			_in.queue.for_each([fn] (Queue_item &item) {
 				Ipc_node &node { item.object() };
 
-				if (node._help)
-					f(node._thread);
+				if (node._helping())
+					fn(node._thread);
 			});
 		}
 
 		/**
-		 * Wait until a request has arrived and load it for handling
+		 * Return whether this IPC node is ready to wait for messages
+		 */
+		bool ready_to_wait() const;
+
+		/**
+		 * Wait until a message has arrived, or handle it if one is available
 		 *
-		 * \return  wether a request could be received already
+		 * \return  wether a message could be received already
 		 */
-		bool can_await_request();
-		void await_request();
+		void wait();
 
 		/**
-		 * Reply to last request if there's any
+		 * Reply to last message if there's any
 		 */
-		void send_reply();
+		void reply();
 
 		/**
-		 * If IPC node waits, cancel '_outbuf' to stop waiting
+		 * If IPC node waits, cancel it
 		 */
 		void cancel_waiting();
 
-		bool awaits_request() const { return _state == AWAIT_REQUEST; }
+		/**
+		 * Return whether this IPC node is waiting for messages
+		 */
+		bool waiting() const { return _in.waiting(); }
 };
 
 #endif /* _CORE__KERNEL__IPC_NODE_H_ */

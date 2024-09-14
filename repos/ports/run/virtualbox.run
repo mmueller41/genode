@@ -1,24 +1,18 @@
+assert_spec nova
+
 set use_net 0
 set use_usb_qemu 0
 set use_serial 1
 set use_top 1
 
-set use_vbox5_nova 0
-
 # use_gui starts two VMs
 set use_gui 0
 
 set build_components {
-	drivers/framebuffer
+	lib/libiconv lib/qemu-usb lib/libyuv
 	server/report_rom
-}
-
-append build_components virtualbox5
-
-set virtualbox_binary "virtualbox5"
-
-if {$use_vbox5_nova} {
-	set virtualbox_binary "virtualbox5-nova"
+	driver/framebuffer
+	virtualbox5
 }
 
 create_boot_directory
@@ -36,12 +30,10 @@ import_from_depot [depot_user]/src/[base_src] \
 
 lappend_if [expr $use_top]    build_components app/top
 lappend_if [expr $use_serial] build_components server/log_terminal
-lappend_if [have_spec x86]    build_components drivers/rtc
+lappend_if [have_spec x86]    build_components driver/rtc
 
-lappend_if [expr $use_net]    build_components drivers/nic
+lappend_if [expr $use_net]    build_components driver/nic
 lappend_if [expr $use_net]    build_components server/nic_router
-
-build $build_components
 
 set config {
 <config prio_levels="4">
@@ -74,6 +66,10 @@ append_if [expr $use_top] config {
 	<start name="top">
 		<resource name="RAM" quantum="2M"/>
 		<config period_ms="15000"/>
+		<route>
+			<service name="TRACE"> <parent label=""/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
 	</start>}
 
 append config {
@@ -89,7 +85,7 @@ append config {
 		</route>
 	</start>
 
-	<start name="rtc_drv" priority="-1">
+	<start name="pc_rtc" priority="-1">
 		<resource name="RAM" quantum="1M"/>
 		<provides>
 			<service name="Rtc"/>
@@ -97,8 +93,8 @@ append config {
 	</start>}
 
 append_if [expr $use_net] config {
-	<start name="nic_drv" priority="-1">
-		<binary name="ipxe_nic_drv"/>
+	<start name="nic" priority="-1">
+		<binary name="pc_nic"/>
 		<resource name="RAM" quantum="8M"/>
 		<route>
 			<service name="Uplink"> <child name="nic_router"/> </service>
@@ -114,8 +110,8 @@ append_if [expr $use_net] config {
 		</provides>
 		<config verbose_domain_state="yes">
 
-			<policy label_prefix="vbox"    domain="downlink"/>
-			<policy label_prefix="nic_drv" domain="uplink"/>
+			<policy label_prefix="vbox" domain="downlink"/>
+			<policy label_prefix="nic"  domain="uplink"/>
 
 			<domain name="uplink">
 
@@ -283,26 +279,7 @@ install_config $config
 
 exec cp ${genode_dir}/repos/ports/run/test.vbox bin/.
 
-set boot_modules { test.iso test.vbox }
-
-append boot_modules $virtualbox_binary
-
-# platform-specific modules
-lappend_if [have_spec         x86] boot_modules rtc_drv
-lappend_if [expr         $use_top] boot_modules top
-lappend_if [expr         $use_gui] boot_modules report_rom
-
-append boot_modules {
-	libiconv.lib.so
-	qemu-usb.lib.so
-	libyuv.lib.so
-}
-
-append_if [expr $use_net]          boot_modules { ipxe_nic_drv }
-append_if [expr $use_net]          boot_modules { nic_router }
-append_if [expr $use_serial]       boot_modules { log_terminal }
-
-build_boot_image $boot_modules
+build_boot_image [list {*}[build_artifacts] test.iso test.vbox]
 
 if {[have_include "power_on/qemu"]} {
 	if {[expr $use_gui]} {
@@ -311,7 +288,7 @@ if {[have_include "power_on/qemu"]} {
 		append qemu_args " -m 1024 "
 	}
 
-	append qemu_args " -cpu phenom "
+	append qemu_args " -cpu EPYC "
 	if {[expr $use_usb_qemu]} {
 		append qemu_args " -usbdevice mouse -usbdevice keyboard"
 	}

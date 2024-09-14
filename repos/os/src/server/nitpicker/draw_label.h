@@ -14,8 +14,8 @@
 #ifndef _DRAW_LABEL_H_
 #define _DRAW_LABEL_H_
 
-#include "canvas.h"
-#include "types.h"
+#include <canvas.h>
+#include <types.h>
 
 
 namespace Nitpicker {
@@ -34,7 +34,7 @@ namespace Nitpicker {
 		for (int j = -1; j <= 1; j++)
 			for (int i = -1; i <= 1; i++)
 				if (i || j)
-					canvas.draw_text(pos + Point(i, j), font, black(), s);
+					canvas.draw_text(pos + Point(i, j), font, Color::black(), s);
 	}
 
 
@@ -47,7 +47,7 @@ namespace Nitpicker {
 	inline Area label_size(Font const &font, const char *sl, const char *vt) {
 		return Area(font.string_width(sl).decimal() + LABEL_GAP +
 		            font.string_width(vt).decimal() + 2,
-		            font.bounding_box().h() + 2); }
+		            font.bounding_box().h + 2); }
 
 
 	/**

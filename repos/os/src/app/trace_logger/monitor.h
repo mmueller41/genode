@@ -19,7 +19,9 @@
 
 /* Genode includes */
 #include <base/trace/types.h>
+#include <base/attached_dataspace.h>
 #include <trace/trace_buffer.h>
+#include <trace_session/connection.h>
 
 namespace Genode { namespace Trace { class Connection; } }
 
@@ -33,13 +35,15 @@ class Monitor_base
 
 		Genode::Trace::Connection &_trace;
 		Genode::Region_map        &_rm;
-		Genode::Trace::Buffer     &_buffer_raw;
+		Genode::Attached_dataspace _ds;
+		Genode::Trace::Buffer     &_buffer_raw = *_ds.local_addr<Genode::Trace::Buffer>();
 
 		Monitor_base(Genode::Trace::Connection &trace,
 		             Genode::Region_map        &rm,
-		             Genode::Trace::Subject_id  subject_id);
-
-		~Monitor_base();
+		             Genode::Trace::Subject_id  subject_id)
+		:
+			_trace(trace), _rm(rm), _ds(rm, _trace.buffer(subject_id))
+		{ }
 };
 
 
@@ -57,14 +61,14 @@ class Monitor : public Monitor_base,
 		Trace_buffer                     _buffer;
 		unsigned long                    _report_id        { 0 };
 		Genode::Trace::Subject_info      _info             {   };
-		unsigned long long               _recent_exec_time { 0 };
+		Genode::Trace::Execution_time    _recent_exec_time {   };
 		char                             _curr_entry_data[MAX_ENTRY_LENGTH];
 
 	public:
 
 		struct Formatting
 		{
-			unsigned thread_name, affinity, state, total_cpu, recent_cpu;
+			unsigned thread_name, affinity, prio, state, total_tc, recent_tc, total_sc, recent_sc;
 		};
 
 		Monitor(Genode::Trace::Connection &trace,
@@ -76,7 +80,7 @@ class Monitor : public Monitor_base,
 		 */
 		void apply_formatting(Formatting &) const;
 
-		struct Level_of_detail { bool state, active_only; };
+		struct Level_of_detail { bool state, active_only, prio, sc_time; };
 
 		void print(Formatting, Level_of_detail);
 
@@ -101,7 +105,9 @@ class Monitor : public Monitor_base,
 
 		bool recently_active() const
 		{
-			return (_recent_exec_time != 0) || !_buffer.empty();
+			return _recent_exec_time.thread_context
+			    || _recent_exec_time.scheduling_context
+			    || !_buffer.empty();
 		}
 };
 

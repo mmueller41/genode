@@ -38,8 +38,10 @@ namespace Fetchurl {
 	struct User_data;
 	struct Main;
 
-	typedef Genode::String<256> Url;
-	typedef Genode::Path<256>   Path;
+	using namespace Genode;
+
+	using Url  = String<256>;
+	using Path = Path<256>;
 }
 
 static size_t write_callback(char   *ptr,
@@ -48,17 +50,17 @@ static size_t write_callback(char   *ptr,
                              void   *userdata);
 
 static int progress_callback(void *userdata,
-                             double dltotal, double dlnow,
-                             double ultotal, double ulnow);
+                             curl_off_t dltotal, curl_off_t dlnow,
+                             curl_off_t ultotal, curl_off_t ulnow);
 
 
-class Fetchurl::Fetch : Genode::List<Fetch>::Element
+class Fetchurl::Fetch : List<Fetch>::Element
 {
-	friend class Genode::List<Fetch>;
+	friend class List<Fetch>;
 
 	public:
 
-		using Genode::List<Fetch>::Element::next;
+		using List<Fetch>::Element::next;
 
 		Main &main;
 
@@ -86,9 +88,9 @@ class Fetchurl::Fetch : Genode::List<Fetch>::Element
 struct Fetchurl::User_data
 {
 	Timer::Connection &timer;
-	Genode::Milliseconds last_ms;
-	Genode::Milliseconds const max_timeout;
-	Genode::Milliseconds curr_timeout;
+	Milliseconds last_ms;
+	Milliseconds const max_timeout;
+	Milliseconds curr_timeout;
 	Fetchurl::Fetch &fetch;
 };
 
@@ -100,20 +102,24 @@ struct Fetchurl::Main
 
 	Libc::Env &_env;
 
-	Genode::Heap _heap { _env.pd(), _env.rm() };
+	Heap _heap { _env.pd(), _env.rm() };
 
 	Timer::Connection _timer { _env, "reporter" };
 
-	Genode::Constructible<Genode::Expanding_reporter> _reporter { };
+	Constructible<Expanding_reporter> _reporter { };
 
-	Genode::List<Fetch> _fetches { };
+	List<Fetch> _fetches { };
 
 	Timer::One_shot_timeout<Main> _report_timeout {
 		_timer, *this, &Main::_report };
 
-	Genode::Duration _report_delay { Genode::Milliseconds { 0 } };
+	Duration _report_delay { Milliseconds { 0 } };
 
-	Genode::Milliseconds _progress_timeout { 10u * 1000 };
+	Milliseconds _progress_timeout { 10u * 1000 };
+
+	bool _ignore_result { false };
+
+	bool _verbose { false };
 
 	void _schedule_report()
 	{
@@ -131,7 +137,7 @@ struct Fetchurl::Main
 		if (!_reporter.constructed())
 			return;
 
-		_reporter->generate([&] (Genode::Xml_generator &xml) {
+		_reporter->generate([&] (Xml_generator &xml) {
 			for (Fetch *f = _fetches.first(); f; f = f->next()) {
 				xml.node("fetch", [&] {
 					xml.attribute("url",   f->url);
@@ -145,9 +151,9 @@ struct Fetchurl::Main
 		});
 	}
 
-	void _report(Genode::Duration) { _report(); }
+	void _report(Duration) { _report(); }
 
-	void parse_config(Genode::Xml_node const &config_node)
+	void parse_config(Xml_node const &config_node)
 	{
 		using namespace Genode;
 
@@ -172,10 +178,10 @@ struct Fetchurl::Main
 		_progress_timeout.value = config_node.attribute_value("progress_timeout",
 		                                                      _progress_timeout.value);
 
-		auto const parse_fn = [&] (Genode::Xml_node node) {
+		auto const parse_fn = [&] (Xml_node node) {
 
 			if (!node.has_attribute("url") || !node.has_attribute("path")) {
-				Genode::error("error reading 'fetch' XML node");
+				error("error reading 'fetch' XML node");
 				return;
 			}
 
@@ -189,18 +195,23 @@ struct Fetchurl::Main
 		};
 
 		config_node.for_each_sub_node("fetch", parse_fn);
+
+		_ignore_result = config_node.attribute_value("ignore_failures",
+		                                             _ignore_result);
+
+		_verbose = config_node.attribute_value("verbose", false);
 	}
 
 	Main(Libc::Env &e) : _env(e)
 	{
-		_env.config([&] (Genode::Xml_node const &config) {
+		_env.config([&] (Xml_node const &config) {
 			parse_config(config);
 		});
 	}
 
 	CURLcode _process_fetch(CURL *_curl, Fetch &_fetch)
 	{
-		Genode::log("fetch ", _fetch.url);
+		log("fetch ", _fetch.url, " to ", _fetch.path);
 
 		char const *out_path = _fetch.path.base();
 
@@ -208,6 +219,7 @@ struct Fetchurl::Main
 		for (size_t sub_path_len = 0; ; sub_path_len++) {
 
 			bool const end_of_path = (out_path[sub_path_len] == 0);
+
 			bool const end_of_elem = (out_path[sub_path_len] == '/');
 
 			if (end_of_path)
@@ -216,7 +228,11 @@ struct Fetchurl::Main
 			if (!end_of_elem)
 				continue;
 
-			Genode::String<256> sub_path(Genode::Cstring(out_path, sub_path_len));
+			/* handle leading '/' */
+			if (end_of_elem && (sub_path_len == 0))
+				continue;
+
+			String<256> sub_path(Cstring(out_path, sub_path_len));
 
 			/* skip '/' */
 			sub_path_len++;
@@ -230,7 +246,7 @@ struct Fetchurl::Main
 
 			/* create directory for sub path */
 			if (mkdir(sub_path.string(), 0777) < 0) {
-				Genode::error("failed to create directory ", sub_path);
+				error("failed to create directory ", sub_path);
 				return CURLE_FAILED_INIT;
 			}
 		}
@@ -239,19 +255,22 @@ struct Fetchurl::Main
 		if (fd == -1) {
 			switch (errno) {
 			case EACCES:
-				Genode::error("permission denied at ", out_path); break;
+				error("permission denied at ", out_path); break;
 			case EEXIST:
-				Genode::error(out_path, " already exists"); break;
+				error(out_path, " already exists"); break;
 			case EISDIR:
-				Genode::error(out_path, " is a directory"); break;
+				error(out_path, " is a directory"); break;
 			case ENOSPC:
-				Genode::error("cannot create ", out_path, ", out of space"); break;
+				error("cannot create ", out_path, ", out of space"); break;
 			default:
-				Genode::error("creation of ", out_path, " failed (errno=", errno, ")");
+				error("creation of ", out_path, " failed (errno=", errno, ")");
 			}
 			return CURLE_FAILED_INIT;
 		}
 		_fetch.fd = fd;
+
+		if (_verbose)
+			curl_easy_setopt(_curl, CURLOPT_VERBOSE, 1L);
 
 		curl_easy_setopt(_curl, CURLOPT_URL, _fetch.url.string());
 		curl_easy_setopt(_curl, CURLOPT_FOLLOWLOCATION, true);
@@ -263,12 +282,12 @@ struct Fetchurl::Main
 		curl_easy_setopt(_curl, CURLOPT_WRITEDATA, &_fetch);
 
 		curl_easy_setopt(_curl, CURLOPT_NOPROGRESS, 0L);
-		curl_easy_setopt(_curl, CURLOPT_PROGRESSFUNCTION, progress_callback);
+		curl_easy_setopt(_curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
 		User_data ud {
 			.timer        = _timer,
 			.last_ms      = _timer.curr_time().trunc_to_plain_ms(),
 			.max_timeout  = _progress_timeout,
-			.curr_timeout = Genode::Milliseconds { .value = 0 },
+			.curr_timeout = Milliseconds { 0 },
 			.fetch        = _fetch,
 		};
 		curl_easy_setopt(_curl, CURLOPT_PROGRESSDATA, &ud);
@@ -290,7 +309,7 @@ struct Fetchurl::Main
 		if (res != CURLE_OK) {
 			unsigned long response_code = -1;
 			curl_easy_getinfo(_curl, CURLINFO_RESPONSE_CODE, &response_code);
-			Genode::error(curl_easy_strerror(res), " (code=", response_code, "), failed to fetch ", _fetch.url);
+			error(curl_easy_strerror(res), " (code=", response_code, "), failed to fetch ", _fetch.url);
 		}
 		return res;
 	}
@@ -301,7 +320,7 @@ struct Fetchurl::Main
 
 		CURL *curl = curl_easy_init();
 		if (!curl) {
-			Genode::error("failed to initialize libcurl");
+			error("failed to initialize libcurl");
 			return -1;
 		}
 
@@ -328,7 +347,8 @@ struct Fetchurl::Main
 
 		curl_easy_cleanup(curl);
 
-		return exit_res ^ CURLE_OK;
+		int const result = exit_res ^ CURLE_OK;
+		return _ignore_result ? 0 : result;
 	}
 };
 
@@ -344,8 +364,8 @@ static size_t write_callback(char   *ptr,
 
 
 static int progress_callback(void *userdata,
-                             double dltotal, double dlnow,
-                             double ultotal, double ulnow)
+                             curl_off_t dltotal, curl_off_t dlnow,
+                             curl_off_t ultotal, curl_off_t ulnow)
 {
 	(void)ultotal;
 	(void)ulnow;
@@ -358,7 +378,7 @@ static int progress_callback(void *userdata,
 	Fetch             &fetch = ud.fetch;
 
 	Milliseconds curr { timer.curr_time().trunc_to_plain_ms() };
-	Milliseconds diff { .value = curr.value - ud.last_ms.value };
+	Milliseconds diff { curr.value - ud.last_ms.value };
 	ud.last_ms = curr;
 
 	/*
@@ -367,7 +387,7 @@ static int progress_callback(void *userdata,
 	 * the max timeout value, we will abort the download attempt.
 	 */
 
-	if (dlnow == fetch.dlnow) {
+	if ((double)dlnow == fetch.dlnow) {
 		ud.curr_timeout.value += diff.value;
 	}
 	else {
@@ -375,8 +395,8 @@ static int progress_callback(void *userdata,
 	}
 	bool const timeout = ud.curr_timeout.value >= ud.max_timeout.value;
 
-	fetch.dltotal = dltotal;
-	fetch.dlnow   = dlnow;
+	fetch.dltotal = (double)dltotal;
+	fetch.dlnow   = (double)dlnow;
 	fetch.timeout = timeout;
 	fetch.main._schedule_report();
 

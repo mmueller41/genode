@@ -28,6 +28,7 @@ namespace Hw {
 		Memory_region const core_page_tables();
 		Memory_region const core_mmio();
 		Memory_region const core_heap();
+		Memory_region const cpu_local_memory();
 		Memory_region const system_exception_vector();
 		Memory_region const hypervisor_exception_vector();
 		Memory_region const hypervisor_stack();
@@ -41,12 +42,11 @@ struct Hw::Mmio_space : Hw::Memory_region_array
 {
 	using Hw::Memory_region_array::Memory_region_array;
 
-	template <typename FUNC>
-	void for_each_mapping(FUNC f) const
+	void for_each_mapping(auto const &fn) const
 	{
 		addr_t virt_base = Mm::core_mmio().base;
 		auto lambda = [&] (unsigned, Memory_region const & r) {
-			f(Mapping { r.base, virt_base, r.size, PAGE_FLAGS_KERN_IO });
+			fn(Mapping { r.base, virt_base, r.size, Genode::PAGE_FLAGS_KERN_IO });
 			virt_base += r.size + get_page_size();
 		};
 		for_each(lambda);

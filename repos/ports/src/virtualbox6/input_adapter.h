@@ -32,7 +32,7 @@ struct Input_adapter
 
 		bool _key_status[Input::KEY_MAX + 1];
 
-		typedef Genode::Surface_base::Point Point;
+		using Point = Genode::Surface_base::Point;
 
 		Point _abs_pos { 0, 0 };
 
@@ -137,11 +137,11 @@ void Input_adapter::Mouse::handle_input_event(Input::Event const &ev)
 
 	if (abs_pos_changed || buttons_changed || wheel_changed) {
 		if (_absolute) {
-			_imouse->PutMouseEventAbsolute(_abs_pos.x(), _abs_pos.y(), wheel_y, wheel_x, mouse_button_bits);
+			_imouse->PutMouseEventAbsolute(_abs_pos.x, _abs_pos.y, wheel_y, wheel_x, mouse_button_bits);
 		} else {
 			Point const rel = _abs_pos - old_abs_pos;
 
-			_imouse->PutMouseEvent(rel.x(), rel.y(), wheel_y, wheel_x, mouse_button_bits);
+			_imouse->PutMouseEvent(rel.x, rel.y, wheel_y, wheel_x, mouse_button_bits);
 		}
 	}
 }

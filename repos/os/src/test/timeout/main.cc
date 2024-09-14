@@ -50,17 +50,15 @@ static bool precise_time(Xml_node config)
 	return false;
 }
 
-struct A1 {
-A1() {
-log(__func__,__LINE__);
-}
-};
 
-struct A2 {
-A2() {
-log(__func__,__LINE__);
+#pragma GCC push_options
+#pragma GCC optimize("O0")
+void delay_loop(unsigned long num_iterations)
+{
+	for (unsigned long idx = 0; idx < num_iterations; idx++) { }
 }
-};
+#pragma GCC pop_options
+
 
 struct Test
 {
@@ -521,7 +519,7 @@ struct Fast_polling : Test
 
 			/* measure consumed time of a limited busy loop */
 			uint64_t volatile start_ms = timer_2.elapsed_ms();
-			for (unsigned long volatile cnt = 0; cnt < max_cnt; cnt++) { }
+			delay_loop(max_cnt);
 			uint64_t volatile end_ms = timer_2.elapsed_ms();
 
 			/*
@@ -568,10 +566,10 @@ struct Fast_polling : Test
 			for (unsigned poll = 0; poll < nr_of_polls; poll++) {
 
 				/* create delay between two polls */
-				for (unsigned long volatile i = 0; i < delay_loops_per_poll_; i++) { }
+				delay_loop(delay_loops_per_poll_);
 
 				/* count delay loops to limit frequency of remote time reading */
-				delay_loops += delay_loops_per_poll_;
+				delay_loops = delay_loops + delay_loops_per_poll_;
 
 				/*
 				 * We buffer the results in local variables first so the RAM
@@ -646,10 +644,13 @@ struct Fast_polling : Test
 				} else {
 
 					if (timer_2_delayed) {
-						local_us_1_buf.value[poll] += timer_diff_us;
-						local_us_2_buf.value[poll] += timer_diff_us;
+						local_us_1_buf.value[poll] =
+							local_us_1_buf.value[poll] + timer_diff_us;
+						local_us_2_buf.value[poll] =
+							local_us_2_buf.value[poll] + timer_diff_us;
 					} else {
-						remote_us_buf.value[poll] += timer_diff_us;
+						remote_us_buf.value[poll] =
+							remote_us_buf.value[poll] + timer_diff_us;
 					}
 					nr_of_good_polls++;
 				}

@@ -63,33 +63,33 @@ class Vfs::Rump_file_system : public File_system
 
 		enum { BUFFER_SIZE = 4096 };
 
-		typedef Genode::Path<MAX_PATH_LEN> Path;
+		using Path = Genode::Path<MAX_PATH_LEN>;
 
 		Vfs::Env &_env;
 
 		struct Rump_vfs_dir_handle;
 		struct Rump_watch_handle;
-		typedef Genode::List<Rump_watch_handle> Rump_watch_handles;
+		using Rump_watch_handles = Genode::List<Rump_watch_handle>;
 		Rump_watch_handles _watchers { };
 
 		struct Rump_vfs_file_handle;
-		typedef Genode::List<Rump_vfs_file_handle> Rump_vfs_file_handles;
+		using Rump_vfs_file_handles = Genode::List<Rump_vfs_file_handle>;
 		Rump_vfs_file_handles _file_handles;
 
 		struct Rump_vfs_handle : public Vfs_handle
 		{
 			using Vfs_handle::Vfs_handle;
 
-			virtual Read_result read(char *buf, file_size buf_size,
-			                         file_size seek_offset, file_size &out_count)
+			virtual Read_result read(Byte_range_ptr const &dst,
+			                         file_size seek_offset, size_t &out_count)
 			{
 				Genode::error("Rump_vfs_handle::read() called");
 				return READ_ERR_INVALID;
 			}
 
-			virtual Write_result write(char const *buf, file_size buf_size,
+			virtual Write_result write(Const_byte_range_ptr const &src,
 			                           file_size seek_offset,
-			                           file_size &out_count)
+			                           size_t &out_count)
 			{
 				Genode::error("Rump_vfs_handle::write() called");
 				return WRITE_ERR_INVALID;
@@ -131,15 +131,15 @@ class Vfs::Rump_file_system : public File_system
 					return FTRUNCATE_OK;
 				}
 
-				Read_result read(char *buf, file_size buf_size,
-				                 file_size seek_offset, file_size &out_count) override
+				Read_result read(Byte_range_ptr const &dst,
+				                 file_size seek_offset, size_t &out_count) override
 				{
-					ssize_t n = rump_sys_pread(_fd, buf, buf_size, seek_offset);
+					ssize_t n = rump_sys_pread(_fd, dst.start, dst.num_bytes, seek_offset);
 					if (n == -1) switch (errno) {
 					case EWOULDBLOCK: return READ_ERR_WOULD_BLOCK;
 					case EINVAL:      return READ_ERR_INVALID;
 					case EIO:         return READ_ERR_IO;
-					case EINTR:       return READ_ERR_INTERRUPT;
+					case EINTR:       return READ_ERR_IO;
 					default:
 						Genode::error(__func__, ": unhandled rump error ", errno);
 						return READ_ERR_IO;
@@ -148,18 +148,17 @@ class Vfs::Rump_file_system : public File_system
 					return READ_OK;
 				}
 
-				Write_result write(char const *buf, file_size buf_size,
-				                   file_size seek_offset,
-				                   file_size &out_count) override
+				Write_result write(Const_byte_range_ptr const &src,
+				                   file_size seek_offset, size_t &out_count) override
 				{
 					out_count = 0;
 
-					ssize_t n = rump_sys_pwrite(_fd, buf, buf_size, seek_offset);
+					ssize_t n = rump_sys_pwrite(_fd, src.start, src.num_bytes, seek_offset);
 					if (n == -1) switch (errno) {
 					case EWOULDBLOCK: return WRITE_ERR_WOULD_BLOCK;
 					case EINVAL:      return WRITE_ERR_INVALID;
 					case EIO:         return WRITE_ERR_IO;
-					case EINTR:       return WRITE_ERR_INTERRUPT;
+					case EINTR:       return WRITE_ERR_IO;
 					default:
 						Genode::error(__func__, ": unhandled rump error ", errno);
 						return WRITE_ERR_IO;
@@ -234,18 +233,17 @@ class Vfs::Rump_file_system : public File_system
 
 				~Rump_vfs_dir_handle() { rump_sys_close(_fd); }
 
-				Read_result read(char *dst, file_size count,
-				                 file_size seek_offset,
-				                 file_size &out_count) override
+				Read_result read(Byte_range_ptr const &dst,
+				                 file_size seek_offset, size_t &out_count) override
 				{
 					out_count = 0;
 
-					if (count < sizeof(Dirent))
+					if (dst.num_bytes < sizeof(Dirent))
 						return READ_ERR_INVALID;
 
-					file_size index = seek_offset / sizeof(Dirent);
+					size_t const index = size_t(seek_offset / sizeof(Dirent));
 
-					Dirent *vfs_dir = (Dirent*)dst;
+					Dirent *vfs_dir = (Dirent*)dst.start;
 
 					out_count = sizeof(Dirent);
 
@@ -289,9 +287,8 @@ class Vfs::Rump_file_system : public File_system
 				                        int status_flags, char const *path)
 				: Rump_vfs_handle(fs, fs, alloc, status_flags), _path(path) { }
 
-				Read_result read(char *buf, file_size buf_size,
-				                 file_size seek_offset,
-				                 file_size &out_count) override
+				Read_result read(Byte_range_ptr const &dst,
+				                 file_size seek_offset, size_t &out_count) override
 				{
 					out_count = 0;
 
@@ -300,7 +297,7 @@ class Vfs::Rump_file_system : public File_system
 						return READ_ERR_INVALID;
 					}
 
-					ssize_t n = rump_sys_readlink(_path.base(), buf, buf_size);
+					ssize_t n = rump_sys_readlink(_path.base(), dst.start, dst.num_bytes);
 					if (n == -1)
 						return READ_ERR_IO;
 
@@ -309,18 +306,17 @@ class Vfs::Rump_file_system : public File_system
 					return READ_OK;
 				}
 
-				Write_result write(char const *buf, file_size buf_size,
-				                   file_size seek_offset,
-				                   file_size &out_count) override
+				Write_result write(Const_byte_range_ptr const &src,
+				                   file_size seek_offset, size_t &out_count) override
 				{
 					rump_sys_unlink(_path.base());
 
-					if (rump_sys_symlink(buf, _path.base()) != 0) {
+					if (rump_sys_symlink(src.start, _path.base()) != 0) {
 						out_count = 0;
 						return WRITE_OK;
 					}
 
-					out_count = buf_size;
+					out_count = src.num_bytes;
 					return WRITE_OK;
 				}
 		};
@@ -418,7 +414,7 @@ class Vfs::Rump_file_system : public File_system
 		Rump_file_system(Vfs::Env &env, Xml_node const &config)
 		: _env(env)
 		{
-			typedef Genode::String<16> Fs_type;
+			using Fs_type = Genode::String<16>;
 
 			Fs_type fs_type = config.attribute_value("fs", Fs_type());
 
@@ -460,39 +456,59 @@ class Vfs::Rump_file_system : public File_system
 
 		Genode::Dataspace_capability dataspace(char const *path) override
 		{
-			Genode::Env &env = _env.env();
+			struct stat s { };
+			if (rump_sys_lstat(path, &s) != 0)
+				return { };
 
-			int fd = rump_sys_open(path, O_RDONLY);
-			if (fd == -1) return Genode::Dataspace_capability();
+			using Region_map = Genode::Region_map;
 
-			struct stat s;
-			if (rump_sys_lstat(path, &s) != 0) return Genode::Dataspace_capability();
-			size_t const ds_size = s.st_size;
-
-			char *local_addr = nullptr;
-			Ram_dataspace_capability ds_cap;
-			try {
-				ds_cap = env.ram().alloc(ds_size);
-
-				local_addr = env.rm().attach(ds_cap);
-
-				enum { CHUNK_SIZE = 16U << 10 };
-
-				for (size_t i = 0; i < ds_size;) {
-					ssize_t n = rump_sys_read(fd, &local_addr[i], min(ds_size-i, CHUNK_SIZE));
-					if (n == -1)
-						throw n;
-					i += n;
+			auto read_file_content = [&path] (Region_map::Range const range) -> bool
+			{
+				int const fd = rump_sys_open(path, O_RDONLY);
+				size_t i = 0; /* bytes read */
+				if (fd >= 0) {
+					while (i < range.num_bytes) {
+						size_t  const CHUNK_SIZE = 16U << 10;
+						ssize_t const n = rump_sys_read(fd, (void *)(range.start + i),
+						                                min(range.num_bytes - i, CHUNK_SIZE));
+						if (n <= 0)
+							break;
+						i += n;
+					}
+					rump_sys_close(fd);
 				}
+				return (i == range.num_bytes);
+			};
 
-				env.rm().detach(local_addr);
-			} catch(...) {
-				if (local_addr)
-					env.rm().detach(local_addr);
-				env.ram().free(ds_cap);
-			}
-			rump_sys_close(fd);
-			return ds_cap;
+			return _env.env().ram().try_alloc(s.st_size).convert<Dataspace_capability>(
+				[&] (Ram_dataspace_capability const ds_cap) {
+					return _env.env().rm().attach(ds_cap, {
+						.size = { },  .offset     = { },  .use_at    = { },
+						.at   = { },  .executable = { },  .writeable = true
+					}).convert<Dataspace_capability>(
+						[&] (Region_map::Range const range) -> Dataspace_capability {
+
+							bool const complete = read_file_content(range);
+							_env.env().rm().detach(range.start);
+
+							if (complete)
+								return ds_cap;
+
+							Genode::error("rump failed to read content into VFS dataspace");
+							_env.env().ram().free(ds_cap);
+							return Dataspace_capability();
+						},
+						[&] (Region_map::Attach_error) {
+							_env.env().ram().free(ds_cap);
+							return Dataspace_capability();
+						}
+					);
+				},
+				[&] (Genode::Ram_allocator::Alloc_error) {
+					Genode::error("rump failed to allocate VFS dataspace of size ", s.st_size);
+					return Dataspace_capability();
+				}
+			);
 		}
 
 		void release(char const *path,
@@ -553,7 +569,8 @@ class Vfs::Rump_file_system : public File_system
 			if (create)
 				mode |= O_CREAT;
 
-			int fd = rump_sys_open(path, mode);
+			enum { DEFAULT_PERMISSIONS = 0777 };
+			int fd = create ? rump_sys_open(path, mode, DEFAULT_PERMISSIONS) : rump_sys_open(path, mode);
 			if (fd == -1) switch (errno) {
 			case ENAMETOOLONG: return OPEN_ERR_NAME_TOO_LONG;
 			case EACCES:       return OPEN_ERR_NO_PERM;
@@ -781,33 +798,33 @@ class Vfs::Rump_file_system : public File_system
 		 ** File io service interface **
 		 *******************************/
 
-		Write_result write(Vfs_handle *vfs_handle,
-		                   char const *buf, file_size buf_size,
-		                   file_size &out_count) override
+		Write_result write(Vfs_handle *vfs_handle, Const_byte_range_ptr const &src,
+		                   size_t &out_count) override
 		{
 			Rump_vfs_handle *handle =
 				static_cast<Rump_vfs_handle *>(vfs_handle);
 
 			if (handle)
-				return handle->write(buf, buf_size, handle->seek(), out_count);
+				return handle->write(src, handle->seek(), out_count);
 
 			return WRITE_ERR_INVALID;
 		}
 
-		Read_result complete_read(Vfs_handle *vfs_handle, char *buf,
-		                          file_size buf_size,
-		                          file_size &out_count) override
+		Read_result complete_read(Vfs_handle *vfs_handle,
+		                          Byte_range_ptr const &dst,
+		                          size_t &out_count) override
 		{
 			Rump_vfs_handle *handle =
 				static_cast<Rump_vfs_handle *>(vfs_handle);
 
 			if (handle)
-				return handle->read(buf, buf_size, handle->seek(), out_count);
+				return handle->read(dst, handle->seek(), out_count);
 
 			return READ_ERR_INVALID;
 		}
 
-		bool read_ready(Vfs_handle *) override { return true; }
+		bool read_ready (Vfs_handle const &) const override { return true; }
+		bool write_ready(Vfs_handle const &) const override { return true; }
 
 		Ftruncate_result ftruncate(Vfs_handle *vfs_handle, file_size len) override
 		{
@@ -845,14 +862,28 @@ class Vfs::Rump_file_system : public File_system
 
 class Rump_factory : public Vfs::File_system_factory
 {
+	private:
+
+		struct Rump_fs_user : Rump_fs_user_wakeup
+		{
+			Vfs::Env::User &_vfs_user;
+
+			void wakeup_rump_fs_user() override { _vfs_user.wakeup_vfs_user(); }
+
+			Rump_fs_user(Vfs::Env::User &vfs_user) : _vfs_user(vfs_user) { }
+
+		} _rump_fs_user;
+
 	public:
 
 		Rump_factory(Genode::Env &env, Genode::Allocator &alloc,
-		             Genode::Xml_node config)
+		             Vfs::Env::User &vfs_user, Genode::Xml_node config)
+		:
+			_rump_fs_user(vfs_user)
 		{
 			Rump::construct_env(env);
 
-			rump_io_backend_init();
+			rump_io_backend_init(_rump_fs_user);
 
 			/* limit RAM consumption */
 			if (!config.has_attribute("ram")) {
@@ -897,7 +928,7 @@ extern "C" Vfs::File_system_factory *vfs_file_system_factory(void)
 	{
 		Vfs::File_system *create(Vfs::Env &env, Genode::Xml_node node) override
 		{
-			static Rump_factory factory(env.env(), env.alloc(), node);
+			static Rump_factory factory(env.env(), env.alloc(), env.user(), node);
 			return factory.create(env, node);
 		}
 	};

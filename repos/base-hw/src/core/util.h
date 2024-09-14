@@ -15,9 +15,11 @@
 #ifndef _CORE__UTIL_H_
 #define _CORE__UTIL_H_
 
+/* core includes */
+#include <types.h>
 #include <hw/util.h>
 
-namespace Genode {
+namespace Core {
 
 	using Hw::get_page_mask;
 	using Hw::trunc_page;
@@ -41,8 +43,10 @@ namespace Genode {
 	 * as 4K and 4M, this function should select one of those smaller or
 	 * equal to the argument.
 	 */
-	constexpr size_t constrain_map_size_log2(size_t size_log2) {
-		return (size_log2 < 20) ? 12 : 20; }
+	static constexpr Log2 kernel_constrained_map_size(Log2 size)
+	{
+		return { (size.log2 < 20) ? uint8_t(12) : uint8_t(20) };
+	}
 }
 
 #endif /* _CORE__UTIL_H_ */

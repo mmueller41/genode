@@ -34,24 +34,19 @@ struct Terminal::Connection : Genode::Connection<Session>, Session_client
 		/* create signal receiver, just for the single signal */
 		Signal_context            sig_ctx;
 		Signal_receiver           sig_rec;
-		Signal_context_capability sig_cap = sig_rec.manage(&sig_ctx);
+		Signal_context_capability sig_cap = sig_rec.manage(sig_ctx);
 
 		/* register signal handler */
 		cap.call<Rpc_connected_sigh>(sig_cap);
 
 		/* wati for signal */
 		sig_rec.wait_for_signal();
-		sig_rec.dissolve(&sig_ctx);
+		sig_rec.dissolve(sig_ctx);
 	}
 
-	/**
-	 * Constructor
-	 */
-	Connection(Genode::Env &env, char const *label = "")
+	Connection(Genode::Env &env, Label const &label = Label())
 	:
-		Genode::Connection<Session>(env, session(env.parent(),
-		                                         "ram_quota=%ld, cap_quota=%ld, label=\"%s\"",
-		                                         10*1024, CAP_QUOTA, label)),
+		Genode::Connection<Session>(env, label, Ram_quota { 10*1024 }, Args()),
 		Session_client(env.rm(), cap())
 	{
 		wait_for_connection(cap());

@@ -26,14 +26,14 @@
 #include <util/dirty_rect.h>
 
 /* local includes */
-#include "types.h"
-#include "user_state.h"
-#include "background.h"
-#include "clip_guard.h"
-#include "pointer_origin.h"
-#include "domain_registry.h"
-#include "capture_session.h"
-#include "event_session.h"
+#include <types.h>
+#include <user_state.h>
+#include <background.h>
+#include <clip_guard.h>
+#include <pointer_origin.h>
+#include <domain_registry.h>
+#include <capture_session.h>
+#include <event_session.h>
 
 namespace Nitpicker {
 	class  Gui_root;
@@ -66,8 +66,7 @@ void Framebuffer::Session_component::refresh(int x, int y, int w, int h)
  ** Implementation of the GUI service **
  ***************************************/
 
-class Nitpicker::Gui_root : public Root_component<Gui_session>,
-                            public Visibility_controller
+class Nitpicker::Gui_root : public Root_component<Gui_session>
 {
 	private:
 
@@ -98,7 +97,7 @@ class Nitpicker::Gui_root : public Root_component<Gui_session>,
 				            session_diag_from_args(args), _view_stack,
 				            _focus_updater, _hover_updater, _pointer_origin,
 				            _builtin_background, provides_default_bg,
-				            _focus_reporter, *this);
+				            _focus_reporter);
 
 			session->apply_session_policy(_config.xml(), _domain_registry);
 			_session_list.insert(session);
@@ -167,33 +166,6 @@ class Nitpicker::Gui_root : public Root_component<Gui_session>,
 			_focus_reporter(focus_reporter), _focus_updater(focus_updater),
 			_hover_updater(hover_updater)
 		{ }
-
-
-		/*************************************
-		 ** Visibility_controller interface **
-		 *************************************/
-
-		void _session_visibility(Session_label const &label, Suffix const &suffix,
-		                         bool visible)
-		{
-			Gui::Session::Label const selector(label, suffix);
-
-			for (Gui_session *s = _session_list.first(); s; s = s->next())
-				if (s->matches_session_label(selector))
-					s->visible(visible);
-
-			_view_stack.update_all_views();
-		}
-
-		void hide_matching_sessions(Session_label const &label, Suffix const &suffix) override
-		{
-			_session_visibility(label, suffix, false);
-		}
-	
-		void show_matching_sessions(Session_label const &label, Suffix const &suffix) override
-		{
-			_session_visibility(label, suffix, true);
-		}
 };
 
 
@@ -211,6 +183,8 @@ class Nitpicker::Capture_root : public Root_component<Capture_session>
 		Sessions                  _sessions { };
 		View_stack         const &_view_stack;
 		Capture_session::Handler &_handler;
+
+		Area _fallback_bounding_box { 0, 0 };
 
 	protected:
 
@@ -232,6 +206,13 @@ class Nitpicker::Capture_root : public Root_component<Capture_session>
 
 		void _destroy_session(Capture_session *session) override
 		{
+			/*
+			 * Retain buffer size of the last vanishing session. This avoids
+			 * mode switches when the only capture client temporarily
+			 * disappears (driver restart).
+			 */
+			_fallback_bounding_box = session->buffer_size();
+
 			Genode::destroy(md_alloc(), session);
 
 			/* shrink screen according to the remaining output back ends */
@@ -257,10 +238,13 @@ class Nitpicker::Capture_root : public Root_component<Capture_session>
 		 */
 		Area bounding_box() const
 		{
-			Area result { 0, 0 };
+			Area result = { 0, 0 };
+			bool any_session_present = false;
 			_sessions.for_each([&] (Capture_session const &session) {
+				any_session_present = true;
 				result = max_area(result, session.buffer_size()); });
-			return result;
+
+			return any_session_present ? result : _fallback_bounding_box;
 		}
 
 		/**
@@ -280,14 +264,21 @@ class Nitpicker::Capture_root : public Root_component<Capture_session>
 
 		void report_displays(Xml_generator &xml) const
 		{
+			bool any_session_present = false;
+			_sessions.for_each([&] (Capture_session const &) {
+				any_session_present = true; });
+
+			if (!any_session_present)
+				return;
+
 			Area const size = bounding_box();
 
 			if (size.count() == 0)
 				return;
 
 			xml.node("display", [&] () {
-				xml.attribute("width",  size.w());
-				xml.attribute("height", size.h());
+				xml.attribute("width",  size.w);
+				xml.attribute("height", size.h);
 			});
 		}
 };
@@ -368,7 +359,7 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 
 	Constructible<Input_connection> _input { };
 
-	typedef Pixel_rgb888 PT;  /* physical pixel type */
+	using PT = Pixel_rgb888;  /* physical pixel type */
 
 	/*
 	 * Initialize framebuffer
@@ -388,7 +379,7 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 
 		Area size = screen.size();
 
-		typedef Genode::Dirty_rect<Rect, 3> Dirty_rect;
+		using Dirty_rect = Genode::Dirty_rect<Rect, 3>;
 
 		Dirty_rect dirty_rect { };
 
@@ -528,10 +519,9 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 			/* notify clients about the change screen mode */
 			for (Gui_session *s = _session_list.first(); s; s = s->next())
 				s->notify_mode_change();
-
-			_report_displays();
 		}
 
+		_report_displays();
 		_update_input_connection();
 	}
 
@@ -576,6 +566,17 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 	 */
 	void handle_input_events(User_state::Input_batch) override;
 
+	bool _reported_button_activity = false;
+	bool _reported_motion_activity = false;
+
+	unsigned _reported_focus_count = 0;
+	unsigned _reported_hover_count = 0;
+
+	unsigned _focus_count = 0;
+	unsigned _hover_count = 0;
+
+	void _update_motion_and_focus_activity_reports();
+
 	/**
 	 * Signal handler periodically invoked for the reception of user input and redraw
 	 */
@@ -598,7 +599,7 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 	 * Number of periods after the last user activity when we regard the user
 	 * as becoming inactive
 	 */
-	unsigned _activity_threshold = 50;
+	unsigned const _activity_threshold = 50;
 
 	/**
 	 * True if the user has recently interacted with buttons or keys
@@ -615,7 +616,7 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 
 	void _update_pointer_position()
 	{
-		_view_stack.geometry(_pointer_origin, Rect(_user_state.pointer_pos(), Area()));
+		_view_stack.geometry(_pointer_origin, Rect(_user_state.pointer_pos(), Area{}));
 	}
 
 	Main(Env &env) : _env(env)
@@ -654,9 +655,6 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 
 void Nitpicker::Main::handle_input_events(User_state::Input_batch batch)
 {
-	bool const old_button_activity = _button_activity;
-	bool const old_motion_activity = _motion_activity;
-
 	User_state::Handle_input_result const result =
 		_user_state.handle_input_events(batch);
 
@@ -688,15 +686,13 @@ void Nitpicker::Main::handle_input_events(User_state::Input_batch batch)
 			_user_state.report_last_clicked_view_owner(xml); });
 	}
 
-	if (result.focus_changed)
+	if (result.focus_changed) {
+		_focus_count++;
 		_view_stack.update_all_views();
+	}
 
-	/* flag user as inactive after activity threshold is reached */
-	if (_period_cnt == _last_button_activity_period + _activity_threshold)
-		_button_activity = false;
-
-	if (_period_cnt == _last_motion_activity_period + _activity_threshold)
-		_motion_activity = false;
+	if (result.hover_changed)
+		_hover_count++;
 
 	/* report mouse-position updates */
 	if (_pointer_reporter.enabled() && result.motion_activity) {
@@ -704,22 +700,37 @@ void Nitpicker::Main::handle_input_events(User_state::Input_batch batch)
 			_user_state.report_pointer_position(xml); });
 	}
 
-	/* report hover changes */
-	if (_hover_reporter.enabled()
-	 && (result.hover_changed || (old_motion_activity != _motion_activity))) {
+	/* update pointer position */
+	if (result.motion_activity)
+		_update_pointer_position();
+}
+
+
+void Nitpicker::Main::_update_motion_and_focus_activity_reports()
+{
+	/* flag user as inactive after activity threshold is reached */
+	if (_period_cnt == _last_button_activity_period + _activity_threshold)
+		_button_activity = false;
+
+	if (_period_cnt == _last_motion_activity_period + _activity_threshold)
+		_motion_activity = false;
+
+	bool const hover_changed = (_reported_hover_count != _hover_count);
+	if (hover_changed || (_reported_motion_activity != _motion_activity)) {
 		Reporter::Xml_generator xml(_hover_reporter, [&] () {
 			_user_state.report_hovered_view_owner(xml, _motion_activity); });
 	}
 
-	/* report focus changes */
-	if (result.focus_changed || (old_button_activity != _button_activity)) {
+	bool const focus_changed = (_reported_focus_count != _focus_count);
+	if (focus_changed || (_reported_button_activity != _button_activity)) {
 		Reporter::Xml_generator xml(_focus_reporter, [&] () {
 			_user_state.report_focused_view_owner(xml, _button_activity); });
 	}
 
-	/* update pointer position */
-	if (result.motion_activity)
-		_update_pointer_position();
+	_reported_motion_activity = _motion_activity;
+	_reported_button_activity = _button_activity;
+	_reported_hover_count     = _hover_count;
+	_reported_focus_count     = _focus_count;
 }
 
 
@@ -738,6 +749,8 @@ void Nitpicker::Main::_handle_period()
 
 		handle_input_events(batch);
 	}
+
+	_update_motion_and_focus_activity_reports();
 
 	/* perform redraw */
 	if (_framebuffer.constructed() && _fb_screen.constructed()) {
@@ -778,7 +791,7 @@ void Nitpicker::Main::_handle_focus()
 
 	_focus_rom->update();
 
-	typedef Gui::Session::Label Label;
+	using Label = String<160>;
 	Label const label = _focus_rom->xml().attribute_value("label", Label());
 
 	/*
@@ -888,8 +901,8 @@ void Nitpicker::Main::_report_displays()
 	Reporter::Xml_generator xml(_displays_reporter, [&] () {
 		if (_fb_screen.constructed()) {
 			xml.node("display", [&] () {
-				xml.attribute("width",  _fb_screen->size.w());
-				xml.attribute("height", _fb_screen->size.h());
+				xml.attribute("width",  _fb_screen->size.w);
+				xml.attribute("height", _fb_screen->size.h);
 			});
 		}
 

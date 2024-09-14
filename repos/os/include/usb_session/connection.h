@@ -1,11 +1,12 @@
 /*
  * \brief  Client connection to USB server
+ * \author Stefan Kalkowski
  * \author Sebastian Sumpf
  * \date   2014-12-08
  */
 
 /*
- * Copyright (C) 2014-2017 Genode Labs GmbH
+ * Copyright (C) 2014-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -13,31 +14,102 @@
 #ifndef _INCLUDE__USB_SESSION__CONNECTION_H_
 #define _INCLUDE__USB_SESSION__CONNECTION_H_
 
-#include <usb_session/client.h>
+#include <base/attached_dataspace.h>
 #include <base/connection.h>
-#include <base/allocator.h>
+#include <rom_session/client.h>
+#include <usb_session/client.h>
 
 namespace Usb { struct Connection; }
 
 
-struct Usb::Connection : Genode::Connection<Session>, Session_client
+class Usb::Connection : public Genode::Connection<Session>, public Usb::Client
 {
-	/**
-	 * Constructor
-	 */
-	Connection(Genode::Env                       &env,
-	           Genode::Range_allocator          *tx_block_alloc,
-	           char                       const *label = "",
-	           Genode::size_t                    tx_buf_size = 512 * 1024,
-	           Genode::Signal_context_capability sigh_state_changed =
-	                                     Genode::Signal_context_capability())
-	:
-		Genode::Connection<Session>(env,
-			session(env.parent(),
-			        "ram_quota=%ld, cap_quota=%ld, tx_buf_size=%ld, label=\"%s\"",
-			        5 * 4096 + tx_buf_size, CAP_QUOTA, tx_buf_size, label)),
-		Session_client(cap(), *tx_block_alloc, env.rm(), sigh_state_changed)
-	{ }
+	private:
+
+		Env                             & _env;
+		Rom_session_client                _rom     { devices_rom() };
+		Constructible<Attached_dataspace> _ds      {};
+		Io_signal_handler<Connection>     _handler { _env.ep(), *this,
+		                                             &Connection::_handle_io };
+
+		void _try_attach()
+		{
+			_ds.destruct();
+			try { _ds.construct(_env.rm(), _rom.dataspace()); }
+			catch (Attached_dataspace::Invalid_dataspace) {
+				warning("Invalid devices rom dataspace returned!");}
+		}
+
+		void _handle_io() { }
+
+		Device_capability _wait_for_device(auto const & fn)
+		{
+			for (;;) {
+				/* repeatedly check for availability of device */
+				Device_capability cap = fn();
+				if (cap.valid())
+					return cap;
+
+				_env.ep().wait_and_dispatch_one_io_signal();
+			}
+		}
+
+	public:
+
+		Connection(Genode::Env    &env,
+		           Genode::size_t  ram_quota = RAM_QUOTA)
+		:
+			Genode::Connection<Session>(env, Label(),
+			                            Ram_quota { ram_quota }, Args()),
+			Client(cap()),
+			_env(env)
+		{
+			_try_attach();
+
+			/*
+			 * Initially register dummy handler, to be able to receive signals
+			 * if _wait_for_device probes for a valid devices rom
+			 */
+			sigh(_handler);
+		}
+
+		void update()
+		{
+			if (_ds.constructed() && _rom.update() == true)
+				return;
+
+			_try_attach();
+		}
+
+		void sigh(Signal_context_capability sigh) { _rom.sigh(sigh); }
+
+		void with_xml(auto const & fn)
+		{
+			update();
+			try {
+				if (_ds.constructed() && _ds->local_addr<void const>()) {
+					Xml_node xml(_ds->local_addr<char>(), _ds->size());
+					fn(xml);
+				}
+			}  catch (Xml_node::Invalid_syntax) {
+				warning("Devices rom has invalid XML syntax"); }
+		}
+
+		Device_capability acquire_device(Device_name const &name) override
+		{
+			Ram_quota ram_quota(Device_session::TX_BUFFER_SIZE + 4096);
+			return retry_with_upgrade(ram_quota, Cap_quota{6}, [&] () {
+				return Client::acquire_device(name); });
+		}
+
+		Device_capability acquire_device()
+		{
+			return _wait_for_device([&] () {
+				Ram_quota ram_quota(Device_session::TX_BUFFER_SIZE + 4096);
+				return retry_with_upgrade(ram_quota, Cap_quota{6}, [&] () {
+					return Client::acquire_single_device(); });
+			});
+		}
 };
 
 #endif /* _INCLUDE__USB_SESSION__CONNECTION_H_ */

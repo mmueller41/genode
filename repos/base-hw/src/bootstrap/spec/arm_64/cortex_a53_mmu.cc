@@ -64,7 +64,7 @@ static inline void prepare_hypervisor(Cpu::Ttbr::access_t const ttbr,
 	using namespace Hw::Mm;
 
 	/* forbid trace access */
-	Cpu::Cptr_el2::access_t cptr = Cpu::Cptr_el2::read();
+	Cpu::Cptr_el2::access_t cptr = 0;
 	Cpu::Cptr_el2::Tta::set(cptr, 1);
 	Cpu::Cptr_el2::write(cptr);
 
@@ -74,7 +74,7 @@ static inline void prepare_hypervisor(Cpu::Ttbr::access_t const ttbr,
 	/* forbid any 32bit access to coprocessor/sysregs */
 	Cpu::Hstr_el2::write(0xffff);
 
-	Cpu::Hcr_el2::access_t hcr = Cpu::Hcr_el2::read();
+	Cpu::Hcr_el2::access_t hcr = 0;
 	Cpu::Hcr_el2::Rw::set(hcr, 1); /* exec in aarch64 */
 	Cpu::Hcr_el2::write(hcr);
 
@@ -145,7 +145,8 @@ unsigned Bootstrap::Platform::enable_mmu()
 		Cpu::Ttbr::Baddr::masked((Genode::addr_t)core_pd->table_base);
 
 	/* primary cpu wakes up all others */
-	if (primary && NR_OF_CPUS > 1) Cpu::wake_up_all_cpus(&_crt0_start_secondary);
+	if (primary && ::Board::NR_OF_CPUS > 1)
+		Cpu::wake_up_all_cpus(&_crt0_start_secondary);
 
 	while (Cpu::current_privilege_level() > Cpu::Current_el::EL1) {
 		if (Cpu::current_privilege_level() == Cpu::Current_el::EL3) {
@@ -199,6 +200,7 @@ unsigned Bootstrap::Platform::enable_mmu()
 	Cpu::Sctlr::Sa0::set(sctlr, 1);
 	Cpu::Sctlr::Sa::set(sctlr, 0);
 	Cpu::Sctlr::Uct::set(sctlr, 1);
+	Cpu::Sctlr::Uci::set(sctlr, 1);
 	Cpu::Sctlr_el1::write(sctlr);
 
 	return cpu_id;

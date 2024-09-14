@@ -53,7 +53,7 @@ Link_side::Link_side(Domain             &domain,
                      Link_side_id const &id,
                      Link               &link)
 :
-	_domain(domain), _id(id), _link(link)
+	_domain_ptr(&domain), _id(id), _link(link)
 {
 	if (link.config().verbose()) {
 		log("[", domain, "] new ", l3_protocol_name(link.protocol()),
@@ -86,8 +86,9 @@ void Link::print(Output &output) const
 
 
 Link::Link(Interface                     &cln_interface,
+           Domain                        &cln_domain,
            Link_side_id            const &cln_id,
-           Pointer<Port_allocator_guard>  srv_port_alloc,
+           Port_allocator_guard          *srv_port_alloc_ptr,
            Domain                        &srv_domain,
            Link_side_id            const &srv_id,
            Cached_timer                  &timer,
@@ -96,19 +97,19 @@ Link::Link(Interface                     &cln_interface,
            Microseconds            const  dissolve_timeout,
            Interface_link_stats          &stats)
 :
-	_config(config),
+	_config_ptr(&config),
 	_client_interface(cln_interface),
-	_server_port_alloc(srv_port_alloc),
+	_server_port_alloc_ptr(srv_port_alloc_ptr),
 	_dissolve_timeout(timer, *this, &Link::_handle_dissolve_timeout,
 	                  Microseconds { 100 * 1000 }),
 	_dissolve_timeout_us(dissolve_timeout),
 	_protocol(protocol),
-	_client(cln_interface.domain(), cln_id, *this),
+	_client(cln_domain, cln_id, *this),
 	_server(srv_domain, srv_id, *this),
 	_stats(stats),
-	_stats_curr(stats.opening)
+	_stats_ptr(&stats.opening)
 {
-	_stats_curr()++;
+	(*_stats_ptr)++;
 	_client_interface.links(_protocol).insert(this);
 	_client.domain().links(_protocol).insert(&_client);
 	_server.domain().links(_protocol).insert(&_server);
@@ -130,46 +131,45 @@ void Link::_handle_dissolve_timeout(Duration)
 void Link::dissolve(bool timeout)
 {
 
-	_stats_curr()--;
+	(*_stats_ptr)--;
 	if (timeout) {
-		if (&_stats_curr() == &_stats.opening) { _stats_curr = _stats.dissolved_timeout_opening; }
-		if (&_stats_curr() == &_stats.open)    { _stats_curr = _stats.dissolved_timeout_open; }
-		if (&_stats_curr() == &_stats.closing) { _stats_curr = _stats.dissolved_timeout_closing; }
-		if (&_stats_curr() == &_stats.closed)  { _stats_curr = _stats.dissolved_timeout_closed; }
+		if (_stats_ptr == &_stats.opening) { _stats_ptr = &_stats.dissolved_timeout_opening; }
+		if (_stats_ptr == &_stats.open)    { _stats_ptr = &_stats.dissolved_timeout_open; }
+		if (_stats_ptr == &_stats.closing) { _stats_ptr = &_stats.dissolved_timeout_closing; }
+		if (_stats_ptr == &_stats.closed)  { _stats_ptr = &_stats.dissolved_timeout_closed; }
 	} else {
-		_stats_curr = _stats.dissolved_no_timeout;
+		_stats_ptr = &_stats.dissolved_no_timeout;
 	}
-	_stats_curr()++;
+	(*_stats_ptr)++;
 
 	_client.domain().links(_protocol).remove(&_client);
 	_server.domain().links(_protocol).remove(&_server);
-	if (_config().verbose()) {
+	if (_config_ptr->verbose()) {
 		log("Dissolve ", l3_protocol_name(_protocol), " link: ", *this); }
 
-	try {
-		if (_config().verbose()) {
+	if (_server_port_alloc_ptr) {
+		if (_config_ptr->verbose()) {
 			log("Free ", l3_protocol_name(_protocol),
 			    " port ", _server.dst_port(),
 			    " at ", _server.domain(),
 			    " that was used by ", _client.domain());
 		}
-		_server_port_alloc().free(_server.dst_port());
+		_server_port_alloc_ptr->free(_server.dst_port());
 	}
-	catch (Pointer<Port_allocator_guard>::Invalid) { }
 }
 
 
-void Link::handle_config(Domain                        &cln_domain,
-                         Domain                        &srv_domain,
-                         Pointer<Port_allocator_guard>  srv_port_alloc,
-                         Configuration                 &config)
+void Link::handle_config(Domain               &cln_domain,
+                         Domain               &srv_domain,
+                         Port_allocator_guard *srv_port_alloc_ptr,
+                         Configuration        &config)
 {
 	Microseconds dissolve_timeout_us(0);
 	switch (_protocol) {
 	case L3_protocol::TCP:  dissolve_timeout_us = config.tcp_idle_timeout();  break;
 	case L3_protocol::UDP:  dissolve_timeout_us = config.udp_idle_timeout();  break;
 	case L3_protocol::ICMP: dissolve_timeout_us = config.icmp_idle_timeout(); break;
-	default: throw Interface::Bad_transport_protocol();
+	default: ASSERT_NEVER_REACHED;
 	}
 	_dissolve_timeout_us = dissolve_timeout_us;
 	_dissolve_timeout.schedule(_dissolve_timeout_us);
@@ -177,10 +177,10 @@ void Link::handle_config(Domain                        &cln_domain,
 	_client.domain().links(_protocol).remove(&_client);
 	_server.domain().links(_protocol).remove(&_server);
 
-	_config            = config;
-	_client._domain    = cln_domain;
-	_server._domain    = srv_domain;
-	_server_port_alloc = srv_port_alloc;
+	_config_ptr = &config;
+	_client._domain_ptr = &cln_domain;
+	_server._domain_ptr = &srv_domain;
+	_server_port_alloc_ptr = srv_port_alloc_ptr;
 
 	cln_domain.links(_protocol).insert(&_client);
 	srv_domain.links(_protocol).insert(&_server);
@@ -196,36 +196,40 @@ void Link::handle_config(Domain                        &cln_domain,
  ** Tcp_link **
  **************/
 
-Tcp_link::Tcp_link(Interface                     &cln_interface,
-                   Link_side_id            const &cln_id,
-                   Pointer<Port_allocator_guard>  srv_port_alloc,
-                   Domain                        &srv_domain,
-                   Link_side_id            const &srv_id,
-                   Cached_timer                  &timer,
-                   Configuration                 &config,
-                   L3_protocol             const  protocol,
-                   Interface_link_stats          &stats)
+Tcp_link::Tcp_link(Interface                  &cln_interface,
+                   Domain                     &cln_domain,
+                   Link_side_id         const &cln_id,
+                   Port_allocator_guard       *srv_port_alloc_ptr,
+                   Domain                     &srv_domain,
+                   Link_side_id         const &srv_id,
+                   Cached_timer               &timer,
+                   Configuration              &config,
+                   L3_protocol          const  protocol,
+                   Interface_link_stats       &stats,
+                   Tcp_packet                 &tcp)
 :
-	Link(cln_interface, cln_id, srv_port_alloc, srv_domain, srv_id, timer,
+	Link(cln_interface, cln_domain, cln_id, srv_port_alloc_ptr, srv_domain, srv_id, timer,
 	     config, protocol, config.tcp_idle_timeout(), stats)
-{ }
+{
+	client_packet(tcp);
+}
 
 
 void Tcp_link::_closing()
 {
 	_state = State::CLOSING;
-	_stats_curr()--;
-	_stats_curr = _stats.closing;
-	_stats_curr()++;
+	(*_stats_ptr)--;
+	_stats_ptr = &_stats.closing;
+	(*_stats_ptr)++;
 }
 
 
 void Tcp_link::_closed()
 {
 	_state = State::CLOSED;
-	_stats_curr()--;
-	_stats_curr = _stats.closed;
-	_stats_curr()++;
+	(*_stats_ptr)--;
+	_stats_ptr = &_stats.closed;
+	(*_stats_ptr)++;
 }
 
 
@@ -233,6 +237,9 @@ void Tcp_link::_tcp_packet(Tcp_packet &tcp,
                            Peer       &sender,
                            Peer       &receiver)
 {
+	if (_state == State::OPENING)
+		_opening_tcp_packet(tcp, sender, receiver);
+
 	if (_state == State::CLOSED) {
 		return; }
 
@@ -252,24 +259,28 @@ void Tcp_link::_tcp_packet(Tcp_packet &tcp,
 			}
 		}
 	}
-	if (_state == State::OPEN) {
-		_packet();
-	} else {
-		_dissolve_timeout.schedule(
-			Microseconds(_config().tcp_max_segm_lifetime().value << 1));
+	switch (_state) {
+	case State::OPENING:
+	case State::OPEN: _packet(); break;
+	case State::CLOSED: _dissolve_timeout.schedule(Microseconds(0UL)); break;
+	default: _dissolve_timeout.schedule(Microseconds(_config_ptr->tcp_max_segm_lifetime().value << 1)); break;
 	}
 }
 
 
-void Tcp_link::server_packet(Tcp_packet &tcp)
+void Tcp_link::_opening_tcp_packet(Tcp_packet const &tcp, Peer &sender, Peer &receiver)
 {
-	if (_opening) {
+	if (tcp.syn())
+		sender.syn = true;
+	if (tcp.ack() && receiver.syn && !receiver.syn_acked)
+		receiver.syn_acked = true;
+	if (sender.syn_acked && receiver.syn_acked) {
 		_opening = false;
-		_stats_curr()--;
-		if (&_stats_curr() == &_stats.opening) { _stats_curr = _stats.open; }
-		_stats_curr()++;
+		_state = State::OPEN;
+		(*_stats_ptr)--;
+		if (_stats_ptr == &_stats.opening) { _stats_ptr = &_stats.open; }
+		(*_stats_ptr)++;
 	}
-	_tcp_packet(tcp, _server, _client);
 }
 
 
@@ -277,17 +288,18 @@ void Tcp_link::server_packet(Tcp_packet &tcp)
  ** Udp_link **
  **************/
 
-Udp_link::Udp_link(Interface                     &cln_interface,
-                   Link_side_id            const &cln_id,
-                   Pointer<Port_allocator_guard>  srv_port_alloc,
-                   Domain                        &srv_domain,
-                   Link_side_id            const &srv_id,
-                   Cached_timer                  &timer,
-                   Configuration                 &config,
-                   L3_protocol             const  protocol,
-                   Interface_link_stats          &stats)
+Udp_link::Udp_link(Interface                  &cln_interface,
+                   Domain                     &cln_domain,
+                   Link_side_id         const &cln_id,
+                   Port_allocator_guard       *srv_port_alloc_ptr,
+                   Domain                     &srv_domain,
+                   Link_side_id         const &srv_id,
+                   Cached_timer               &timer,
+                   Configuration              &config,
+                   L3_protocol          const  protocol,
+                   Interface_link_stats       &stats)
 :
-	Link(cln_interface, cln_id, srv_port_alloc, srv_domain, srv_id, timer,
+	Link(cln_interface, cln_domain, cln_id, srv_port_alloc_ptr, srv_domain, srv_id, timer,
 	     config, protocol, config.udp_idle_timeout(), stats)
 { }
 
@@ -296,9 +308,9 @@ void Udp_link::server_packet()
 {
 	if (_opening) {
 		_opening = false;
-		_stats_curr()--;
-		if (&_stats_curr() == &_stats.opening) { _stats_curr = _stats.open; }
-		_stats_curr()++;
+		(*_stats_ptr)--;
+		if (_stats_ptr == &_stats.opening) { _stats_ptr = &_stats.open; }
+		(*_stats_ptr)++;
 	}
 	_packet();
 }
@@ -308,17 +320,18 @@ void Udp_link::server_packet()
  ** Icmp_link **
  ***************/
 
-Icmp_link::Icmp_link(Interface                     &cln_interface,
-                     Link_side_id            const &cln_id,
-                     Pointer<Port_allocator_guard>  srv_port_alloc,
-                     Domain                        &srv_domain,
-                     Link_side_id            const &srv_id,
-                     Cached_timer                  &timer,
-                     Configuration                 &config,
-                     L3_protocol             const  protocol,
-                     Interface_link_stats          &stats)
+Icmp_link::Icmp_link(Interface                  &cln_interface,
+                     Domain                     &cln_domain,
+                     Link_side_id         const &cln_id,
+                     Port_allocator_guard       *srv_port_alloc_ptr,
+                     Domain                     &srv_domain,
+                     Link_side_id         const &srv_id,
+                     Cached_timer               &timer,
+                     Configuration              &config,
+                     L3_protocol          const  protocol,
+                     Interface_link_stats       &stats)
 :
-	Link(cln_interface, cln_id, srv_port_alloc, srv_domain, srv_id, timer,
+	Link(cln_interface, cln_domain, cln_id, srv_port_alloc_ptr, srv_domain, srv_id, timer,
 	     config, protocol, config.icmp_idle_timeout(), stats)
 { }
 
@@ -327,9 +340,10 @@ void Icmp_link::server_packet()
 {
 	if (_opening) {
 		_opening = false;
-		_stats_curr()--;
-		if (&_stats_curr() == &_stats.opening) { _stats_curr = _stats.open; }
-		_stats_curr()++;
+		(*_stats_ptr)--;
+		if (_stats_ptr == &_stats.opening)
+			_stats_ptr = &_stats.open;
+		(*_stats_ptr)++;
 	}
 	_packet();
 }

@@ -14,7 +14,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <util/arg_string.h>
 
 /* core includes */
@@ -23,20 +22,16 @@
 #include <pd_session_component.h>
 #include <platform_generic.h>
 
-using namespace Genode;
+using namespace Core;
 
 
-Thread_capability Cpu_session_component::create_thread(Capability<Pd_session> pd_cap,
-                                                       Name const &name,
-                                                       Affinity::Location affinity,
-                                                       Weight weight,
-                                                       addr_t utcb)
+Cpu_session::Create_thread_result
+Cpu_session_component::create_thread(Capability<Pd_session> pd_cap,
+                                     Name const &name, Affinity::Location affinity,
+                                     Weight weight, addr_t utcb)
 {
-	Trace::Thread_name thread_name(name.string());
-
-	withdraw(Ram_quota{_utcb_quota_size()});
-
-	Cpu_thread_component *thread = 0;
+	if (!try_withdraw(Ram_quota{_utcb_quota_size()}))
+		return Create_thread_error::OUT_OF_RAM;
 
 	if (weight.value == 0) {
 		warning("Thread ", name, ": Bad weight 0, using default weight instead.");
@@ -49,43 +44,53 @@ Thread_capability Cpu_session_component::create_thread(Capability<Pd_session> pd
 
 	Mutex::Guard thread_list_lock_guard(_thread_list_lock);
 
-	/*
-	 * Create thread associated with its protection domain
-	 */
-	auto create_thread_lambda = [&] (Pd_session_component *pd) {
+	Create_thread_result result = Create_thread_error::DENIED;
+
+	_incr_weight(weight.value);
+
+	_thread_ep.apply(pd_cap, [&] (Pd_session_component *pd) {
+
 		if (!pd) {
 			error("create_thread: invalid PD argument");
-			throw Thread_creation_failed();
+			return;
 		}
 
 		Mutex::Guard slab_lock_guard(_thread_alloc_lock);
-		thread = new (&_thread_alloc)
-			Cpu_thread_component(
-				cap(), _thread_ep, _pager_ep, *pd, _trace_control_area,
-				_trace_sources, weight, _weight_to_quota(weight.value),
-				_thread_affinity(affinity), _label, thread_name,
-				_priority, utcb);
-	};
 
-	try {
-		_incr_weight(weight.value);
-		_thread_ep.apply(pd_cap, create_thread_lambda);
-	} catch (Allocator::Out_of_memory) {
+		pd->with_threads([&] (Pd_session_component::Threads &pd_threads) {
+			pd->with_platform_pd([&] (Platform_pd &platform_pd) {
+				try {
+					Cpu_thread_component &thread = *new (&_thread_alloc)
+						Cpu_thread_component(
+							cap(), *this, _thread_ep, _pager_ep, *pd, platform_pd,
+							pd_threads, _trace_control_area, _trace_sources,
+							weight, _weight_to_quota(weight.value),
+							_thread_affinity(affinity), _label, name,
+							_priority, utcb);
+
+					if (!thread.valid()) { /* 'Platform_thread' creation failed */
+						destroy(&_thread_alloc, &thread);
+						result = Create_thread_error::DENIED;
+						return;
+					}
+
+					thread.session_exception_sigh(_exception_sigh);
+
+					_thread_list.insert(&thread);
+					result = thread.cap();
+				}
+				catch (Out_of_ram)  { result = Create_thread_error::OUT_OF_RAM;  }
+				catch (Out_of_caps) { result = Create_thread_error::OUT_OF_CAPS; }
+				catch (...)         { result = Create_thread_error::DENIED;      }
+			});
+		});
+	});
+
+	if (result.failed()) {
 		_decr_weight(weight.value);
-		throw Out_of_ram();
-	} catch (Native_capability::Reference_count_overflow) {
-		_decr_weight(weight.value);
-		throw Thread_creation_failed();
-	} catch (...) {
-		_decr_weight(weight.value);
-		throw;
+		replenish(Ram_quota{_utcb_quota_size()});
 	}
-
-	thread->session_exception_sigh(_exception_sigh);
-
-	_thread_list.insert(thread);
-
-	return thread->cap();
+	return result;
 }
 
 
@@ -378,11 +383,11 @@ size_t Cpu_session_component::_weight_to_quota(size_t const weight) const
  ** Trace::Source_registry **
  ****************************/
 
-unsigned Trace::Source::_alloc_unique_id()
+Core::Trace::Source::Id Core::Trace::Source::_alloc_unique_id()
 {
 	static Mutex lock;
 	static unsigned cnt;
 	Mutex::Guard guard(lock);
-	return cnt++;
+	return { cnt++ };
 }
 

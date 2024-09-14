@@ -16,16 +16,16 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Base includes */
+/* Genode includes */
 #include <util/flex_iterator.h>
 
-/* Core includes */
+/* core includes */
 #include <cpu_thread_component.h>
 #include <dataspace_component.h>
 #include <vm_session_component.h>
 
-using Genode::addr_t;
-using Genode::Vm_session_component;
+using namespace Core;
+
 
 void Vm_session_component::attach(Dataspace_capability const cap,
                                   addr_t const guest_phys,
@@ -65,6 +65,8 @@ void Vm_session_component::attach(Dataspace_capability const cap,
 
 		using Alloc_error = Range_allocator::Alloc_error;
 
+		Region_map_detach &rm_detach = *this;
+
 		_map.alloc_addr(attribute.size, guest_phys).with_result(
 
 			[&] (void *) {
@@ -75,14 +77,14 @@ void Vm_session_component::attach(Dataspace_capability const cap,
 					.size  = attribute.size,
 					.write = dsc.writeable() && attribute.writeable,
 					.exec  = attribute.executable,
-					.off   = (off_t)attribute.offset,
+					.off   = attribute.offset,
 					.dma   = false,
 				};
 
 				/* store attachment info in meta data */
 				try {
 					_map.construct_metadata((void *)guest_phys,
-					                        dsc, *this, region_attr);
+					                        dsc, rm_detach, region_attr);
 
 				} catch (Allocator_avl_tpl<Rm_region>::Assign_metadata_failed) {
 					error("failed to store attachment info");
@@ -112,8 +114,10 @@ void Vm_session_component::attach(Dataspace_capability const cap,
 
 						Rm_region &region = *region_ptr;
 
-						if (!(cap == region.dataspace().cap()))
-							throw Region_conflict();
+						region.with_dataspace([&] (Dataspace_component &dataspace) {
+							if (!(cap == dataspace.cap()))
+								throw Region_conflict();
+						});
 
 						if (guest_phys < region.base() ||
 						    guest_phys > region.base() + region.size() - 1)
@@ -147,12 +151,7 @@ void Vm_session_component::detach(addr_t guest_phys, size_t size)
 
 		if (region) {
 			iteration_size = region->size();
-
-			/* inform dataspace */
-			region->dataspace().detached_from(*region);
-
-			/* cleanup metadata */
-			_map.free(reinterpret_cast<void *>(region->base()));
+			detach_at(region->base());
 		}
 
 		if (addr >= guest_phys_end - (iteration_size - 1))
@@ -160,23 +159,51 @@ void Vm_session_component::detach(addr_t guest_phys, size_t size)
 
 		addr += iteration_size;
 	} while (true);
-
-	/* kernel specific code to detach memory from guest */
-	_detach_vm_memory(guest_phys, size);
 }
 
 
-void Vm_session_component::detach(Region_map::Local_addr addr)
+void Vm_session_component::_with_region(addr_t const addr,
+                                        auto const &fn)
 {
-	Rm_region *region = _map.metadata(addr);
+	Rm_region *region = _map.metadata((void *)addr);
 	if (region)
-		detach(region->base(), region->size());
+		fn(*region);
 	else
-		Genode::error(__PRETTY_FUNCTION__, " unknown region");
+		error(__PRETTY_FUNCTION__, " unknown region");
+}
+
+
+void Vm_session_component::detach_at(addr_t const addr)
+{
+	_with_region(addr, [&] (Rm_region &region) {
+
+		if (!region.reserved())
+			reserve_and_flush(addr);
+
+		/* free the reserved region */
+		_map.free(reinterpret_cast<void *>(region.base()));
+	});
 }
 
 
 void Vm_session_component::unmap_region(addr_t base, size_t size)
 {
-	Genode::error(__func__, " unimplemented ", base, " ", size);
+	error(__func__, " unimplemented ", base, " ", size);
+}
+
+
+void Vm_session_component::reserve_and_flush(addr_t const addr)
+{
+	_with_region(addr, [&] (Rm_region &region) {
+
+		/* inform dataspace */
+		region.with_dataspace([&] (Dataspace_component &dataspace) {
+			dataspace.detached_from(region);
+		});
+
+		region.mark_as_reserved();
+
+		/* kernel specific code to detach memory from guest */
+		_detach_vm_memory(region.base(), region.size());
+	});
 }

@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2017 Genode Labs GmbH
+ * Copyright (C) 2006-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -19,11 +19,13 @@
 #include <util/list.h>
 #include <base/weak_ptr.h>
 #include <base/rpc_server.h>
+#include <base/registry.h>
+#include <base/tslab.h>
 
 /* local includes */
-#include "canvas.h"
-#include "view_owner.h"
-#include "resizeable_texture.h"
+#include <canvas.h>
+#include <view_owner.h>
+#include <resizeable_texture.h>
 
 namespace Nitpicker {
 
@@ -54,16 +56,6 @@ namespace Nitpicker {
 }
 
 
-namespace Gui {
-
-	/*
-	 * We use view capabilities as mere tokens to pass views between sessions.
-	 * There is no RPC interface associated with a view.
-	 */
-	struct View : Genode::Interface { GENODE_RPC_INTERFACE(); };
-}
-
-
 class Nitpicker::View : private Same_buffer_list_elem,
                         private Session_view_list_elem,
                         private View_stack_elem,
@@ -73,13 +65,7 @@ class Nitpicker::View : private Same_buffer_list_elem,
 {
 	public:
 
-		typedef String<32> Title;
-
-		enum Transparent { NOT_TRANSPARENT = 0, TRANSPARENT = 1 };
-		enum Background  { NOT_BACKGROUND  = 0, BACKGROUND  = 1 };
-
 		using Weak_object<View>::weak_ptr;
-		using Weak_object<View>::weak_ptr_const;
 
 	private:
 
@@ -93,8 +79,8 @@ class Nitpicker::View : private Same_buffer_list_elem,
 		View(View const &);
 		View &operator = (View const &);
 
-		Transparent const _transparent;   /* background is partly visible */
-		Background        _background;    /* view is a background view    */
+		bool  const _transparent;     /* background is partly visible */
+		bool        _background;      /* view is a background view    */
 
 		View       *_parent;          /* parent view                          */
 		Rect        _geometry   { };  /* position and size relative to parent */
@@ -130,11 +116,13 @@ class Nitpicker::View : private Same_buffer_list_elem,
 
 	public:
 
+		struct Attr { bool transparent, background; };
+
 		View(View_owner &owner, Resizeable_texture<Pixel> const &texture,
-		     Transparent transparent, Background bg, View *parent)
+		     Attr attr, View *parent)
 		:
-			_transparent(transparent), _background(bg), _parent(parent),
-			_owner(owner), _texture(texture)
+			_transparent(attr.transparent), _background(attr.background),
+			_parent(parent), _owner(owner), _texture(texture)
 		{ }
 
 		virtual ~View()
@@ -167,7 +155,7 @@ class Nitpicker::View : private Same_buffer_list_elem,
 		 */
 		Rect abs_geometry() const
 		{
-			return Rect(abs_position(), _geometry.area());
+			return Rect(abs_position(), _geometry.area);
 		}
 
 		/**
@@ -239,8 +227,7 @@ class Nitpicker::View : private Same_buffer_list_elem,
 		 *
 		 * \param bg  true if view is background
 		 */
-		void background(bool bg) {
-			_background = bg ? BACKGROUND : NOT_BACKGROUND; }
+		void background(bool bg) { _background = bg; }
 
 		/**
 		 * Accessors
@@ -269,7 +256,7 @@ class Nitpicker::View : private Same_buffer_list_elem,
 
 		void buffer_off(Point buffer_off) { _buffer_off = buffer_off; }
 
-		void label_pos(Point pos) { _label_rect = Rect(pos, _label_rect.area()); }
+		void label_pos(Point pos) { _label_rect = Rect(pos, _label_rect.area); }
 
 		/**
 		 * Return true if input at screen position 'p' refers to the view

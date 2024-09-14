@@ -24,7 +24,7 @@ class Vfs::Symlink_file_system : public Single_file_system
 {
 	private:
 
-		typedef Genode::String<MAX_PATH_LEN> Target;
+		using Target = Genode::String<MAX_PATH_LEN>;
 
 		Target const _target;
 
@@ -39,21 +39,19 @@ class Vfs::Symlink_file_system : public Single_file_system
 			: Single_vfs_handle(ds, fs, alloc, 0), _target(target)
 			{ }
 
-
-			Read_result read(char *dst, file_size count,
-			                 file_size &out_count) override
+			Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 			{
-				auto n = min(count, _target.length());
-				copy_cstring(dst, _target.string(), (size_t)n);
-				out_count = n - 1;
+				size_t const n = min(dst.num_bytes, _target.length());
+				copy_cstring(dst.start, _target.string(), n);
+				out_count = (n > 0) ? n - 1 : 0;
 				return READ_OK;
 			}
 
-			Write_result write(char const*, file_size,
-			                   file_size&) override {
+			Write_result write(Const_byte_range_ptr const &, size_t &) override {
 				return WRITE_ERR_INVALID; }
 
-			bool read_ready() override { return true; }
+			bool read_ready()  const override { return true; }
+			bool write_ready() const override { return false; }
 		};
 
 	public:

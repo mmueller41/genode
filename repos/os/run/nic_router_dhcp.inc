@@ -265,18 +265,7 @@ append config {
 
 install_config $config
 
-set boot_modules {
-
-	init
-	dynamic_rom
-	nic_router
-	test-nic_router_dhcp-client
-}
-
-lappend_if [nic_router_2_managed] boot_modules test-nic_router_dhcp-manager
-lappend_if [nic_router_2_managed] boot_modules report_rom
-
-build_boot_image $boot_modules
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic "
 append_qemu_nic_args
@@ -364,4 +353,4 @@ append done_string ".*  DNS domain name: genode.org.*\n"
 
 }
 
-run_genode_until $done_string 35
+run_genode_until $done_string 60

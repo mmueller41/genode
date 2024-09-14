@@ -20,22 +20,23 @@
 
 namespace Vfs_pipe {
 	using namespace Vfs;
-	typedef Vfs::Directory_service::Open_result Open_result;
-	typedef Vfs::File_io_service::Write_result Write_result;
-	typedef Vfs::File_io_service::Read_result Read_result;
-	typedef Genode::Path<Vfs::MAX_PATH_LEN> Path;
+	using Open_result  = Vfs::Directory_service::Open_result;
+	using Write_result = Vfs::File_io_service::Write_result;
+	using Read_result  = Vfs::File_io_service::Read_result;
+	using Path         = Genode::Path<Vfs::MAX_PATH_LEN>;
 
 	enum { PIPE_BUF_SIZE = 8192U };
-	typedef Genode::Ring_buffer<unsigned char, PIPE_BUF_SIZE+1> Pipe_buffer;
+	using Pipe_buffer = Genode::Ring_buffer<unsigned char, PIPE_BUF_SIZE+1>;
 
 	struct Pipe_handle;
-	typedef Genode::Fifo_element<Pipe_handle> Handle_element;
-	typedef Genode::Fifo<Handle_element> Handle_fifo;
-	typedef Genode::Registry<Pipe_handle>::Element Pipe_handle_registry_element;
-	typedef Genode::Registry<Pipe_handle> Pipe_handle_registry;
+	using Handle_element = Genode::Fifo_element<Pipe_handle>;
+	using Handle_fifo    = Genode::Fifo<Handle_element>;
+
+	using Pipe_handle_registry_element = Genode::Registry<Pipe_handle>::Element;
+	using Pipe_handle_registry         = Genode::Registry<Pipe_handle>;
 
 	struct Pipe;
-	typedef Genode::Id_space<Pipe> Pipe_space;
+	using Pipe_space = Genode::Id_space<Pipe>;
 
 	struct New_pipe_handle;
 
@@ -49,8 +50,7 @@ struct Vfs_pipe::Pipe_handle : Vfs::Vfs_handle, private Pipe_handle_registry_ele
 {
 	Pipe &pipe;
 
-	Handle_element io_progress_elem { *this };
-	Handle_element  read_ready_elem { *this };
+	Handle_element read_ready_elem { *this };
 
 	bool const writer;
 
@@ -68,47 +68,44 @@ struct Vfs_pipe::Pipe_handle : Vfs::Vfs_handle, private Pipe_handle_registry_ele
 
 	virtual ~Pipe_handle();
 
-	Write_result write(const char *buf,
-	                   file_size count,
-	                   file_size &out_count);
+	Write_result write(Const_byte_range_ptr const &, size_t &out_count);
+	Read_result  read (Byte_range_ptr       const &, size_t &out_count);
 
-	Read_result read(char *buf,
-	                 file_size count,
-	                 file_size &out_count);
-
-	bool read_ready();
+	bool read_ready()  const;
+	bool write_ready() const;
 	bool notify_read_ready();
 };
 
 
 struct Vfs_pipe::Pipe
 {
-	Genode::Env &env;
+	Genode::Env       &env;
+	Vfs::Env::User    &vfs_user;
 	Genode::Allocator &alloc;
-	Pipe_space::Element space_elem;
-	Pipe_buffer buffer { };
+
+	Pipe_space::Element  space_elem;
+	Pipe_buffer          buffer { };
 	Pipe_handle_registry registry { };
-	Handle_fifo io_progress_waiters { };
+
 	Handle_fifo read_ready_waiters { };
+
 	unsigned num_writers = 0;
 	bool waiting_for_writers = true;
 
 	Genode::Io_signal_handler<Pipe> _read_notify_handler
 		{ env.ep(), *this, &Pipe::notify_read };
 
-	Genode::Io_signal_handler<Pipe> _write_notify_handler
-		{ env.ep(), *this, &Pipe::notify_write };
-
 	bool new_handle_active { true };
 
-	Pipe(Genode::Env &env, Genode::Allocator &alloc, Pipe_space &space)
+	Pipe(Genode::Env &env, Vfs::Env::User &vfs_user,
+	     Genode::Allocator &alloc, Pipe_space &space)
 	:
-		env(env), alloc(alloc), space_elem(*this, space)
+		env(env), vfs_user(vfs_user), alloc(alloc), space_elem(*this, space)
 	{ }
 
 	~Pipe() = default;
 
-	typedef Genode::String<8> Name;
+	using Name = Genode::String<8>;
 	Name name() const
 	{
 		return Name(space_elem.id().value);
@@ -120,12 +117,6 @@ struct Vfs_pipe::Pipe
 			elem.object().read_ready_response(); });
 	}
 
-	void notify_write()
-	{
-		io_progress_waiters.dequeue_all([] (Handle_element &elem) {
-			elem.object().io_progress_response(); });
-	}
-
 	void submit_read_signal()
 	{
 		_read_notify_handler.local_submit();
@@ -133,7 +124,7 @@ struct Vfs_pipe::Pipe
 
 	void submit_write_signal()
 	{
-		_write_notify_handler.local_submit();
+		vfs_user.wakeup_vfs_user();
 	}
 
 	/**
@@ -160,8 +151,6 @@ struct Vfs_pipe::Pipe
 	 */
 	void remove(Pipe_handle &handle)
 	{
-		if (handle.io_progress_elem.enqueued())
-			io_progress_waiters.remove(handle.io_progress_elem);
 		if (handle.read_ready_elem.enqueued())
 			read_ready_waiters.remove(handle.read_ready_elem);
 	}
@@ -182,7 +171,6 @@ struct Vfs_pipe::Pipe
 					Genode::warning("flushing non-empty buffer. capacity=", buffer.avail_capacity());
 
 				buffer.reset();
-				io_progress_waiters.dequeue_all([] (Handle_element &/*elem*/) { });
 			}
 			*handle = new (alloc)
 				Pipe_handle(fs, alloc, Directory_service::OPEN_MODE_WRONLY, registry, *this);
@@ -204,89 +192,98 @@ struct Vfs_pipe::Pipe
 		return Open_result::OPEN_ERR_UNACCESSIBLE;
 	}
 
-	Write_result write(Pipe_handle &handle,
-	                   const char *buf, file_size count,
-	                   file_size &out_count)
+	Write_result write(Pipe_handle &, Const_byte_range_ptr const &src, size_t &out_count)
 	{
-		file_size out = 0;
-		bool notify = buffer.empty();
+		size_t out = 0;
 
 		if (buffer.avail_capacity() == 0) {
 			out_count = 0;
 			return Write_result::WRITE_OK;
 		}
 
-		while (out < count && 0 < buffer.avail_capacity()) {
-			buffer.add(*(buf++));
+		char const *buf_ptr = src.start;
+		while (out < src.num_bytes && 0 < buffer.avail_capacity()) {
+			buffer.add(*(buf_ptr++));
 			++out;
 		}
 
 		out_count = out;
-		if (out < count)
-			io_progress_waiters.enqueue(handle.io_progress_elem);
 
-		if (notify)
-			submit_read_signal();
+		if (out > 0) {
+			vfs_user.wakeup_vfs_user();
+			notify_read();
+		}
 
 		return Write_result::WRITE_OK;
 	}
 
-	Read_result read(Pipe_handle &handle,
-	                 char *buf, file_size count,
-	                 file_size &out_count)
+	Read_result read(Pipe_handle &, Byte_range_ptr const &dst, size_t &out_count)
 	{
-		bool notify = buffer.avail_capacity() == 0;
+		size_t out = 0;
 
-		file_size out = 0;
-		while (out < count && !buffer.empty()) {
-			*(buf++) = buffer.get();
+		char *buf_ptr = dst.start;
+		while (out < dst.num_bytes && !buffer.empty()) {
+			*(buf_ptr++) = buffer.get();
 			++out;
 		}
 
 		out_count = out;
-		if (!out) {
+
+		if (out == 0) {
 
 			/* Send only EOF when at least one writer opened the pipe */
 			if ((num_writers == 0) && !waiting_for_writers)
 				return Read_result::READ_OK; /* EOF */
 
-			read_ready_waiters.enqueue(handle.io_progress_elem);
 			return Read_result::READ_QUEUED;
 		}
 
-		if (notify)
-			submit_write_signal();
+		/* new pipe space may unblock the writer */
+		if (out > 0)
+			vfs_user.wakeup_vfs_user();
 
 		return Read_result::READ_OK;
 	}
 };
 
 
-Vfs_pipe::Pipe_handle::~Pipe_handle() {
-	pipe.remove(*this); }
+Vfs_pipe::Pipe_handle::~Pipe_handle()
+{
+	pipe.remove(*this);
+}
 
 
 Vfs_pipe::Write_result
-Vfs_pipe::Pipe_handle::write(const char *buf,
-	                         file_size count,
-	                         file_size &out_count) {
-	return Pipe_handle::pipe.write(*this, buf, count, out_count); }
+Vfs_pipe::Pipe_handle::write(Const_byte_range_ptr const &src, size_t &out_count)
+{
+	return Pipe_handle::pipe.write(*this, src, out_count);
+}
 
 
 Vfs_pipe::Read_result
-Vfs_pipe::Pipe_handle::read(char *buf,
-	                        file_size count,
-	                        file_size &out_count) {
-	return Pipe_handle::pipe.read(*this, buf, count, out_count); }
+Vfs_pipe::Pipe_handle::read(Byte_range_ptr const &dst, size_t &out_count)
+{
+	return Pipe_handle::pipe.read(*this, dst, out_count);
+}
 
 
-bool
-Vfs_pipe::Pipe_handle::read_ready() {
-	return !writer && !pipe.buffer.empty(); }
+bool Vfs_pipe::Pipe_handle::read_ready() const
+{
+	return !writer && !pipe.buffer.empty();
+}
 
 
-bool
-Vfs_pipe::Pipe_handle::notify_read_ready()
+bool Vfs_pipe::Pipe_handle::write_ready() const
+{
+	/*
+	 * Unconditionally return true for the writer side because
+	 * WRITE_ERR_WOULD_BLOCK is not yet supported.
+	 */
+	return writer;
+}
+
+
+bool Vfs_pipe::Pipe_handle::notify_read_ready()
 {
 	if (!writer && !read_ready_elem.enqueued())
 		pipe.read_ready_waiters.enqueue(read_ready_elem);
@@ -298,14 +295,15 @@ struct Vfs_pipe::New_pipe_handle : Vfs::Vfs_handle
 {
 	Pipe &pipe;
 
-	New_pipe_handle(Vfs::File_system &fs,
-	                Genode::Env &env,
+	New_pipe_handle(Vfs::File_system  &fs,
+	                Genode::Env       &env,
+	                Vfs::Env::User    &vfs_user,
 	                Genode::Allocator &alloc,
-	                unsigned flags,
-	                Pipe_space &pipe_space)
+	                unsigned           flags,
+	                Pipe_space        &pipe_space)
 	:
 		Vfs::Vfs_handle(fs, fs, alloc, flags),
-		pipe(*(new (alloc) Pipe(env, alloc, pipe_space)))
+		pipe(*(new (alloc) Pipe(env, vfs_user, alloc, pipe_space)))
 	{ }
 
 	~New_pipe_handle()
@@ -313,13 +311,11 @@ struct Vfs_pipe::New_pipe_handle : Vfs::Vfs_handle
 		pipe.remove_new_handle();
 	}
 
-	Read_result read(char *buf,
-	                 file_size count,
-	                 file_size &out_count)
+	Read_result read(Byte_range_ptr const &dst, size_t &out_count)
 	{
 		auto name = pipe.name();
-		if (name.length() < count) {
-			memcpy(buf, name.string(), name.length());
+		if (name.length() < dst.num_bytes) {
+			memcpy(dst.start, name.string(), name.length());
 			out_count = name.length();
 			return Read_result::READ_OK;
 		}
@@ -568,32 +564,37 @@ class Vfs_pipe::File_system : public Vfs::File_system
 		 **********************/
 
 		Write_result write(Vfs_handle *vfs_handle,
-		                   const char *src, file_size count,
-		                   file_size &out_count) override
+		                   Const_byte_range_ptr const &src, size_t &out_count) override
 		{
 			if (Pipe_handle *handle = dynamic_cast<Pipe_handle*>(vfs_handle))
-				return handle->write(src, count, out_count);
+				return handle->write(src, out_count);
 
 			return WRITE_ERR_INVALID;
 		}
 
 		Read_result complete_read(Vfs_handle *vfs_handle,
-		                          char *dst, file_size count,
-		                          file_size &out_count) override
+		                          Byte_range_ptr const &dst, size_t &out_count) override
 		{
 			if (Pipe_handle *handle = dynamic_cast<Pipe_handle*>(vfs_handle))
-				return handle->read(dst, count, out_count);
+				return handle->read(dst, out_count);
 
 			if (New_pipe_handle *handle = dynamic_cast<New_pipe_handle*>(vfs_handle))
-				return handle->read(dst, count, out_count);
+				return handle->read(dst, out_count);
 
 			return READ_ERR_INVALID;
 		}
 
-		bool read_ready(Vfs_handle *vfs_handle) override
+		bool read_ready(Vfs_handle const &vfs_handle) const override
 		{
-			if (Pipe_handle *handle = dynamic_cast<Pipe_handle*>(vfs_handle))
+			if (Pipe_handle const *handle = dynamic_cast<Pipe_handle const *>(&vfs_handle))
 				return handle->read_ready();
+			return true;
+		}
+
+		bool write_ready(Vfs_handle const &vfs_handle) const override
+		{
+			if (Pipe_handle const *handle = dynamic_cast<Pipe_handle const *>(&vfs_handle))
+				return handle->write_ready();
 			return true;
 		}
 
@@ -659,7 +660,7 @@ class Vfs_pipe::Pipe_file_system : public Vfs_pipe::File_system
 				if ((OPEN_MODE_ACCMODE & mode) == OPEN_MODE_WRONLY)
 					return OPEN_ERR_NO_PERM;
 				*handle = new (alloc)
-					New_pipe_handle(*this, _env.env(), alloc, mode, _pipe_space);
+					New_pipe_handle(*this, _env.env(), _env.user(), alloc, mode, _pipe_space);
 				return OPEN_OK;
 			}
 
@@ -805,7 +806,7 @@ class Vfs_pipe::Fifo_file_system : public Vfs_pipe::File_system
 				Path const path { fifo.attribute_value("name", String<MAX_PATH_LEN>()) };
 
 				Pipe &pipe = *new (env.alloc())
-					Pipe(env.env(), env.alloc(), _pipe_space);
+					Pipe(env.env(), env.user(), env.alloc(), _pipe_space);
 				new (env.alloc())
 					Fifo_item(_items, path, pipe.space_elem.id());
 			});

@@ -45,7 +45,7 @@ namespace Scout {
 	 * An anchor marks a location within a document that can be addressed by a
 	 * link.
 	 */
-	typedef Element Anchor;
+	using Anchor = Element;
 }
 
 
@@ -105,7 +105,7 @@ class Scout::Token : public Element
 		 * Element interface
 		 */
 		void draw(Canvas_base &, Point) override;
-		void refresh() { redraw_area(-1, 0, _size.w() + 1, _size.h()); }
+		void refresh() { redraw_area(-1, 0, _size.w + 1, _size.h); }
 };
 
 
@@ -169,13 +169,13 @@ class Scout::Link_token : public Token, private Link, public Event_handler,
 		{
 			_outline = Color(_style->color.r,
 			                 _style->color.g,
-			                 _style->color.b, _curr_value);
+			                 _style->color.b, Color::channel_t(_curr_value));
 
 			Token::draw(canvas, abs_position);
 
-			canvas.draw_box(_position.x() + abs_position.x(),
-			                _position.y() + abs_position.y() + _size.h() - 1,
-			                _size.w(), 1, Color(0,0,255));
+			canvas.draw_box(_position.x + abs_position.x,
+			                _position.y + abs_position.y + _size.h - 1,
+			                _size.w, 1, Color::rgb(0,0,255));
 		}
 
 		void mfocus(bool flag) override
@@ -232,7 +232,7 @@ class Scout::Launcher : public Anchor
 {
 	public:
 
-		typedef Genode::String<64> Name;
+		using Name = Genode::String<64>;
 
 	private:
 
@@ -568,8 +568,8 @@ class Scout::Item : public Parent_element
 
 		void draw(Canvas_base &canvas, Point abs_position) override
 		{
-			canvas.draw_string(_position.x() + abs_position.x(),
-			                   _position.y() + abs_position.y(),
+			canvas.draw_string(_position.x + abs_position.x,
+			                   _position.y + abs_position.y,
 			                   _style->font, _style->color, _tag, 255);
 			Parent_element::draw(canvas, abs_position);
 		}

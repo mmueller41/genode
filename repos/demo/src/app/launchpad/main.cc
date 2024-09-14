@@ -86,7 +86,7 @@ struct Main : Scout::Event_handler
 
 	Gui::Connection _gui { _env };
 
-	Platform _platform { _env, *_gui.input() };
+	Platform _platform { _env, _gui.input };
 
 	bool const _event_handler_registered = (_platform.event_handler(*this), true);
 
@@ -119,7 +119,7 @@ struct Main : Scout::Event_handler
 	Avail_quota_update _avail_quota_update { _env.pd(), _launchpad };
 
 	User_state _user_state { &_launchpad, &_launchpad,
-	                         _initial_position.x(), _initial_position.y() };
+	                         _initial_position.x, _initial_position.y };
 
 	void _init_launchpad()
 	{

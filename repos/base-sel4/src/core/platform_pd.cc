@@ -11,9 +11,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes */
 #include <platform_pd.h>
 #include <platform.h>
@@ -24,7 +21,7 @@
 /* base-internal includes */
 #include <base/internal/capability_space_sel4.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /*****************************************
@@ -52,39 +49,8 @@ Bit_allocator<1024> &Platform_pd::pd_id_alloc()
 }
 
 
-bool Platform_pd::bind_thread(Platform_thread &thread)
+void Platform_pd::map_ipc_buffer(Ipc_buffer_phys const from, Utcb_virt const to)
 {
-	try {
-		/* allocate fault handler selector in the PD's CSpace */
-		thread._fault_handler_sel = alloc_sel();
-		/* allocate endpoint selector in the PD's CSpace */
-		thread._ep_sel = alloc_sel();
-		thread._vcpu_sel = alloc_sel();
-		/* allocate asynchronous selector used for locks in the PD's CSpace */
-		thread._lock_sel = thread._utcb ? alloc_sel() : Cap_sel(INITIAL_SEL_LOCK);
-		thread._vcpu_notify_sel = alloc_sel();
-	} catch (Platform_pd::Sel_bit_alloc::Out_of_indices) {
-		if (thread._fault_handler_sel.value()) {
-			free_sel(thread._fault_handler_sel);
-			thread._fault_handler_sel = Cap_sel(0);
-		}
-		if (thread._ep_sel.value()) {
-			free_sel(thread._ep_sel);
-			thread._ep_sel = Cap_sel(0);
-		}
-		if (thread._vcpu_sel.value()) {
-			free_sel(thread._vcpu_sel);
-			thread._vcpu_sel = Cap_sel(0);
-		}
-		if (thread._vcpu_notify_sel.value()) {
-			free_sel(thread._vcpu_notify_sel);
-			thread._vcpu_notify_sel = Cap_sel(0);
-		}
-		return false;
-	}
-
-	thread._pd = this;
-
 	/*
 	 * Map IPC buffer
 	 *
@@ -95,35 +61,20 @@ bool Platform_pd::bind_thread(Platform_thread &thread)
 	 *     to attach the UTCB as a dataspace to the stack area to make the RM
 	 *     session aware to the mapping. This code is missing.
 	 */
-	addr_t const utcb = (thread._utcb) ? thread._utcb
-	                                    : (addr_t)thread.INITIAL_IPC_BUFFER_VIRT;
-
 	Vm_space::Map_attr const attr { .cached         = true,
 	                                .write_combined = false,
 	                                .writeable      = true,
 	                                .executable     = false,
 	                                .flush_support  = true };
 	enum { ONE_PAGE = 1 };
-	_vm_space.alloc_page_tables(utcb, get_page_size());
-	_vm_space.map(thread._info.ipc_buffer_phys, utcb, ONE_PAGE, attr);
-	return true;
+	_vm_space.alloc_page_tables(to.addr, get_page_size());
+	_vm_space.map(from.addr, to.addr, ONE_PAGE, attr);
 }
 
 
-void Platform_pd::unbind_thread(Platform_thread &thread)
+void Platform_pd::unmap_ipc_buffer(Utcb_virt const utcb)
 {
-	if (thread._utcb)
-		free_sel(thread._lock_sel);
-
-	free_sel(thread._fault_handler_sel);
-	free_sel(thread._ep_sel);
-	free_sel(thread._vcpu_sel);
-	free_sel(thread._vcpu_notify_sel);
-
-	if (thread._utcb)
-		_vm_space.unmap(thread._utcb, 1);
-	else
-		_vm_space.unmap(thread.INITIAL_IPC_BUFFER_VIRT, 1);
+	_vm_space.unmap(utcb.addr, 1);
 }
 
 

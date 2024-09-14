@@ -1,12 +1,13 @@
 proc binary_name_ld_lib_so { } { return "ld-pistachio.lib.so" }
 proc binary_name_core_a    { } { return "core-pistachio.a"    }
-proc binary_name_timer     { } { return "pit_timer_drv" }
+proc binary_name_timer     { } { return "pit_timer"           }
 
 proc kernel_files { } { return { pistachio sigma0-pistachio kickstart-pistachio } }
 
 proc run_boot_string   { } { return "\n\r\033\\\[1m\033\\\[33mL4Ka::Pistachio -" }
 proc core_link_address { } { return "0x02000000" }
 
+proc boot_output { } { return "serial" }
 
 ##
 # Populdate boot directory with binaries on pistachio
@@ -48,8 +49,7 @@ proc run_boot_dir {binaries} {
 	if {[have_include "image/iso"] || [have_include "image/disk"]} {
 
 		if {[have_include "image/disk"]} {
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+			install_disk_bootloader_to_run_dir
 		}
 
 		if {[have_include "image/iso"]} {
@@ -57,16 +57,16 @@ proc run_boot_dir {binaries} {
 		}
 
 		#
-		# Generate GRUB config file
+		# Generate GRUB2 config file
 		#
+		set fh [create_header_grub2_config]
+
 		# The core binary is part of the 'binaries' list but it must
 		# appear right after 'sigma0' as boot module. Hence the special case.
 		#
-		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
-		puts $fh "set timeout=0"
 		puts $fh "menuentry 'Genode on L4ka::Pistachio' {"
 		puts $fh " insmod multiboot"
-		puts $fh " multiboot /boot/bender"
+		puts $fh " multiboot /boot/bender [boot_output]"
 		puts $fh " module /boot/kickstart"
 		puts $fh " module /boot/kernel"
 		puts $fh " module /boot/sigma0"
@@ -90,7 +90,7 @@ proc run_boot_dir {binaries} {
 		# Generate pulsar config file
 		#
 		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
-		puts $fh " exec /boot/bender"
+		puts $fh " exec /boot/bender [boot_output]"
 		puts $fh " load /boot/kickstart"
 		puts $fh " load /boot/kernel"
 		puts $fh " load /boot/sigma0"

@@ -186,7 +186,7 @@ class Timer::Connection : public  Genode::Connection<Session>,
 		Genode::Signal_context  _default_sigh_ctx { };
 
 		Genode::Signal_context_capability
-			_default_sigh_cap = _sig_rec.manage(&_default_sigh_ctx);
+			_default_sigh_cap = _sig_rec.manage(_default_sigh_ctx);
 
 		Genode::Signal_context_capability _custom_sigh_cap { };
 
@@ -199,7 +199,7 @@ class Timer::Connection : public  Genode::Connection<Session>,
 		 ** Members for interaction with Timeout framework **
 		 ****************************************************/
 
-		enum { MIN_TIMEOUT_US             = 5000 };
+		enum { MIN_TIMEOUT_US             = 1000 };
 		enum { REAL_TIME_UPDATE_PERIOD_US = 500000 };
 		enum { MAX_INTERPOLATION_QUALITY  = 3 };
 		enum { MAX_REMOTE_TIME_LATENCY_US = 500 };
@@ -256,16 +256,17 @@ class Timer::Connection : public  Genode::Connection<Session>,
 		 * \param label  optional label used in session routing
 		 */
 		Connection(Genode::Env &env,
-		           Genode::Entrypoint & ep,
-		           char const *label = "");
+		           Genode::Entrypoint &ep,
+		           Label const &label = Label());
 
 		/**
 		 * Convenience constructor wrapper using the environment's entrypoint as
 		 * timeout handler execution context
 		 */
-		Connection(Genode::Env &env, char const *label = "");
+		Connection(Genode::Env &env, Label const &label = Label())
+		: Connection(env, env.ep(), label) { }
 
-		~Connection() { _sig_rec.dissolve(&_default_sigh_ctx); }
+		~Connection() { _sig_rec.dissolve(_default_sigh_ctx); }
 
 		/*
 		 * Intercept 'sigh' to keep track of customized signal handlers

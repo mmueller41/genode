@@ -13,10 +13,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/env.h>
-#include <base/log.h>
-
 /* core includes */
 #include <pager.h>
 
@@ -26,7 +22,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Pager_entrypoint::entry()
@@ -64,12 +60,7 @@ void Pager_entrypoint::entry()
 					}
 
 					/* handle request */
-					if (obj->pager(_pager)) {
-						/* could not resolv - leave thread in pagefault */
-						warning("page-fault, ", *obj,
-						        " ip=", Hex(_pager.fault_ip()),
-						        " pf-addr=", Hex(_pager.fault_addr()));
-					} else {
+					if (obj->pager(_pager) == Pager_object::Pager_result::CONTINUE) {
 						_pager.set_reply_dst(Native_thread(obj->badge()));
 						reply_pending = true;
 						return;
@@ -149,12 +140,16 @@ Pager_capability Pager_entrypoint::manage(Pager_object &obj)
 {
 	using namespace Foc;
 
-	Native_capability cap(_cap_factory.alloc(Thread::_thread_cap));
+	return _thread_cap.convert<Pager_capability>(
+		[&] (Thread_capability thread_cap) {
+			Native_capability cap(_cap_factory.alloc(thread_cap));
 
-	/* add server object to object pool */
-	obj.cap(cap);
-	insert(&obj);
+			/* add server object to object pool */
+			obj.cap(cap);
+			insert(&obj);
 
-	/* return capability that uses the object id as badge */
-	return reinterpret_cap_cast<Pager_object>(cap);
+			/* return capability that uses the object id as badge */
+			return reinterpret_cap_cast<Pager_object>(cap);
+		},
+		[&] (Cpu_session::Create_thread_error) { return Pager_capability(); });
 }

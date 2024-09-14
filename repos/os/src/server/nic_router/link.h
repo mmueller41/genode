@@ -31,7 +31,6 @@
 #define _LINK_H_
 
 /* Genode includes */
-#include <timer_session/connection.h>
 #include <util/avl_tree.h>
 #include <util/list.h>
 #include <net/ipv4.h>
@@ -39,8 +38,6 @@
 
 /* local includes */
 #include <list.h>
-#include <reference.h>
-#include <pointer.h>
 #include <l3_protocol.h>
 #include <lazy_one_shot_timeout.h>
 
@@ -92,9 +89,15 @@ class Net::Link_side : public Genode::Avl_node<Link_side>
 
 	private:
 
-		Reference<Domain>   _domain;
+		Domain             *_domain_ptr;
 		Link_side_id const  _id;
 		Link               &_link;
+
+		/*
+		 * Noncopyable
+		 */
+		Link_side(Link_side const &);
+		Link_side &operator = (Link_side const &);
 
 	public:
 
@@ -102,12 +105,7 @@ class Net::Link_side : public Genode::Avl_node<Link_side>
 		          Link_side_id const &id,
 		          Link               &link);
 
-		template <typename HANDLE_MATCH_FN,
-		          typename HANDLE_NO_MATCH_FN>
-
-		void find_by_id(Link_side_id    const &id,
-		                HANDLE_MATCH_FN    &&  handle_match,
-		                HANDLE_NO_MATCH_FN &&  handle_no_match) const
+		void find_by_id(Link_side_id const &id, auto const &handle_match, auto const &handle_no_match) const
 		{
 			if (id != _id) {
 
@@ -151,7 +149,7 @@ class Net::Link_side : public Genode::Avl_node<Link_side>
 		 ** Accessors **
 		 ***************/
 
-		Domain             &domain()    const { return _domain(); }
+		Domain             &domain()    const { return *_domain_ptr; }
 		Link               &link()      const { return _link; }
 		Ipv4_address const &src_ip()    const { return _id.src_ip; }
 		Ipv4_address const &dst_ip()    const { return _id.dst_ip; }
@@ -162,12 +160,7 @@ class Net::Link_side : public Genode::Avl_node<Link_side>
 
 struct Net::Link_side_tree : Genode::Avl_tree<Link_side>
 {
-	template <typename HANDLE_MATCH_FN,
-	          typename HANDLE_NO_MATCH_FN>
-
-	void find_by_id(Link_side_id    const &id,
-	                HANDLE_MATCH_FN    &&  handle_match,
-	                HANDLE_NO_MATCH_FN &&  handle_no_match) const
+	void find_by_id(Link_side_id const &id, auto const &handle_match, auto const &handle_no_match) const
 	{
 		if (first() != nullptr) {
 
@@ -185,9 +178,9 @@ class Net::Link : public Link_list::Element
 {
 	protected:
 
-		Reference<Configuration>       _config;
+		Configuration                 *_config_ptr;
 		Interface                     &_client_interface;
-		Pointer<Port_allocator_guard>  _server_port_alloc;
+		Port_allocator_guard          *_server_port_alloc_ptr;
 		Lazy_one_shot_timeout<Link>    _dissolve_timeout;
 		Genode::Microseconds           _dissolve_timeout_us;
 		L3_protocol             const  _protocol;
@@ -195,35 +188,42 @@ class Net::Link : public Link_list::Element
 		Link_side                      _server;
 		bool                           _opening { true };
 		Interface_link_stats          &_stats;
-		Reference<Genode::size_t>      _stats_curr;
+		Genode::size_t                *_stats_ptr;
 
 		void _handle_dissolve_timeout(Genode::Duration);
 
 		void _packet() { _dissolve_timeout.schedule(_dissolve_timeout_us); }
 
+		/*
+		 * Noncopyable
+		 */
+		Link(Link const &);
+		Link &operator = (Link const &);
+
 	public:
 
 		struct No_port_allocator : Genode::Exception { };
 
-		Link(Interface                           &cln_interface,
-		     Link_side_id                  const &cln_id,
-		     Pointer<Port_allocator_guard>        srv_port_alloc,
-		     Domain                              &srv_domain,
-		     Link_side_id                  const &srv_id,
-		     Cached_timer                        &timer,
-		     Configuration                       &config,
-		     L3_protocol                   const  protocol,
-		     Genode::Microseconds          const  dissolve_timeout,
-		     Interface_link_stats                &stats);
+		Link(Interface                  &cln_interface,
+		     Domain                     &cln_domain,
+		     Link_side_id         const &cln_id,
+		     Port_allocator_guard       *srv_port_alloc_ptr,
+		     Domain                     &srv_domain,
+		     Link_side_id         const &srv_id,
+		     Cached_timer               &timer,
+		     Configuration              &config,
+		     L3_protocol          const  protocol,
+		     Genode::Microseconds const  dissolve_timeout,
+		     Interface_link_stats       &stats);
 
 		~Link();
 
 		void dissolve(bool timeout);
 
-		void handle_config(Domain                        &cln_domain,
-		                   Domain                        &srv_domain,
-		                   Pointer<Port_allocator_guard>  srv_port_alloc,
-		                   Configuration                 &config);
+		void handle_config(Domain               &cln_domain,
+		                   Domain               &srv_domain,
+		                   Port_allocator_guard *srv_port_alloc_ptr,
+		                   Configuration        &config);
 
 		/*********
 		 ** Log **
@@ -236,10 +236,13 @@ class Net::Link : public Link_list::Element
 		 ** Accessors **
 		 ***************/
 
-		Link_side     &client()         { return _client; }
-		Link_side     &server()         { return _server; }
-		Configuration &config()         { return _config(); }
-		L3_protocol    protocol() const { return _protocol; }
+		Link_side       &client()           { return _client; }
+		Link_side const &client()   const   { return _client; }
+		Link_side       &server()           { return _server; }
+		Link_side const &server()   const   { return _server; }
+		Configuration   &config()           { return *_config_ptr; }
+		L3_protocol      protocol() const   { return _protocol; }
+		Interface       &client_interface() { return _client_interface; };
 };
 
 
@@ -247,15 +250,17 @@ class Net::Tcp_link : public Link
 {
 	private:
 
-		enum class State : Genode::uint8_t { OPEN, CLOSING, CLOSED, };
+		enum class State : Genode::uint8_t { OPENING, OPEN, CLOSING, CLOSED };
 
 		struct Peer
 		{
+			bool syn       { false };
+			bool syn_acked { false };
 			bool fin       { false };
 			bool fin_acked { false };
 		};
 
-		State _state  { State::OPEN };
+		State _state  { State::OPENING };
 		Peer  _client { };
 		Peer  _server { };
 
@@ -263,33 +268,42 @@ class Net::Tcp_link : public Link
 		                 Peer       &sender,
 		                 Peer       &receiver);
 
+		void _opening_tcp_packet(Tcp_packet const &tcp,
+		                         Peer             &sender,
+		                         Peer             &receiver);
+
 		void _closing();
 
 		void _closed();
 
 	public:
 
-		Tcp_link(Interface                     &cln_interface,
-		         Link_side_id            const &cln_id,
-		         Pointer<Port_allocator_guard>  srv_port_alloc,
-		         Domain                        &srv_domain,
-		         Link_side_id            const &srv_id,
-		         Cached_timer                  &timer,
-		         Configuration                 &config,
-		         L3_protocol             const  protocol,
-		         Interface_link_stats          &stats);
+		Tcp_link(Interface                 &cln_interface,
+		         Domain                    &cln_domain,
+		         Link_side_id        const &cln_id,
+		         Port_allocator_guard      *srv_port_alloc_ptr,
+		         Domain                    &srv_domain,
+		         Link_side_id        const &srv_id,
+		         Cached_timer              &timer,
+		         Configuration             &config,
+		         L3_protocol         const  protocol,
+		         Interface_link_stats      &stats,
+		         Tcp_packet                &tcp);
 
 		void client_packet(Tcp_packet &tcp) { _tcp_packet(tcp, _client, _server); }
 
-		void server_packet(Tcp_packet &tcp);
+		void server_packet(Tcp_packet &tcp) { _tcp_packet(tcp, _server, _client); }
+
+		bool can_early_drop() { return _state != State::OPEN; }
 };
 
 
 struct Net::Udp_link : Link
 {
 	Udp_link(Interface                     &cln_interface,
+	         Domain                        &cln_domain,
 	         Link_side_id            const &cln_id,
-	         Pointer<Port_allocator_guard>  srv_port_alloc,
+	         Port_allocator_guard          *srv_port_alloc_ptr,
 	         Domain                        &srv_domain,
 	         Link_side_id            const &srv_id,
 	         Cached_timer                  &timer,
@@ -300,24 +314,29 @@ struct Net::Udp_link : Link
 	void client_packet() { _packet(); }
 
 	void server_packet();
+
+	bool can_early_drop() { return true; }
 };
 
 
 struct Net::Icmp_link : Link
 {
-	Icmp_link(Interface                     &cln_interface,
-	          Link_side_id            const &cln_id,
-	          Pointer<Port_allocator_guard>  srv_port_alloc,
-	          Domain                        &srv_domain,
-	          Link_side_id            const &srv_id,
-	          Cached_timer                  &timer,
-	          Configuration                 &config,
-	          L3_protocol             const  protocol,
-	          Interface_link_stats          &stats);
+	Icmp_link(Interface                  &cln_interface,
+	          Domain                     &cln_domain,
+	          Link_side_id         const &cln_id,
+	          Port_allocator_guard       *srv_port_alloc_ptr,
+	          Domain                     &srv_domain,
+	          Link_side_id         const &srv_id,
+	          Cached_timer               &timer,
+	          Configuration              &config,
+	          L3_protocol          const  protocol,
+	          Interface_link_stats       &stats);
 
 	void client_packet() { _packet(); }
 
 	void server_packet();
+
+	bool can_early_drop() { return true; }
 };
 
 #endif /* _LINK_H_ */

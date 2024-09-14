@@ -14,7 +14,6 @@
 /* Genode includes */
 #include <base/sleep.h>
 #include <base/thread.h>
-#include <base/log.h>
 #include <trace/source_registry.h>
 #include <util/xml_generator.h>
 
@@ -34,7 +33,7 @@
 /* seL4 includes */
 #include <sel4/benchmark_utilisation_types.h>
 
-using namespace Genode;
+using namespace Core;
 
 static bool const verbose_boot_info = true;
 
@@ -44,7 +43,7 @@ static bool const verbose_boot_info = true;
  * platform_specific(). May happen if meta data allocator of phys_alloc runs
  * out of memory.
  */
-static Platform * platform_in_construction = nullptr;
+static Core::Platform * platform_in_construction = nullptr;
 
 /*
  * Memory-layout information provided by the linker script
@@ -61,7 +60,7 @@ extern unsigned _prog_img_beg, _prog_img_end;
 bool Mapped_mem_allocator::_map_local(addr_t virt_addr, addr_t phys_addr, size_t size)
 {
 	if (platform_in_construction)
-		Genode::warning("need physical memory, but Platform object not constructed yet");
+		warning("need physical memory, but Platform object not constructed yet");
 
 	size_t const num_pages = size / get_page_size();
 
@@ -86,14 +85,14 @@ bool Mapped_mem_allocator::_unmap_local(addr_t virt_addr, addr_t phys_addr, size
  ** Platform interface **
  ************************/
 
-void Platform::_init_unused_phys_alloc()
+void Core::Platform::_init_unused_phys_alloc()
 {
 	/* the lower physical ram is kept by the kernel and not usable to us */
 	_unused_phys_alloc.add_range(0x100000, 0UL - 0x100000);
 }
 
 
-void Platform::_init_allocators()
+void Core::Platform::_init_allocators()
 {
 	/* interrupt allocator */
 	_irq_alloc.add_range(0, 256);
@@ -104,18 +103,20 @@ void Platform::_init_allocators()
 
 	/* turn remaining untyped memory ranges into untyped pages */
 	_initial_untyped_pool.turn_into_untyped_object(Core_cspace::TOP_CNODE_UNTYPED_4K,
-		[&] (addr_t const phys, addr_t const size, bool const device) {
+		[&] (addr_t const phys, addr_t const size, bool const device_memory) {
 			/* register to physical or iomem memory allocator */
 
 			addr_t const phys_addr = trunc_page(phys);
 			size_t const phys_size = round_page(phys - phys_addr + size);
 
-			if (device)
+			if (device_memory)
 				_io_mem_alloc.add_range(phys_addr, phys_size);
 			else
 				_core_mem_alloc.phys_alloc().add_range(phys_addr, phys_size);
 
 			_unused_phys_alloc.remove_range(phys_addr, phys_size);
+
+			return true; /* range used by this functor */
 		});
 
 	/*
@@ -151,7 +152,7 @@ void Platform::_init_allocators()
 	                                stack_area_virtual_size());
 
 	if (verbose_boot_info) {
-		typedef Hex_range<addr_t> Hex_range;
+		using Hex_range = Hex_range<addr_t>;
 		log("virtual address layout of core:");
 		log(" overall    ", Hex_range(_vm_base, _vm_size));
 		log(" core image ", Hex_range(core_virt_beg, image_elf_size));
@@ -163,7 +164,7 @@ void Platform::_init_allocators()
 }
 
 
-void Platform::_switch_to_core_cspace()
+void Core::Platform::_switch_to_core_cspace()
 {
 	Cnode_base const initial_cspace(Cap_sel(seL4_CapInitThreadCNode),
 	                                CONFIG_WORD_SIZE);
@@ -175,7 +176,7 @@ void Platform::_switch_to_core_cspace()
 	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapASIDControl));
 	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapInitThreadASIDPool));
 	/* XXX io port not available on ARM, causes just a kernel warning XXX */
-	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapIOPort));
+	_core_cnode.move(initial_cspace, Cnode_index(seL4_CapIOPortControl));
 	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapBootInfoFrame));
 	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapInitThreadIPCBuffer));
 	_core_cnode.copy(initial_cspace, Cnode_index(seL4_CapDomain));
@@ -266,13 +267,13 @@ void Platform::_switch_to_core_cspace()
 }
 
 
-Cap_sel Platform::_init_asid_pool()
+Cap_sel Core::Platform::_init_asid_pool()
 {
 	return Cap_sel(seL4_CapInitThreadASIDPool);
 }
 
 
-void Platform::_init_rom_modules()
+void Core::Platform::_init_rom_modules()
 {
 	seL4_BootInfo const &bi = sel4_boot_info();
 
@@ -344,11 +345,9 @@ void Platform::_init_rom_modules()
 		 * Register ROM module, the base address refers to location of the
 		 * ROM module within the phys CNode address space.
 		 */
-		Rom_module * rom_module = new (rom_module_slab)
-			Rom_module(dst_frame << get_page_size_log2(), header->size,
-			           (const char*)header->name);
-
-		_rom_fs.insert(rom_module);
+		new (rom_module_slab)
+			Rom_module(_rom_fs, (const char*)header->name,
+			           dst_frame << get_page_size_log2(), header->size);
 	};
 
 	auto gen_platform_info = [&] (Xml_generator &xml)
@@ -378,23 +377,23 @@ void Platform::_init_rom_modules()
 
 				tsc_freq const * boot_freq = reinterpret_cast<tsc_freq const *>(reinterpret_cast<addr_t>(element) + sizeof(* element));
 
-				xml.node("kernel", [&] () {
+				xml.node("kernel", [&] {
 					xml.attribute("name", "sel4");
 					xml.attribute("acpi", true);
 				});
-				xml.node("hardware", [&] () {
-					xml.node("features", [&] () {
+				xml.node("hardware", [&] {
+					xml.node("features", [&] {
 						#ifdef CONFIG_VTX
 						xml.attribute("vmx", true);
 						#else
 						xml.attribute("vmx", false);
 						#endif
 					});
-					xml.node("tsc", [&] () {
+					xml.node("tsc", [&] {
 						xml.attribute("freq_khz" , boot_freq->freq_mhz * 1000UL);
 					});
 				});
-				xml.node("affinity-space", [&] () {
+				xml.node("affinity-space", [&] {
 					xml.attribute("width", affinity_space().width());
 					xml.attribute("height", affinity_space().height());
 				});
@@ -417,8 +416,8 @@ void Platform::_init_rom_modules()
 
 				mbi2_framebuffer const * boot_fb = reinterpret_cast<mbi2_framebuffer const *>(reinterpret_cast<addr_t>(element) + sizeof(*element));
 
-				xml.node("boot", [&] () {
-					xml.node("framebuffer", [&] () {
+				xml.node("boot", [&] {
+					xml.node("framebuffer", [&] {
 						xml.attribute("phys",   String<32>(Hex(boot_fb->addr)));
 						xml.attribute("width",  boot_fb->width);
 						xml.attribute("height", boot_fb->height);
@@ -432,7 +431,7 @@ void Platform::_init_rom_modules()
 			if (element->id != SEL4_BOOTINFO_HEADER_X86_ACPI_RSDP)
 				continue;
 
-			xml.node("acpi", [&] () {
+			xml.node("acpi", [&] {
 
 				struct Acpi_rsdp
 				{
@@ -447,7 +446,7 @@ void Platform::_init_rom_modules()
 
 					bool valid() const {
 						const char sign[] = "RSD PTR ";
-						return signature == *(Genode::uint64_t *)sign;
+						return signature == *(uint64_t *)sign;
 					}
 				} __attribute__((packed));
 
@@ -508,8 +507,8 @@ void Platform::_init_rom_modules()
 				memset(core_local_ptr, 0, size);
 				content_fn((char *)core_local_ptr, size);
 
-				_rom_fs.insert(
-					new (core_mem_alloc()) Rom_module(phys.addr, size, rom_name));
+				new (core_mem_alloc())
+					Rom_module(_rom_fs, rom_name, phys.addr, size);
 
 				phys.keep = true;
 			},
@@ -521,7 +520,7 @@ void Platform::_init_rom_modules()
 	};
 
 	export_page_as_rom_module("platform_info", [&] (char *ptr, size_t size) {
-		Xml_generator xml(ptr, size, "platform_info", [&] () {
+		Xml_generator xml(ptr, size, "platform_info", [&] {
 			gen_platform_info(xml); }); });
 
 	export_page_as_rom_module("core_log", [&] (char *ptr, size_t size) {
@@ -529,9 +528,8 @@ void Platform::_init_rom_modules()
 }
 
 
-Platform::Platform()
+Core::Platform::Platform()
 :
-
 	_io_mem_alloc(&core_mem_alloc()), _io_port_alloc(&core_mem_alloc()),
 	_irq_alloc(&core_mem_alloc()),
 	_unused_phys_alloc(&core_mem_alloc()),
@@ -556,7 +554,7 @@ Platform::Platform()
 {
 	platform_in_construction = this;
 
-	/* start benchmarking for CPU utilization in Genode TRACE service */
+	/* start benchmarking for CPU utilization in TRACE service */
 	seL4_BenchmarkResetLog();
 
 	/* create notification object for Genode::Lock used by this first thread */
@@ -618,7 +616,7 @@ Platform::Platform()
 			 */
 			Info trace_source_info() const override
 			{
-				Genode::Thread &myself = *Genode::Thread::myself();
+				Thread &myself = *Thread::myself();
 				addr_t const ipc_buffer = reinterpret_cast<addr_t>(myself.utcb());
 				seL4_IPCBuffer * ipcbuffer = reinterpret_cast<seL4_IPCBuffer *>(ipc_buffer);
 				uint64_t const * buf = reinterpret_cast<uint64_t *>(ipcbuffer->msg);
@@ -632,7 +630,7 @@ Platform::Platform()
 			}
 
 			Idle_trace_source(Trace::Source_registry &registry,
-			                  Platform &platform, Range_allocator &phys_alloc,
+			                  Core::Platform &platform, Range_allocator &phys_alloc,
 			                  Affinity::Location affinity)
 			:
 				Trace::Control(),
@@ -651,8 +649,8 @@ Platform::Platform()
 			                                     affinity_space().height()));
 	}
 
-	/* I/O port allocator (only meaningful for x86) */
-	_io_port_alloc.add_range(0, 0x10000);
+	/* solely meaningful for x86 */
+	_init_io_ports();
 
 	_init_rom_modules();
 
@@ -660,7 +658,7 @@ Platform::Platform()
 }
 
 
-unsigned Platform::alloc_core_rcv_sel()
+unsigned Core::Platform::alloc_core_rcv_sel()
 {
 	Cap_sel rcv_sel = _core_sel_alloc.alloc();
 
@@ -671,13 +669,13 @@ unsigned Platform::alloc_core_rcv_sel()
 }
 
 
-void Platform::reset_sel(unsigned sel)
+void Core::Platform::reset_sel(unsigned sel)
 {
 	_core_cnode.remove(Cap_sel(sel));
 }
 
 
-void Platform::wait_for_exit()
+void Core::Platform::wait_for_exit()
 {
 	sleep_forever();
 }

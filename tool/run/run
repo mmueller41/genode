@@ -61,7 +61,7 @@ proc build {targets} {
 	}
 
 	# record the build artifacts created during the build process
-	set artifacts_log [exec sed -n "/^#/s/^# Build artifact //p" progress.log]
+	set artifacts_log [exec sed -n "/BUILD_ARTIFACTS/s/^.*= //p" progress.log]
 	lappend _collected_build_artifacts {*}[split $artifacts_log "\n"]
 
 	puts "genode build completed"
@@ -142,7 +142,7 @@ proc check_xml_syntax {xml_file} {
 #                         configurations of children of the component
 # \param nesting_level    level of recursive calls of this procedure
 #
-proc check_config {bin xml_file xsd_file label avail_xsd_files xsd_inc nesting_level} {
+proc check_config {bin xml_file xsd_file label avail_xsd_files nesting_level} {
 
 	# check prerequisites if this is not a recursive call
 	if {$nesting_level == 0} {
@@ -157,7 +157,7 @@ proc check_config {bin xml_file xsd_file label avail_xsd_files xsd_inc nesting_l
 
 	# check the given component configuration itself
 	puts "  CHECK $label"
-	if {[catch {exec xmllint --noout --path $xsd_inc -schema $xsd_file $xml_file} result]} {
+	if {[catch {exec xmllint --noout -schema $xsd_file $xml_file} result]} {
 
 		if {$result != "$xml_file validates"} {
 
@@ -226,7 +226,7 @@ proc check_config {bin xml_file xsd_file label avail_xsd_files xsd_inc nesting_l
 			# call this procedure again on the child config file
 			set child_label "$label -> $child_name"
 			check_config $child_bin $child_xml_file $child_xsd_file \
-			             $child_label $avail_xsd_files $xsd_inc \
+			             $child_label $avail_xsd_files \
 			             [expr $nesting_level+1]
 
 			# clean up
@@ -257,14 +257,46 @@ proc install_config { args } {
 
 
 ##
+# Check consistency between [build_artifacts] and build_boot_image arguments
+#
+proc check_for_missing_lib_build { binaries } {
+
+	set artifacts [build_artifacts]
+	set missing_lib_builds { }
+	set proposed_build_targets { }
+	foreach binary $binaries {
+		if {[lsearch $artifacts $binary] == -1} {
+			if {[regexp {(.*)\.lib\.so$} $binary dummy libname]} {
+				lappend missing_lib_builds $binary
+				lappend proposed_build_targets "lib/$libname" } } }
+
+	if {[llength $missing_lib_builds] == 0} {
+		return }
+
+	set plural ""
+	if {[llength $missing_lib_builds] > 1} { set plural "s" }
+
+	puts stderr ""
+	puts stderr "Error: missing build argument$plural for: $missing_lib_builds\n"
+	puts stderr "  The build_boot_image argument$plural may be superfluous or"
+	puts stderr "  the build step lacks the argument$plural: $proposed_build_targets\n"
+	puts stderr "  Consider using \[build_artifacts\] as build_boot_image argument to"
+	puts stderr "  maintain consistency beween the build and build_boot_image steps."
+	puts stderr ""
+	exit 1
+}
+
+
+##
 # Integrate specified binaries into boot image
 #
 # \param binaries  space-separated list of file names located within the
 #                  '<build-dir>/bin/' directory
 #
-proc build_boot_image {binaries} {
+proc build_boot_image { binaries } {
 
 	check_for_missing_depot_archives
+	check_for_missing_lib_build $binaries
 
 	# lookup XSD files in the run-script-specific folder
 	set xsd_files ""
@@ -285,16 +317,23 @@ proc build_boot_image {binaries} {
 			set init_xsd_file $xsd_file
 		}
 	}
-	# determine include directories that can be used by the XSD files
+	# create catalog file
+	set catalog [file join [run_dir] genode catalog.xml]
+	catch { exec xmlcatalog --noout --create $catalog }
+
+	# determine paths of additional XSD files and add to catalog
 	global repositories;
-	set xsd_inc ""
 	foreach repo $repositories {
-		if {[file exists $repo/xsd]} {
-			append xsd_inc "$repo/xsd " }
+		foreach xsd_path [glob -nocomplain -type f $repo/xsd/*.xsd] {
+			set xsd_name [file tail $xsd_path]
+			catch { exec xmlcatalog --noout --add "uri" "genode://$xsd_name" "$xsd_path" $catalog }
+		}
 	}
+	set ::env(XML_CATALOG_FILES) $catalog
+
 	# check configurations of init and its children
 	puts "checking configuration syntax"
-	check_config init [run_dir]/genode/config $init_xsd_file init $xsd_files $xsd_inc 0
+	check_config init [run_dir]/genode/config $init_xsd_file init $xsd_files 0
 
 	run_boot_dir $binaries
 }
@@ -834,9 +873,13 @@ proc run_boot_dir { binaries } {
 
 
 ##
-# Dummy image build module
+# Bring the boot-directory content into a form that can actually be booted
 #
-proc run_image { {image "" } } { return true; }
+# The form suitable for booting depends on the platform and the used boot
+# loader. By convention, this function can expect the presence of the boot
+# image in the form of an [run_dir]/boot/image.elf file.
+#
+proc run_image { } { return true; }
 
 
 ##
@@ -922,7 +965,7 @@ proc have_include { name } {
 #
 rename exit real_exit
 proc exit {{status 0}} {
-	run_power_off
+	catch {run_power_off}
 
 	real_exit $status
 }
@@ -1106,8 +1149,9 @@ proc build_core_image { modules } {
 		check_xml_syntax $file }
 
 	# create core binary containing the boot modules
-	build_core [run_dir]/genode/$core_obj $modules [run_dir]/image.elf [core_link_address]
-	exec [cross_dev_prefix]strip [run_dir]/image.elf
+	set image_elf [run_dir]/[kernel_specific_binary image.elf]
+	build_core [run_dir]/genode/$core_obj $modules $image_elf [core_link_address]
+	exec [cross_dev_prefix]strip $image_elf
 
 	# Save config part of the image.elf for easy inspection
 	exec cp -f [run_dir]/genode/config [run_dir].config

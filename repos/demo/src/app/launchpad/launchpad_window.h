@@ -110,11 +110,11 @@ class Launchpad_window : public Scout::Scrollbar_listener,
 			Parent_element::draw(canvas, abs_position);
 
 			/* border */
-			Color color(0, 0, 0);
-			canvas.draw_box(0, 0, _size.w(), 1, color);
-			canvas.draw_box(0, _size.h() - 1, _size.w(), 1, color);
-			canvas.draw_box(0, 1, 1, _size.h() - 2, color);
-			canvas.draw_box(_size.w() - 1, 1, 1, _size.h() - 2, color);
+			Color const color = Color::black();
+			canvas.draw_box(0, 0, _size.w, 1, color);
+			canvas.draw_box(0, _size.h - 1, _size.w, 1, color);
+			canvas.draw_box(0, 1, 1, _size.h - 2, color);
+			canvas.draw_box(_size.w - 1, 1, 1, _size.h - 2, color);
 		};
 
 		/**

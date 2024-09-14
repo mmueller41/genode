@@ -34,65 +34,80 @@ class Depot_deploy::Children
 
 		List_model<Child> _children { };
 
-		struct Model_update_policy : List_model<Child>::Update_policy
-		{
-			Allocator &_alloc;
-
-			Model_update_policy(Allocator &alloc) : _alloc(alloc) { }
-
-			void destroy_element(Child &c) { destroy(_alloc, &c); }
-
-			Child &create_element(Xml_node node)
-			{
-				return *new (_alloc) Child(_alloc, node);
-			}
-
-			void update_element(Child &c, Xml_node node) { c.apply_config(node); }
-
-			static bool element_matches_xml_node(Child const &child, Xml_node node)
-			{
-				return node.attribute_value("name", Child::Name()) == child.name();
-			}
-
-			static bool node_is_element(Xml_node node) { return node.has_type("start"); }
-
-		} _model_update_policy { _alloc };
-
 	public:
 
 		Children(Allocator &alloc) : _alloc(alloc) { }
 
-		void apply_config(Xml_node config)
+		/*
+		 * \return true if config had any effect
+		 */
+		bool apply_config(Xml_node const &config)
 		{
-			_children.update_from_xml(_model_update_policy, config);
+			bool progress = false;
+
+			_children.update_from_xml(config,
+
+				/* create */
+				[&] (Xml_node const &node) -> Child & {
+					progress = true;
+					return *new (_alloc) Child(_alloc, node); },
+
+				/* destroy */
+				[&] (Child &child) {
+					progress = true;
+					destroy(_alloc, &child); },
+
+				/* update */
+				[&] (Child &child, Xml_node const &node) {
+					if (child.apply_config(node))
+						progress = true; }
+			);
+
+			return progress;
 		}
 
-		void apply_launcher(Child::Launcher_name const &name, Xml_node launcher)
+		/*
+		 * \return true if launcher had any effect
+		 */
+		bool apply_launcher(Child::Launcher_name const &name, Xml_node launcher)
 		{
+			bool any_child_changed = false;
+
 			_children.for_each([&] (Child &child) {
-				child.apply_launcher(name, launcher); });
+				if (child.apply_launcher(name, launcher))
+					any_child_changed = true; });
+
+			return any_child_changed;
 		}
 
-		void apply_blueprint(Xml_node blueprint)
+		/*
+		 * \return true if blueprint had an effect on any child
+		 */
+		bool apply_blueprint(Xml_node const &blueprint)
 		{
+			bool any_child_changed = false;
+
 			blueprint.for_each_sub_node("pkg", [&] (Xml_node pkg) {
 				_children.for_each([&] (Child &child) {
-					child.apply_blueprint(pkg); }); });
+					if (child.apply_blueprint(pkg))
+						any_child_changed = true; }); });
 
 			blueprint.for_each_sub_node("missing", [&] (Xml_node missing) {
 				_children.for_each([&] (Child &child) {
-					child.mark_as_incomplete(missing); }); });
+					if (child.mark_as_incomplete(missing))
+						any_child_changed = true; }); });
+
+			return any_child_changed;
 		}
 
 		/*
 		 * \return true if the condition of any child changed
 		 */
-		template <typename COND_FN>
-		bool apply_condition(COND_FN const &fn)
+		bool apply_condition(auto const &cond_fn)
 		{
 			bool any_condition_changed = false;
 			_children.for_each([&] (Child &child) {
-				any_condition_changed |= child.apply_condition(fn); });
+				any_condition_changed |= child.apply_condition(cond_fn); });
 			return any_condition_changed;
 		}
 
@@ -100,8 +115,7 @@ class Depot_deploy::Children
 		 * Call 'fn' with start 'Xml_node' of each child that has an
 		 * unsatisfied start condition.
 		 */
-		template <typename FN>
-		void for_each_unsatisfied_child(FN const &fn) const
+		void for_each_unsatisfied_child(auto const &fn) const
 		{
 			_children.for_each([&] (Child const &child) {
 				child.apply_if_unsatisfied(fn); });
@@ -124,6 +138,12 @@ class Depot_deploy::Children
 				                     cached_depot_rom, uncached_depot_rom); });
 		}
 
+		void gen_monitor_policy_nodes(Xml_generator &xml) const
+		{
+			_children.for_each([&] (Child const &child) {
+				child.gen_monitor_policy_node(xml); });
+		}
+
 		void gen_queries(Xml_generator &xml) const
 		{
 			_children.for_each([&] (Child const &child) {
@@ -134,6 +154,12 @@ class Depot_deploy::Children
 		{
 			_children.for_each([&] (Child const &child) {
 				child.gen_installation_entry(xml); });
+		}
+
+		void for_each_missing_pkg_path(auto const &fn) const
+		{
+			_children.for_each([&] (Child const &child) {
+				child.with_missing_pkg_path(fn); });
 		}
 
 		size_t count() const
@@ -165,6 +191,15 @@ class Depot_deploy::Children
 			bool result = false;
 			_children.for_each([&] (Child const &child) {
 				if (child.name() == name)
+					result = true; });
+			return result;
+		}
+
+		bool blueprint_needed(Child::Name const &name) const
+		{
+			bool result = false;
+			_children.for_each([&] (Child const &child) {
+				if (child.name() == name && child.blueprint_needed())
 					result = true; });
 			return result;
 		}

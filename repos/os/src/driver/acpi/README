@@ -1,0 +1,44 @@
+This directory contains an implementation of a simple ACPI parser
+
+Behavior
+--------
+
+This server should be used when using a kernel (like Fiasco.OC, Nova,
+base_hw x86_64) that takes advantage of x86's APIC. The server traverses the
+ACPI tables and reports the interrupt line of devices within the PCI config
+space of GSIs found in the ACPI tables. The 'MADT' table is parsed by the
+server as well, enabling clients to use the correct IRQ when
+'Interrupt Override' structures are found within the table. All information
+are reported to a report_rom service as "acpi" report. The report can be
+consumed by any interested party, e.g. the platform driver. Please consult
+the platform driver README for more details.
+
+Usage
+-----
+
+!<start name="acpi">
+!  <resource name="RAM" quantum="4M"/>
+!</start>
+!
+!<start name="report_rom">
+!  <resource name="RAM" quantum="2M"/>
+!  <provides>
+!    <service name="ROM" />
+!    <service name="Report" />
+!  </provides>
+!  <config>
+!    <policy label="platform -> acpi" report="acpi -> acpi"/>
+!  </config>
+!</start>
+!
+!<start name="platform">
+!  ...
+
+Config
+------
+
+This server also reports available DMA remapping units (IOMMU) as specified in
+the 'DMAR' table. In order to disable the IOMMU, you may provide the following
+config:
+
+! <config ignore_drhd="yes"/>

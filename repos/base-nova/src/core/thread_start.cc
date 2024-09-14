@@ -15,7 +15,6 @@
 
 /* Genode includes */
 #include <base/thread.h>
-#include <base/log.h>
 
 /* base-internal includes */
 #include <base/internal/stack.h>
@@ -28,7 +27,7 @@
 #include <nova_util.h>
 #include <trace/source_registry.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Thread::_init_platform_thread(size_t, Type type)
@@ -58,12 +57,10 @@ void Thread::_init_platform_thread(size_t, Type type)
 	native_thread().exc_pt_sel = cap_map().insert(NUM_INITIAL_PT_LOG2);
 
 	/* create running semaphore required for locking */
-	addr_t rs_sel =native_thread().exc_pt_sel + SM_SEL_EC;
+	addr_t rs_sel = native_thread().exc_pt_sel + SM_SEL_EC;
 	uint8_t res = create_sm(rs_sel, platform_specific().core_pd_sel(), 0);
-	if (res != NOVA_OK) {
-		error("create_sm returned ", res);
-		throw Cpu_session::Thread_creation_failed();
-	}
+	if (res != NOVA_OK)
+		error("Thread::_init_platform_thread: create_sm returned ", res);
 }
 
 
@@ -82,7 +79,7 @@ void Thread::_deinit_platform_thread()
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/*
 	 * On NOVA, core almost never starts regular threads. This simply creates a
@@ -100,8 +97,8 @@ void Thread::start()
 	                        platform_specific().core_pd_sel(), kernel_cpu_id,
 	                        (mword_t)&utcb, sp, native_thread().exc_pt_sel, LOCAL_THREAD);
 	if (res != NOVA_OK) {
-		error("create_ec returned ", res);
-		throw Cpu_session::Thread_creation_failed();
+		error("Thread::start: create_ec returned ", res);
+		return Start_result::DENIED;
 	}
 
 	/* default: we don't accept any mappings or translations */
@@ -112,13 +109,13 @@ void Thread::start()
 	              *reinterpret_cast<Nova::Utcb *>(Thread::myself()->utcb()),
 	              Obj_crd(PT_SEL_PAGE_FAULT, 0),
 	              Obj_crd(native_thread().exc_pt_sel + PT_SEL_PAGE_FAULT, 0))) {
-		error("could not create page fault portal");
-		throw Cpu_session::Thread_creation_failed();
+		error("Thread::start: failed to create page-fault portal");
+		return Start_result::DENIED;
 	}
 
-	struct Core_trace_source : public  Trace::Source::Info_accessor,
-	                           private Trace::Control,
-	                           private Trace::Source
+	struct Core_trace_source : public  Core::Trace::Source::Info_accessor,
+	                           private Core::Trace::Control,
+	                           private Core::Trace::Source
 	{
 		Thread &thread;
 
@@ -137,15 +134,17 @@ void Thread::start()
 			         Trace::Execution_time(ec_time, 0), thread._affinity };
 		}
 
-		Core_trace_source(Trace::Source_registry &registry, Thread &t)
+		Core_trace_source(Core::Trace::Source_registry &registry, Thread &t)
 		:
-			Trace::Control(),
-			Trace::Source(*this, *this), thread(t)
+			Core::Trace::Control(),
+			Core::Trace::Source(*this, *this), thread(t)
 		{
 			registry.insert(this);
 		}
 	};
 
 	new (platform().core_mem_alloc())
-		Core_trace_source(Trace::sources(), *this);
+		Core_trace_source(Core::Trace::sources(), *this);
+
+	return Start_result::OK;
 }

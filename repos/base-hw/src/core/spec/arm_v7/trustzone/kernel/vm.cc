@@ -1,12 +1,13 @@
 /*
- * \brief   Kernel backend for virtual machines
- * \author  Martin Stein
- * \author  Stefan Kalkowski
- * \date    2013-10-30
+ * \brief  Kernel backend for virtual machines
+ * \author Martin Stein
+ * \author Stefan Kalkowski
+ * \author Benjamin Lamowski
+ * \date   2013-10-30
  */
 
 /*
- * Copyright (C) 2013-2017 Genode Labs GmbH
+ * Copyright (C) 2013-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -15,26 +16,30 @@
 /* core includes */
 #include <kernel/cpu.h>
 #include <kernel/vm.h>
-#include <cpu/vm_state_trustzone.h>
+#include <cpu/vcpu_state_trustzone.h>
 
 using namespace Kernel;
 
 
 Vm::Vm(Irq::Pool              & user_irq_pool,
        Cpu                    & cpu,
-       Genode::Vm_state       & state,
+       Genode::Vcpu_data      & data,
        Kernel::Signal_context & context,
        Identity               & id)
 :
 	Kernel::Object { *this },
-	Cpu_job(Cpu_priority::min(), 0),
+	Cpu_job(Scheduler::Priority::min(), 0),
 	_user_irq_pool(user_irq_pool),
-	_state(state),
+	_state(data),
 	_context(context),
 	_id(id),
 	_vcpu_context(cpu)
 {
 	affinity(cpu);
+	/* once constructed, exit with a startup exception */
+	pause();
+	_state.cpu_exception = Genode::VCPU_EXCEPTION_STARTUP;
+	_context.submit(1);
 }
 
 
@@ -61,8 +66,7 @@ void Vm::exception(Cpu & cpu)
 bool secure_irq(unsigned const i);
 
 
-extern "C" void monitor_mode_enter_normal_world(Genode::Vm_state&, void*);
-extern void * kernel_stack;
+extern "C" void monitor_mode_enter_normal_world(Genode::Vcpu_state&, void*);
 
 
 void Vm::proceed(Cpu & cpu)
@@ -79,3 +83,11 @@ void Vm::proceed(Cpu & cpu)
 
 	monitor_mode_enter_normal_world(_state, (void*) cpu.stack_start());
 }
+
+
+void Vm::_sync_to_vmm()
+{}
+
+
+void Vm::_sync_from_vmm()
+{}

@@ -15,14 +15,15 @@
 #include <base/thread.h>
 #include <base/sleep.h>
 
+/* core includes */
+#include <platform.h>
+#include <platform_thread.h>
+#include <core_env.h>
+
 /* base-internal includes */
 #include <base/internal/stack.h>
 
-/* core includes */
-#include <platform.h>
-#include <core_env.h>
-
-using namespace Genode;
+using namespace Core;
 
 
 void Thread::_thread_start()
@@ -34,18 +35,18 @@ void Thread::_thread_start()
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/* create and start platform thread */
 	native_thread().pt = new (platform().core_mem_alloc())
-		Platform_thread(_stack->name().string());
-
-	platform_specific().core_pd().bind_thread(*native_thread().pt);
+		Platform_thread(platform_specific().core_pd(), _stack->name().string());
 
 	native_thread().pt->pager(platform_specific().core_pager());
 	native_thread().l4id = native_thread().pt->native_thread_id();
 
 	native_thread().pt->start((void *)_thread_start, stack_top());
+
+	return Start_result::OK;
 }
 
 

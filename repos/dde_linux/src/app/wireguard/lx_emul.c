@@ -30,14 +30,6 @@ void __icmp_send(struct sk_buff * skb_in,int type,int code,__be32 info,const str
 
 #include <linux/random.h>
 
-void get_random_bytes(void * buf,int nbytes)
-{
-	lx_emul_random_gen_bytes(buf, nbytes);
-}
-
-
-#include <linux/random.h>
-
 int wait_for_random_bytes(void)
 {
 	lx_emul_trace(__func__);
@@ -45,44 +37,13 @@ int wait_for_random_bytes(void)
 }
 
 
-#include <linux/random.h>
-
-u32 get_random_u32(void)
-{
-	return lx_emul_random_gen_u32();
-}
-
-
 #include <linux/prandom.h>
 
-u32 prandom_u32(void)
+u8 get_random_u8(void)
 {
-	return lx_emul_random_gen_u32();
-}
-
-
-#include <linux/random.h>
-
-int __must_check get_random_bytes_arch(void * buf, int nbytes)
-{
-	lx_emul_random_gen_bytes(buf, nbytes);
-	return nbytes;
-}
-
-
-#include <linux/slab.h>
-
-void * kmalloc_order(size_t size,gfp_t flags,unsigned int order)
-{
-	return kmalloc(size, flags);
-}
-
-
-#include <linux/mm.h>
-
-void * kvmalloc_node(size_t size,gfp_t flags,int node)
-{
-	return kmalloc(size, flags);
+	u8 ret;
+	lx_emul_random_gen_bytes(&ret, sizeof(ret));
+	return ret;
 }
 
 
@@ -140,11 +101,14 @@ void setup_udp_tunnel_sock(struct net * net,struct socket * sock,struct udp_tunn
 
 #include <linux/ipv6.h>
 
+#if IS_ENABLED(CONFIG_IPV6)
+
 bool ipv6_mod_enabled(void)
 {
 	return false;
 }
 
+#endif
 
 #include <net/udp_tunnel.h>
 #include <genode_c_api/wireguard.h>
@@ -162,18 +126,12 @@ void udp_tunnel_xmit_skb(
 	 * for in the following. Furthermore, I assume that they should not be
 	 * relevant for the port anyway.
 	 */
-	if (xnet != false) {
-		pr_info("Error: XNET != false is not expected\n");
-		while (1) { }
-	}
-	if (nocheck != false) {
-		pr_info("Error: NOCHECK != false is not expected\n");
-		while (1) { }
-	}
-	if (df != 0) {
-		pr_info("Error: DF != 0 is not expected\n");
-		while (1) { }
-	}
+	if (xnet != false)
+		lx_emul_trace_and_stop("Error: XNET != false is not expected");
+	if (nocheck != false)
+		lx_emul_trace_and_stop("Error: NOCHECK != false is not expected");
+	if (df != 0)
+		lx_emul_trace_and_stop("Error: DF != 0 is not expected");
 	/*
 	 * FIXME
 	 *
@@ -182,10 +140,8 @@ void udp_tunnel_xmit_skb(
 	 * to be incorporated in order to make Wireguard provide a correct TTL
 	 * argument. However, it is simpler to set it manually.
 	 */
-	if (ttl != 0) {
-		pr_info("Error: TTL != 0 is not expected\n");
-		while (1) { }
-	}
+	if (ttl != 0)
+		lx_emul_trace_and_stop("Error: TTL != 0 is not expected");
 	ttl = 64;
 
 	/*
@@ -219,20 +175,6 @@ DEFINE_STATIC_KEY_FALSE(memalloc_socks_key);
 EXPORT_SYMBOL_GPL(memalloc_socks_key);
 
 
-#include <linux/slab.h>
-
-struct kmem_cache * kmem_cache_create_usercopy(const char * name,
-                                               unsigned int size,
-                                               unsigned int align,
-                                               slab_flags_t flags,
-                                               unsigned int useroffset,
-                                               unsigned int usersize,
-                                               void (* ctor)(void *))
-{
-	return kmem_cache_create(name, size, align, flags, ctor);
-}
-
-
 #include <net/ip_tunnels.h>
 
 /* Returns either the correct skb->protocol value, or 0 if invalid. */
@@ -240,14 +182,6 @@ __be16 ip_tunnel_parse_protocol(const struct sk_buff *skb)
 {
 	//FIXME: we just assume IPv4
 	return htons(ETH_P_IP);
-}
-
-
-#include <linux/random.h>
-
-bool rng_is_initialized(void)
-{
-	return true;
 }
 
 
@@ -273,14 +207,6 @@ struct rtable * ip_route_output_flow(struct net * net,struct flowi4 * flp4,const
 		initialized = true;
 	}
 	return &rt;
-}
-
-
-#include <linux/slab.h>
-
-void kfree_sensitive(const void * p)
-{
-	kfree(p);
 }
 
 
@@ -312,7 +238,8 @@ gro_result_t napi_gro_receive(struct napi_struct * napi,struct sk_buff * skb)
 
 #include <linux/netdevice.h>
 
-void netif_napi_add(struct net_device * dev,struct napi_struct * napi,int (* poll)(struct napi_struct *,int),int weight)
+void netif_napi_add_weight(struct net_device *dev, struct napi_struct *napi,
+                           int (*poll)(struct napi_struct *, int), int weight)
 {
 	napi->dev = dev;
 	napi->poll = poll;

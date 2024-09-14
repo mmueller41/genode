@@ -4,7 +4,10 @@ audio_out_session
 capture_session
 event_session
 nic_session
+report_session
 uplink_session
 gpu_session
 usb_session
+play_session
+record_session
 os

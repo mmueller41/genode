@@ -1,0 +1,79 @@
+<runtime ram="72M" caps="1000" binary="init">
+
+	<requires> <timer/> </requires>
+
+	<fail after_seconds="70"/>
+	<succeed>
+			child "test-part*" exited with exit value 0
+	</succeed>
+	<fail>Error: </fail>
+
+	<content>
+		<rom label="ld.lib.so"/>
+		<rom label="vfs_block"/>
+		<rom label="vfs.lib.so"/>
+		<rom label="part_block"/>
+		<rom label="block_tester"/>
+		<rom label="report_rom"/>
+		<rom label="ata.ahdi.raw"/>
+	</content>
+
+	<config prio_levels="1" verbose="yes">
+		<parent-provides>
+			<service name="ROM"/>
+			<service name="IRQ"/>
+			<service name="IO_MEM"/>
+			<service name="IO_PORT"/>
+			<service name="PD"/>
+			<service name="RM"/>
+			<service name="CPU"/>
+			<service name="LOG"/>
+			<service name="Timer"/>
+		</parent-provides>
+		<default-route>
+			<any-service> <parent/> <any-child/> </any-service>
+		</default-route>
+		<default caps="100"/>
+		<start name="vfs_block">
+			<resource name="RAM" quantum="32M"/>
+			<provides><service name="Block"/></provides>
+			<config>
+				<vfs>
+					<rom name="ata.ahdi.raw"/>
+				</vfs>
+				<default-policy file="/ata.ahdi.raw" block_size="512"/>
+			</config>
+		</start>
+		<start name="part_block">
+			<resource name="RAM" quantum="10M"/>
+			<provides><service name="Block"/></provides>
+			<route>
+				<any-service><child name="vfs_block"/> <parent/><any-child/></any-service>
+			</route>
+			<config>
+				<report partitions="yes"/>
+				<policy label_prefix="test-part1" partition="1"/>
+			</config>
+		</start>
+		<start name="report_rom">
+			<provides>
+				<service name="Report"/>
+				<service name="ROM"/>
+			</provides>
+			<resource name="RAM" quantum="5M"/>
+			<config verbose="yes"/>
+		</start>
+		<start name="test-part1">
+			<binary name="block_tester"/>
+			<resource name="RAM" quantum="5M"/>
+			<config verbose="no" log="yes" stop_on_error="no">
+				<tests>
+					<sequential length="256K" size="1K" io_buffer="128K" batch="4"/>
+				</tests>
+			</config>
+			<route>
+				<any-service> <child name="part_block"/> <parent/> <any-child/> </any-service>
+			</route>
+		</start>
+	</config>
+</runtime>

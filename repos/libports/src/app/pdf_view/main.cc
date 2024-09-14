@@ -42,7 +42,7 @@ extern "C" {
 
 #pragma GCC diagnostic pop  /* restore -Wconversion warnings */
 
-typedef Genode::Pixel_rgb888 pixel_t;
+using pixel_t = Genode::Pixel_rgb888;
 
 
 static void copy_line_rgba(const unsigned char *rgba_src,
@@ -83,7 +83,7 @@ class Pdf_view
 		class Non_supported_framebuffer_mode { };
 		class Unexpected_document_color_depth { };
 
-		typedef Framebuffer::Mode Mode;
+		using Mode = Framebuffer::Mode;
 
 	private:
 
@@ -91,9 +91,7 @@ class Pdf_view
 
 		Genode::Env &_env;
 
-		Gui::Connection        _gui { _env };
-		Framebuffer::Session  &_framebuffer = *_gui.framebuffer();
-		Input::Session_client &_input       = *_gui.input();
+		Gui::Connection _gui { _env };
 
 		Framebuffer::Mode _nit_mode = _gui.mode();
 		Framebuffer::Mode  _fb_mode {};
@@ -109,7 +107,7 @@ class Pdf_view
 		Genode::Signal_handler<Pdf_view> _input_handler {
 			_env.ep(), *this, &Pdf_view::_handle_input_events };
 
-		Gui::Session::View_handle _view = _gui.create_view();
+		Gui::Top_level_view _view { _gui };
 
 		pixel_t *_fb_base() { return _fb_ds->local_addr<pixel_t>(); }
 
@@ -119,19 +117,19 @@ class Pdf_view
 
 			_nit_mode = _gui.mode();
 
-			unsigned max_x = Genode::max(_nit_mode.area.w(), _fb_mode.area.w());
-			unsigned max_y = Genode::max(_nit_mode.area.h(), _fb_mode.area.h());
+			unsigned max_x = Genode::max(_nit_mode.area.w, _fb_mode.area.w);
+			unsigned max_y = Genode::max(_nit_mode.area.h, _fb_mode.area.h);
 
-			if (max_x > _fb_mode.area.w() || max_y > _fb_mode.area.h()) {
+			if (max_x > _fb_mode.area.w || max_y > _fb_mode.area.h) {
 				_fb_mode = Mode { .area = { max_x, max_y } };
 				_gui.buffer(_fb_mode, NO_ALPHA);
 				if (_fb_ds.constructed())
 					_fb_ds.destruct();
-				_fb_ds.construct(_env.rm(), _framebuffer.dataspace());
+				_fb_ds.construct(_env.rm(), _gui.framebuffer.dataspace());
 			}
 
-			_pdfapp.scrw = _nit_mode.area.w();
-			_pdfapp.scrh = _nit_mode.area.h();
+			_pdfapp.scrw = _nit_mode.area.w;
+			_pdfapp.scrh = _nit_mode.area.h;
 
 			/*
 			 * XXX replace heuristics with a meaningful computation
@@ -139,19 +137,17 @@ class Pdf_view
 			 * The magic values are hand-tweaked manually to accommodating the
 			 * use case of showing slides.
 			 */
-			_pdfapp.resolution = Genode::min(_nit_mode.area.w()/5,
-			                                 _nit_mode.area.h()/4);
+			_pdfapp.resolution = Genode::min(_nit_mode.area.w/5,
+			                                 _nit_mode.area.h/4);
 
-			typedef Gui::Session::Command Command;
-			_gui.enqueue<Command::Geometry>(_view, Rect(Point(), _nit_mode.area));
-			_gui.enqueue<Command::To_front>(_view, Gui::Session::View_handle());
-			_gui.execute();
+			_view.area(_nit_mode.area);
+			_view.front();
 		}
 
 		void _handle_nit_mode()
 		{
 			_rebuffer();
-			pdfapp_onresize(&_pdfapp, _nit_mode.area.w(), _nit_mode.area.h());
+			pdfapp_onresize(&_pdfapp, _nit_mode.area.w, _nit_mode.area.h);
 		}
 
 		pdfapp_t _pdfapp { };
@@ -213,16 +209,16 @@ class Pdf_view
 		void _handle_input_events()
 		{
 			Libc::with_libc([&] () {
-				_input.for_each_event([&] (Input::Event const &ev) {
+				_gui.input.for_each_event([&] (Input::Event const &ev) {
 					_handle_input_event(ev); }); });
 		}
 
 		void _refresh()
 		{
-			_framebuffer.refresh(0, 0, _nit_mode.area.w(), _nit_mode.area.h());
+			_gui.framebuffer.refresh(0, 0, _nit_mode.area.w, _nit_mode.area.h);
 
 			/* handle one sync signal only */
-			_framebuffer.sync_sigh(Genode::Signal_context_capability());
+			_gui.framebuffer.sync_sigh(Genode::Signal_context_capability());
 		}
 
 	public:
@@ -236,7 +232,7 @@ class Pdf_view
 		Pdf_view(Genode::Env &env) : _env(env)
 		{
 			_gui.mode_sigh(_nit_mode_handler);
-			_input.sigh(_input_handler);
+			_gui.input.sigh(_input_handler);
 
 			pdfapp_init(&_pdfapp);
 			_pdfapp.userdata = this;
@@ -271,10 +267,10 @@ class Pdf_view
 			Genode::log(Genode::Cstring(pdfapp_version(&_pdfapp)));
 		}
 
-		void title(char const *msg)
+		void title(Gui::Title const &msg)
 		{
-			typedef Gui::Session::Command Command;
-			_gui.enqueue<Command::Title>(_view, msg);
+			using Command = Gui::Session::Command;
+			_gui.enqueue<Command::Title>(_view.id(), msg);
 			_gui.execute();
 		}
 
@@ -290,8 +286,8 @@ void Pdf_view::show()
 		return (value >= diff) ? value - diff : 0; };
 
 	Framebuffer::Area const fb_size = _fb_mode.area;
-	int const x_max = Genode::min((int)fb_size.w(), reduce_by(_pdfapp.image->w, 2));
-	int const y_max = Genode::min((int)fb_size.h(), _pdfapp.image->h);
+	int const x_max = Genode::min((int)fb_size.w, reduce_by(_pdfapp.image->w, 2));
+	int const y_max = Genode::min((int)fb_size.h, _pdfapp.image->h);
 
 	/* clear framebuffer */
 	::memset((void *)_fb_base(), 0, _fb_ds->size());
@@ -299,7 +295,7 @@ void Pdf_view::show()
 	Genode::size_t src_line_bytes   = _pdfapp.image->n * _pdfapp.image->w;
 	unsigned char *src_line         = _pdfapp.image->samples;
 
-	Genode::size_t dst_line_width   = fb_size.w(); /* in pixels */
+	Genode::size_t dst_line_width   = fb_size.w; /* in pixels */
 	pixel_t *dst_line = _fb_base();
 
 	/* skip first two lines as they contain white (XXX) */
@@ -308,12 +304,12 @@ void Pdf_view::show()
 	int const tweaked_y_max = y_max - 2;
 
 	/* center vertically if the dst buffer is higher than the image */
-	if ((unsigned)_pdfapp.image->h < _nit_mode.area.h())
-		dst_line += dst_line_width*((_nit_mode.area.h() - _pdfapp.image->h)/2);
+	if ((unsigned)_pdfapp.image->h < _nit_mode.area.h)
+		dst_line += dst_line_width*((_nit_mode.area.h - _pdfapp.image->h)/2);
 
 	/* center horizontally if the dst buffer is wider than the image */
-	if ((unsigned)_pdfapp.image->w < _nit_mode.area.w())
-		dst_line += (_nit_mode.area.w() - _pdfapp.image->w)/2;
+	if ((unsigned)_pdfapp.image->w < _nit_mode.area.w)
+		dst_line += (_nit_mode.area.w - _pdfapp.image->w)/2;
 
 	for (int y = 0; y < tweaked_y_max; y++) {
 		copy_line_rgba(src_line, dst_line, x_max);
@@ -322,7 +318,7 @@ void Pdf_view::show()
 	}
 
 	/* refresh after the next sync signal */
-	_framebuffer.sync_sigh(_sync_handler);
+	_gui.framebuffer.sync_sigh(_sync_handler);
 }
 
 
@@ -407,7 +403,7 @@ void winreloadfile(pdfapp_t *)
 void wintitle(pdfapp_t *pdfapp, char *s)
 {
 	Pdf_view *pdf_view = (Pdf_view *)pdfapp->userdata;
-	pdf_view->title(s);
+	pdf_view->title((char const *)s);
 }
 
 

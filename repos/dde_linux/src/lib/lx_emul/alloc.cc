@@ -1,6 +1,7 @@
 /*
  * \brief  Lx_emul backend for memory allocation
  * \author Stefan Kalkowski
+ * \author Christian Helmuth
  * \date   2021-03-22
  */
 
@@ -17,10 +18,10 @@
 #include <lx_emul/page_virt.h>
 #include <lx_kit/env.h>
 
+
 extern "C" void * lx_emul_mem_alloc_aligned(unsigned long size, unsigned long align)
 {
-	void * const ptr = Lx_kit::env().memory.alloc(size, align);
-	lx_emul_forget_pages(ptr, size);
+	void * const ptr = Lx_kit::env().memory.alloc(size, align, &lx_emul_add_page_range);
 	return ptr;
 };
 
@@ -28,8 +29,7 @@ extern "C" void * lx_emul_mem_alloc_aligned(unsigned long size, unsigned long al
 extern "C" void * lx_emul_mem_alloc_aligned_uncached(unsigned long size,
                                                      unsigned long align)
 {
-	void * const ptr = Lx_kit::env().uncached_memory.alloc(size, align);
-	lx_emul_forget_pages(ptr, size);
+	void * const ptr = Lx_kit::env().uncached_memory.alloc(size, align, &lx_emul_add_page_range);
 	return ptr;
 };
 
@@ -51,7 +51,7 @@ extern "C" unsigned long lx_emul_mem_virt_addr(void * dma_addr)
 	if (ret)
 		return ret;
 	if (!(ret = Lx_kit::env().uncached_memory.virt_addr(dma_addr)))
-		Genode::error(__func__, " called with invalid addr ", dma_addr);
+		Genode::error(__func__, " called with invalid dma_addr ", dma_addr);
 	return ret;
 }
 
@@ -92,4 +92,23 @@ extern "C" void lx_emul_mem_cache_invalidate(const void * addr,
                                              unsigned long size)
 {
 	Genode::cache_invalidate_data((Genode::addr_t)addr, size);
+}
+
+
+/*
+ * Heap for lx_emul metadata - unprepared for Linux code
+ */
+
+void * lx_emul_heap_alloc(unsigned long size)
+{
+	void *ptr = Lx_kit::env().heap.alloc(size);
+	if (ptr)
+		Genode::memset(ptr, 0, size);
+	return ptr;
+}
+
+
+void lx_emul_heap_free(void * ptr)
+{
+	Lx_kit::env().heap.free(ptr, 0);
 }

@@ -18,7 +18,6 @@
 #include <util/misc_math.h>
 #include <util/xml_node.h>
 #include <util/string.h>
-#include <base/mutex.h>
 #include <base/env.h>
 #include <base/signal.h>
 #include <base/allocator.h>
@@ -37,11 +36,10 @@ namespace Vfs {
 	using Genode::copy_cstring;
 	using Genode::strcmp;
 	using Genode::strlen;
-	typedef long long file_offset;
+	using file_offset = long long;
 	using Genode::memcpy;
 	using Genode::memset;
-	typedef unsigned long long file_size;
-	using Genode::Mutex;
+	using file_size = unsigned long long;
 	using Genode::List;
 	using Genode::Xml_node;
 	using Genode::Signal_context_capability;
@@ -49,6 +47,8 @@ namespace Vfs {
 	using Genode::Interface;
 	using Genode::String;
 	using Genode::size_t;
+	using Genode::Byte_range_ptr;
+	using Genode::Const_byte_range_ptr;
 
 	struct Timestamp
 	{
@@ -90,7 +90,7 @@ namespace Vfs {
 		                                 .executable = true }; }
 	};
 
-	typedef Genode::Path<MAX_PATH_LEN> Absolute_path;
+	using Absolute_path = Genode::Path<MAX_PATH_LEN>;
 
 	struct Scanner_policy_path_element
 	{

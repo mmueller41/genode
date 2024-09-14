@@ -28,18 +28,18 @@
 #include <trace/source_registry.h>
 #include <foc_native_vcpu/foc_native_vcpu.h>
 
-namespace Genode
-{
+namespace Core {
+
 	class Vm_session_component;
 	struct Vcpu;
 
 	enum { MAX_VCPU_IDS = (Platform::VCPU_VIRT_EXT_END -
 	                       Platform::VCPU_VIRT_EXT_START) / L4_PAGESIZE };
-	typedef Bit_allocator<MAX_VCPU_IDS> Vcpu_id_allocator;
+	using Vcpu_id_allocator = Bit_allocator<MAX_VCPU_IDS>;
 }
 
 
-struct Genode::Vcpu : Rpc_object<Vm_session::Native_vcpu, Vcpu>
+struct Core::Vcpu : Rpc_object<Vm_session::Native_vcpu, Vcpu>
 {
 	private:
 
@@ -49,7 +49,7 @@ struct Genode::Vcpu : Rpc_object<Vm_session::Native_vcpu, Vcpu>
 		Vcpu_id_allocator              &_vcpu_ids;
 		Cap_mapping                     _recall            { true };
 		Foc::l4_cap_idx_t               _task_index_client { };
-		Region_map::Local_addr          _foc_vcpu_state    { };
+		addr_t                          _foc_vcpu_state    { };
 
 	public:
 
@@ -64,12 +64,12 @@ struct Genode::Vcpu : Rpc_object<Vm_session::Native_vcpu, Vcpu>
 		 ** Native_vcpu RPC interface **
 		 *******************************/
 
-		Foc::l4_cap_idx_t      task_index()     const { return _task_index_client; }
-		Region_map::Local_addr foc_vcpu_state() const { return _foc_vcpu_state; }
+		Foc::l4_cap_idx_t task_index()     const { return _task_index_client; }
+		addr_t            foc_vcpu_state() const { return _foc_vcpu_state; }
 };
 
 
-class Genode::Vm_session_component
+class Core::Vm_session_component
 :
 	private Ram_quota_guard,
 	private Cap_quota_guard,
@@ -78,8 +78,8 @@ class Genode::Vm_session_component
 {
 	private:
 
-		typedef Constrained_ram_allocator    Con_ram_allocator;
-		typedef Allocator_avl_tpl<Rm_region> Avl_region;
+		using Con_ram_allocator = Constrained_ram_allocator;
+		using Avl_region        = Allocator_avl_tpl<Rm_region>;
 
 		Rpc_entrypoint    &_ep;
 		Con_ram_allocator  _constrained_md_ram_alloc;
@@ -93,6 +93,7 @@ class Genode::Vm_session_component
 		/* helpers for vm_session_common.cc */
 		void _attach_vm_memory(Dataspace_component &, addr_t, Attach_attr);
 		void _detach_vm_memory(addr_t, size_t);
+		void _with_region(addr_t, auto const &);
 
 	protected:
 
@@ -115,8 +116,9 @@ class Genode::Vm_session_component
 		 *********************************/
 
 		/* used on destruction of attached dataspaces */
-		void detach(Region_map::Local_addr) override; /* vm_session_common.cc */
-		void unmap_region(addr_t, size_t) override;   /* vm_session_common.cc */
+		void detach_at         (addr_t)         override;
+		void unmap_region      (addr_t, size_t) override;
+		void reserve_and_flush (addr_t)         override;
 
 
 		/**************************

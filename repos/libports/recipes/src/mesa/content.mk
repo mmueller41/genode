@@ -8,6 +8,7 @@ MIRROR_FROM_REP_DIR := \
                        lib/mk/isl_gen.inc \
                        lib/mk/glapi.mk \
                        lib/mk/mesa.inc \
+                       lib/mk/mesa.mk \
                        lib/mk/mesa_api.mk \
                        lib/mk/mesa-common.inc \
                        lib/mk/softpipe.mk \
@@ -21,11 +22,13 @@ MIRROR_FROM_REP_DIR := \
                        lib/mk/spec/x86/iris_gen110.mk \
                        lib/mk/spec/x86/iris_gen120.mk \
                        lib/mk/spec/x86/iris_gen125.mk \
+                       lib/mk/spec/x86/iris_gen200.mk \
                        lib/mk/spec/x86/iris_gen80.mk \
                        lib/mk/spec/x86/iris_gen90.mk \
                        lib/mk/spec/x86/isl_gen110.mk \
                        lib/mk/spec/x86/isl_gen120.mk \
                        lib/mk/spec/x86/isl_gen125.mk \
+                       lib/mk/spec/x86/isl_gen200.mk \
                        lib/mk/spec/x86/isl_gen80.mk \
                        lib/mk/spec/x86/isl_gen90.mk \
                        lib/mk/spec/x86_64/mesa.mk \

@@ -5,18 +5,17 @@
  */
 
 /*
- * Copyright (C) 2006-2017 Genode Labs GmbH
+ * Copyright (C) 2006-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
 
 /* Genode includes */
-#include <base/snprintf.h>
 #include <base/sleep.h>
 #include <base/service.h>
 #include <base/child.h>
-#include <base/log.h>
+#include <base/component.h>
 #include <rm_session/connection.h>
 #include <pd_session/connection.h>
 #include <rom_session/connection.h>
@@ -30,6 +29,7 @@
 #include <core_env.h>
 #include <core_service.h>
 #include <signal_transmitter.h>
+#include <system_control.h>
 #include <rom_root.h>
 #include <rm_root.h>
 #include <cpu_root.h>
@@ -40,14 +40,14 @@
 #include <trace/root.h>
 #include <platform_services.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /***************************************
  ** Core environment/platform support **
  ***************************************/
 
-Core_env &Genode::core_env()
+Core_env &Core::core_env()
 {
 	/*
 	 * Make sure to initialize the platform before constructing the core
@@ -75,21 +75,25 @@ Core_env &Genode::core_env()
 }
 
 
-Env_deprecated *Genode::env_deprecated() {
-	return &core_env(); }
-
-
-Platform &Genode::platform_specific()
+Core::Platform &Core::platform_specific()
 {
 	static Platform _platform;
 	return _platform;
 }
 
 
-Platform_generic &Genode::platform() { return platform_specific(); }
+Platform_generic &Core::platform() { return platform_specific(); }
 
 
-Thread_capability Genode::main_thread_cap() { return Thread_capability(); }
+struct Genode::Platform { };
+
+
+Genode::Platform &Genode::init_platform()
+{
+	core_env();
+	static Genode::Platform platform { };
+	return platform;
+}
 
 
 /**
@@ -116,6 +120,8 @@ class Core_child : public Child_policy
 
 		Cap_quota const _cap_quota;
 		Ram_quota const _ram_quota;
+
+		Id_space<Parent::Server> _server_ids { };
 
 		Child _child;
 
@@ -179,6 +185,8 @@ class Core_child : public Child_policy
 		Pd_session_capability ref_pd_cap() const override { return _core_pd_cap; }
 
 		size_t session_alloc_batch_size() const override { return 128; }
+
+		Id_space<Parent::Server> &server_id_space() override { return _server_ids; }
 };
 
 
@@ -187,25 +195,22 @@ class Core_child : public Child_policy
  ****************/
 
 /*
- * In contrast to the 'Platform_env' used by non-core components, core disables
- * the signal thread but overriding 'Genode::init_signal_thread' with a dummy.
- * Within core, the signal thread is not needed as core is never supposed to
- * receive any signals. Otherwise, the signal thread would be the only
- * non-entrypoint thread within core, which would be a problem on NOVA where
- * the creation of regular threads within core is unsupported.
+ * In contrast to non-core components, core disables the signal thread by
+ * overriding 'Genode::init_signal_thread' with a dummy. Within core, the
+ * signal thread is not needed as core is never supposed to receive any
+ * signals.
  */
 
 void Genode::init_signal_thread(Env &) { }
-void Genode::destroy_signal_thread()   { }
 
 
 /*******************
  ** Trace support **
  *******************/
 
-Trace::Source_registry &Trace::sources()
+Core::Trace::Source_registry &Core::Trace::sources()
 {
-	static Trace::Source_registry inst;
+	static Source_registry inst;
 	return inst;
 }
 
@@ -220,16 +225,16 @@ namespace Genode {
 }
 
 
-int main()
+void Genode::bootstrap_component(Genode::Platform &)
 {
-	/**
-	 * Disable tracing within core because it is currently not fully implemented.
-	 */
+	init_exception_handling(*core_env().pd_session(), core_env().local_rm());
+
+	/* disable tracing within core because it is not fully implemented */
 	inhibit_tracing = true;
 
 	log("Genode ", Genode::version_string);
 
-	static Trace::Policy_registry trace_policies;
+	static Core::Trace::Policy_registry trace_policies;
 
 	static Rpc_entrypoint &ep              =  core_env().entrypoint();
 	static Ram_allocator  &core_ram_alloc  =  core_env().ram_allocator();
@@ -252,21 +257,27 @@ int main()
 
 	static Pager_entrypoint pager_ep(rpc_cap_factory);
 
+	using Trace_root              = Core::Trace::Root;
+	using Trace_session_component = Core::Trace::Session_component;
+
+	static Core::System_control &system_control = init_system_control(sliced_heap, ep);
+
 	static Rom_root    rom_root    (ep, ep, platform().rom_fs(), sliced_heap);
 	static Rm_root     rm_root     (ep, sliced_heap, core_ram_alloc, local_rm, pager_ep);
 	static Cpu_root    cpu_root    (core_ram_alloc, local_rm, ep, ep, pager_ep,
-	                                sliced_heap, Trace::sources());
+	                                sliced_heap, Core::Trace::sources());
 	static Pd_root     pd_root     (ep, core_env().signal_ep(), pager_ep,
 	                                platform().ram_alloc(),
 	                                local_rm, sliced_heap,
-	                                platform_specific().core_mem_alloc());
+	                                platform_specific().core_mem_alloc(),
+	                                system_control);
 	static Log_root    log_root    (ep, sliced_heap);
 	static Io_mem_root io_mem_root (ep, ep, platform().io_mem_alloc(),
 	                                platform().ram_alloc(), sliced_heap);
 	static Irq_root    irq_root    (*core_env().pd_session(),
 	                                platform().irq_alloc(), sliced_heap);
-	static Trace::Root trace_root  (core_ram_alloc, local_rm, ep, sliced_heap,
-	                                Trace::sources(), trace_policies);
+	static Trace_root  trace_root  (core_ram_alloc, local_rm, ep, sliced_heap,
+	                                Core::Trace::sources(), trace_policies);
 
 	static Core_service<Rom_session_component>    rom_service    (services, rom_root);
 	static Core_service<Rm_session_component>     rm_service     (services, rm_root);
@@ -275,10 +286,10 @@ int main()
 	static Core_service<Log_session_component>    log_service    (services, log_root);
 	static Core_service<Io_mem_session_component> io_mem_service (services, io_mem_root);
 	static Core_service<Irq_session_component>    irq_service    (services, irq_root);
-	static Core_service<Trace::Session_component> trace_service  (services, trace_root);
+	static Core_service<Trace_session_component>  trace_service  (services, trace_root);
 
 	/* make platform-specific services known to service pool */
-	platform_add_local_services(ep, sliced_heap, services, Trace::sources());
+	platform_add_local_services(ep, sliced_heap, services, Core::Trace::sources());
 
 	size_t const avail_ram_quota = core_pd.avail_ram().value;
 	size_t const avail_cap_quota = core_pd.avail_caps().value;
@@ -288,12 +299,12 @@ int main()
 
 	if (avail_ram_quota < preserved_ram_quota) {
 		error("core preservation exceeds platform RAM limit");
-		return -1;
+		return;
 	}
 
 	if (avail_cap_quota < preserved_cap_quota) {
 		error("core preservation exceeds platform cap quota limit");
-		return -1;
+		return;
 	}
 
 	Ram_quota const init_ram_quota { avail_ram_quota - preserved_ram_quota };
@@ -302,10 +313,10 @@ int main()
 	/* CPU session representing core */
 	static Cpu_session_component
 		core_cpu(ep,
-		         Session::Resources{{Cpu_connection::RAM_QUOTA},
+		         Session::Resources{{Cpu_session::RAM_QUOTA},
 		                            {Cpu_session::CAP_QUOTA}},
 		         "core", Session::Diag{false},
-		         core_ram_alloc, local_rm, ep, pager_ep, Trace::sources(), "",
+		         core_ram_alloc, local_rm, ep, pager_ep, Core::Trace::sources(), "",
 		         Affinity::unrestricted(), Cpu_session::QUOTA_LIMIT);
 
 	Cpu_session_capability core_cpu_cap = core_cpu.cap();
@@ -320,5 +331,4 @@ int main()
 	platform().wait_for_exit();
 
 	init.destruct();
-	return 0;
 }

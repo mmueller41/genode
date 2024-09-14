@@ -72,6 +72,7 @@ proc qt5_parent_provides { } {
 # 
 proc language_chargen { } { return "en_us" }
 
+exec mkdir -p bin
 exec cp -f [genode_dir]/repos/os/src/server/event_filter/[language_chargen].chargen bin/
 exec cp -f [genode_dir]/repos/os/src/server/event_filter/special.chargen bin/
 
@@ -204,7 +205,7 @@ proc qt5_start_nodes { } {
 		</start>
 
 		<start name="pointer">
-			<resource name="RAM" quantum="1M"/>
+			<resource name="RAM" quantum="2M"/>
 			<provides> <service name="Report"/> </provides>
 			<config shapes="yes"/>
 			<route>
@@ -237,10 +238,10 @@ proc qt5_start_nodes { } {
 				<policy label="pointer -> xray"                     report="nitpicker -> xray"/>
 				<policy label="drivers -> event_filter -> capslock" report="global_keys_handler -> capslock"/>
 				<policy label="numlock_remap_rom -> numlock"        report="global_keys_handler -> numlock"/>
-				<policy label="ps2_drv -> capslock"                 report="global_keys_handler -> capslock"/>
-				<policy label="ps2_drv -> numlock"                  report="global_keys_handler -> numlock"/>
-				<policy label="usb_drv -> capslock"                 report="global_keys_handler -> capslock"/>
-				<policy label="usb_drv -> numlock"                  report="global_keys_handler -> numlock"/>
+				<policy label="ps2 -> capslock"                     report="global_keys_handler -> capslock"/>
+				<policy label="ps2 -> numlock"                      report="global_keys_handler -> numlock"/>
+				<policy label="usb -> capslock"                     report="global_keys_handler -> capslock"/>
+				<policy label="usb -> numlock"                      report="global_keys_handler -> numlock"/>
 			</config>
 		</start>
 
@@ -322,7 +323,7 @@ proc qt5_start_nodes { } {
 
 proc qt5_boot_modules { } {
 
-	set boot_modules { }
+	set boot_modules [build_artifacts]
 
 	lappend boot_modules [language_chargen].chargen
 	lappend boot_modules special.chargen

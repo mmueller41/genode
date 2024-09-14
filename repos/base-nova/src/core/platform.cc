@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2009-2017 Genode Labs GmbH
+ * Copyright (C) 2009-2022 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -40,7 +40,7 @@
 #include <nova/syscalls.h>
 #include <nova/util.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Nova;
 
 
@@ -74,8 +74,8 @@ extern unsigned _prog_img_beg, _prog_img_end;
  * This function uses the virtual-memory region allocator to find a region
  * fitting the desired mapping. Other allocators are left alone.
  */
-addr_t Platform::_map_pages(addr_t const phys_addr, addr_t const pages,
-                            bool guard_page)
+addr_t Core::Platform::_map_pages(addr_t const phys_addr, addr_t const pages,
+                                  bool guard_page)
 {
 	addr_t const size = pages << get_page_size_log2();
 
@@ -280,7 +280,7 @@ static Affinity::Space setup_affinity_space(Hip const &hip)
 {
 	unsigned cpus = 0;
 	unsigned ids_thread = 0;
-	Genode::Bit_array<1 << (sizeof(Hip::Cpu_desc::thread) * 8)> threads;
+	Bit_array<1 << (sizeof(Hip::Cpu_desc::thread) * 8)> threads;
 
 	hip.for_each_enabled_cpu([&](Hip::Cpu_desc const &cpu, unsigned) {
 		cpus ++;
@@ -301,17 +301,19 @@ static Affinity::Space setup_affinity_space(Hip const &hip)
  ** Platform **
  **************/
 
-Platform::Platform()
+Core::Platform::Platform()
 :
 	_io_mem_alloc(&core_mem_alloc()), _io_port_alloc(&core_mem_alloc()),
 	_irq_alloc(&core_mem_alloc()),
 	_vm_base(0x1000), _vm_size(0), _cpus(Affinity::Space(1,1))
 {
-	Hip const &hip = *(Hip *)__initial_sp;
-	/* check for right API version */
-	if (hip.api_version != 8)
-		nova_die();
+	bool warn_reorder  = false;
+	bool error_overlap = false;
 
+	Hip const &hip = *(Hip *)__initial_sp;
+
+
+	_cpus = setup_affinity_space(hip);
 
 	/* register UTCB of main thread */
 	__main_thread_utcb = (Utcb *)(__initial_sp - get_page_size());
@@ -339,13 +341,6 @@ Platform::Platform()
 	/* determine number of available CPUs */
 	_cpus = setup_affinity_space(hip);
 
-	/*
-	 * Mark successful boot of hypervisor for automatic tests. This must be
-	 * done before core_log is initialized to prevent unexpected-reboot
-	 * detection.
-	 */
-	log("\nHypervisor ", String<sizeof(hip.signature)+1>((char const *)&hip.signature),
-	    " (API v", hip.api_version, ")");
 
 	/*
 	 * remap main utcb to default utcb address
@@ -355,41 +350,20 @@ Platform::Platform()
 	if (map_local(_core_pd_sel, *__main_thread_utcb, (addr_t)__main_thread_utcb,
 	              (addr_t)main_thread_utcb(), 1, Rights(true, true, false))) {
 		error("could not remap utcb of main thread");
-		nova_die();
 	}
 
-	/* sanity checks */
-	if (hip.sel_exc + 3 > NUM_INITIAL_PT_RESERVED) {
-		error("configuration error (NUM_INITIAL_PT_RESERVED)");
-		nova_die();
-	}
+	/*
+	 * Mark successful boot of hypervisor for automatic tests. This must be
+	 * done before core_log is initialized to prevent unexpected-reboot
+	 * detection.
+	 */
+	log("\nHypervisor ", String<sizeof(hip.signature)+1>((char const *)&hip.signature),
+	    " (API v", hip.api_version, ")");
 
 	/* init genode cpu ids based on kernel cpu ids (used for syscalls) */
-	if (sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]) < hip.cpu_max()) {
-		error("number of max CPUs is larger than expected - ", hip.cpu_max(),
-		      " vs ", sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]));
-		nova_die();
-	}
-	if (!hip.remap_cpu_ids(map_cpu_ids, cpu_numa_map, (unsigned)boot_cpu())) {
-		error("re-ording cpu_id failed");
-		nova_die();
-	}
-
-	/* map idle SCs */
-	unsigned const log2cpu = log2(hip.cpu_max());
-	if ((1U << log2cpu) != hip.cpu_max()) {
-		error("number of max CPUs is not of power of 2");
-		nova_die();
-	}
-
-	addr_t sc_idle_base = cap_map().insert(log2cpu + 1);
-	if (sc_idle_base & ((1UL << log2cpu) - 1)) {
-		error("unaligned sc_idle_base value ", Hex(sc_idle_base));
-		nova_die();
-	}
-	if (map_local(_core_pd_sel, *__main_thread_utcb, Obj_crd(0, log2cpu),
-	              Obj_crd(sc_idle_base, log2cpu), true))
-		nova_die();
+	warn_reorder = !hip.remap_cpu_ids(map_cpu_ids,
+	                                  sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]), cpu_numa_map,
+	                                  (unsigned)boot_cpu());
 
 	/* configure virtual address spaces */
 #ifdef __x86_64__
@@ -422,16 +396,6 @@ Platform::Platform()
 
 	size_t const core_size     = binaries_beg - core_virt_beg;
 	region_alloc().remove_range(core_virt_beg, core_size);
-
-	if (verbose_boot_info || binaries_end != core_virt_end) {
-		log("core     image  ",
-		    Hex_range<addr_t>(core_virt_beg, core_virt_end - core_virt_beg));
-		log("binaries region ",
-		    Hex_range<addr_t>(binaries_beg,  binaries_end - binaries_beg),
-		    " free for reuse");
-	}
-	if (binaries_end != core_virt_end)
-		nova_die();
 
 	/* ROM modules are un-used by core - de-detach region */
 	addr_t const binaries_size  = binaries_end - binaries_beg;
@@ -466,7 +430,8 @@ Platform::Platform()
 			      Hex_range<addr_t>(stack_area_virtual_base(),
 			                        stack_area_virtual_size()), " vs ",
 			      Hex(check[i]));
-			nova_die();
+
+			error_overlap = true;
 		}
 	}
  
@@ -496,13 +461,6 @@ Platform::Platform()
 
 		if (mem_desc->type != Hip::Mem_desc::AVAILABLE_MEMORY) continue;
 
-		if (verbose_boot_info) {
-			uint64_t const base = mem_desc->addr;
-			uint64_t const size = mem_desc->size;
-			log("detected physical memory: ", Hex(base, Hex::PREFIX, Hex::PAD),
-			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD), " - node: ", mem_desc->domain, " type: ", static_cast<uint8_t>(mem_desc->type));
-		}
-
 		if (!mem_desc->size) continue;
 
 		/* skip regions above 4G on 32 bit, no op on 64 bit */
@@ -515,10 +473,6 @@ Platform::Platform()
 			size = trunc_page(~0ULL - mem_desc->addr + 1);
 		else
 			size = trunc_page(mem_desc->addr + mem_desc->size) - base;
-
-		if (verbose_boot_info)
-			log("use      physical memory: ", Hex(base, Hex::PREFIX, Hex::PAD),
-			    " - size: ", Hex(size, Hex::PREFIX, Hex::PAD));
 
 		_io_mem_alloc.remove_range((addr_t)base, (size_t)size);
 		ram_alloc().add_range((addr_t)base, (size_t)size);
@@ -551,10 +505,6 @@ Platform::Platform()
 			/* calculate size of framebuffer */
 			size = pitch * height;
 		}
-
-		if (verbose_boot_info)
-			log("reserved memory: ", Hex(mem_desc->addr), " - size: ",
-			    Hex(size), " type=", (int)mem_desc->type);
 
 		/* skip regions above 4G on 32 bit, no op on 64 bit */
 		if (mem_desc->addr > ~0UL) continue;
@@ -624,7 +574,8 @@ Platform::Platform()
 			      "(", (int)mem_desc->type, ") with ",
 			      Hex_range<addr_t>((addr_t)mem_d->addr, (size_t)mem_d->size), " "
 			      "(", (int)mem_d->type, ")");
-			nova_die();
+
+			error_overlap = true;
 		}
 	}
 
@@ -671,9 +622,8 @@ Platform::Platform()
 				memset(core_local_ptr, 0, bytes);
 				content_fn(core_local_ptr, bytes);
 
-				_rom_fs.insert(new (core_mem_alloc())
-								   Rom_module(phys_addr, bytes, rom_name));
-				log("ROM succesfully inserted.");
+				new (core_mem_alloc())
+					Rom_module(_rom_fs, rom_name, phys_addr, bytes);
 
 				/* leave the ROM backing store mapped within core */
 			},
@@ -683,26 +633,22 @@ Platform::Platform()
 					  rom_name, " as ROM module"); });
 	};
 
-	export_pages_as_rom_module("platform_info", 37,
-							   [&](char *const ptr, size_t const size)
-							   {
-								   log("Exporting platform info as ROM module");
-								   Xml_generator xml(ptr, size, "platform_info", [&]()
-													 {
-				log("Report kernel");
-				xml.node("kernel", [&] () {
+	export_pages_as_rom_module("platform_info", 1 + (MAX_SUPPORTED_CPUS / 32),
+		[&] (char * const ptr, size_t const size) {
+			Xml_generator xml(ptr, size, "platform_info", [&]
+			{
+				xml.node("kernel", [&] {
 					xml.attribute("name", "nova");
 					xml.attribute("acpi", true);
 					xml.attribute("msi" , true);
+					xml.attribute("iommu", hip.has_feature_iommu());
 				});
-				if (efi_sys_tab_phy)
-				{
-				log("Report EFI system table");
-					xml.node("efi-system-table", [&] () {
+				if (efi_sys_tab_phy) {
+					xml.node("efi-system-table", [&] {
 						xml.attribute("address", String<32>(Hex(efi_sys_tab_phy)));
 					});
 				}
-				xml.node("acpi", [&] () {
+				xml.node("acpi", [&] {
 
 				log("Report ACPI");
 					xml.attribute("revision", 2); /* XXX */
@@ -713,49 +659,49 @@ Platform::Platform()
 					if (xsdt)
 						xml.attribute("xsdt", String<32>(Hex(xsdt)));
 				});
-
-				log("Report Affinity-space");
-				xml.node("affinity-space", [&] () {
+				xml.node("affinity-space", [&] {
 					xml.attribute("width", _cpus.width());
 					xml.attribute("height", _cpus.height());
 				});
-				log("Report boot framebuffer");
-				xml.node("boot", [&]()
-						 {
+				xml.node("boot", [&] {
 					if (!boot_fb)
 						return;
 
 					if (!efi_boot && (Resolution::Type::get(boot_fb->size) != Resolution::Type::VGA_TEXT))
 						return;
 
-					xml.node("framebuffer", [&] () {
+					xml.node("framebuffer", [&] {
 						xml.attribute("phys",   String<32>(Hex(boot_fb->addr)));
 						xml.attribute("width",  Resolution::Width::get(boot_fb->size));
 						xml.attribute("height", Resolution::Height::get(boot_fb->size));
 						xml.attribute("bpp",    Resolution::Bpp::get(boot_fb->size));
 						xml.attribute("type",   Resolution::Type::get(boot_fb->size));
 						xml.attribute("pitch",  boot_fb->aux);
-					}); });
-				log("Report Hardware");
-				xml.node("hardware", [&] () {
-					log("Report HW features");
-					xml.node("features", [&] () {
+					});
+				});
+				xml.node("hardware", [&] {
+					xml.node("features", [&] {
 						xml.attribute("svm", hip.has_feature_svm());
 						xml.attribute("vmx", hip.has_feature_vmx());
 					});
-					log("Report TSC");
-					xml.node("tsc", [&] () {
+					xml.node("tsc", [&] {
 						xml.attribute("invariant", cpuid_invariant_tsc());
 						xml.attribute("freq_khz" , hip.tsc_freq);
 					});
-					log("Report CPUs");
-					xml.node("cpus", [&]()
-							 {  
-					hip.for_each_enabled_cpu([&](Hip::Cpu_desc const &cpu, unsigned i)
-											 { 	
-															xml.node("cpu", [&]()
-																   {
-								xml.attribute("id",       i);
+					xml.node("cpus", [&] {
+						for_each_location([&](Affinity::Location &location) {
+							unsigned const kernel_cpu_id = Platform::kernel_cpu_id(location);
+							auto const cpu_ptr = hip.cpu_desc_of_cpu(kernel_cpu_id);
+
+							if (!cpu_ptr)
+								return;
+
+							auto const &cpu = *cpu_ptr;
+
+							xml.node("cpu", [&] {
+								xml.attribute("xpos",     location.xpos());
+								xml.attribute("ypos",     location.ypos());
+								xml.attribute("id",       kernel_cpu_id);
 								xml.attribute("package",  cpu.package);
 								xml.attribute("core",     cpu.core);
 								xml.attribute("thread",   cpu.thread);
@@ -763,10 +709,16 @@ Platform::Platform()
 								xml.attribute("model",    String<5>(Hex(cpu.model)));
 								xml.attribute("stepping", String<5>(Hex(cpu.stepping)));
 								xml.attribute("platform", String<5>(Hex(cpu.platform)));
-								xml.attribute("patch",    String<12>(Hex(cpu.patch))); }); }); });
-				}); });
-								   log("Exported platform info, succesfully.");
-							   });
+								xml.attribute("patch",    String<12>(Hex(cpu.patch)));
+								if (cpu.p_core()) xml.attribute("cpu_type", "P");
+								if (cpu.e_core()) xml.attribute("cpu_type", "E");
+							});
+						});
+					});
+				});
+			});
+		}
+	);
 
 	export_pages_as_rom_module("core_log", 4,
 							   [&](char *const ptr, size_t const size)
@@ -776,10 +728,33 @@ Platform::Platform()
 
 	/* export hypervisor log memory */
 	if (hyp_log && hyp_log_size)
-		_rom_fs.insert(new (core_mem_alloc()) Rom_module(hyp_log, hyp_log_size,
-		                                                 "kernel_log"));
+		new (core_mem_alloc())
+			Rom_module(_rom_fs, "kernel_log", hyp_log, hyp_log_size);
+
+	/* show all warnings/errors after init_core_log setup core_log */
+	if (warn_reorder)
+		warning("re-ordering of CPU ids for SMT and P/E cores failed");
+	if (hip.api_version != 10)
+		error("running on a unsupported kernel API version ", hip.api_version);
+	if (binaries_end != core_virt_end)
+		error("mismatch in address layout of binaries with core");
+	if (error_overlap)
+		error("memory overlap issues detected");
+	if (hip.sel_exc + 3 > NUM_INITIAL_PT_RESERVED)
+		error("configuration error (NUM_INITIAL_PT_RESERVED)");
+
+	/* map idle SCs */
+	auto const log2cpu      = log2(hip.cpu_max());
+	auto const sc_idle_base = cap_map().insert(log2cpu + 1);
+
+	if (map_local(_core_pd_sel, *__main_thread_utcb, Obj_crd(0, log2cpu),
+	              Obj_crd(sc_idle_base, log2cpu), true))
+		error("idle SC information unavailable");
+
 
 	if (verbose_boot_info) {
+		if (hip.has_feature_iommu())
+			log("Hypervisor features IOMMU");
 		if (hip.has_feature_vmx())
 			log("Hypervisor features VMX");
 		if (hip.has_feature_svm())
@@ -798,11 +773,13 @@ Platform::Platform()
 			Genode::String<16> text ("failure");
 			if (cpu)
 				text = Genode::String<16>(cpu->package, ":",
-				                          cpu->core, ":", cpu->thread);
+				                          cpu->core, ":", cpu->thread,
+				                          cpu->e_core() ? " E" :
+				                          cpu->p_core() ? " P" : "");
 
 			log(" remap (", location.xpos(), "x", location.ypos(),") -> ",
-			    kernel_cpu_id, " - ", text, " node: ", cpu->numa_id, ") ",
-			    boot_cpu() == kernel_cpu_id ? "boot cpu" : "");
+			    kernel_cpu_id, " - ", text, " node: ", cpu->numa_id,
+			    boot_cpu() == kernel_cpu_id ? " boot cpu" : "");
 		});
 	}
 
@@ -979,13 +956,13 @@ Platform::Platform()
 }
 
 
-addr_t Platform::_rom_module_phys(addr_t virt)
+addr_t Core::Platform::_rom_module_phys(addr_t virt)
 {
 	return virt - (addr_t)&_prog_img_beg + _core_phys_start;
 }
 
 
-unsigned Platform::kernel_cpu_id(Affinity::Location location) const
+unsigned Core::Platform::kernel_cpu_id(Affinity::Location location) const
 {
 	unsigned const cpu_id = pager_index(location);
 
@@ -998,7 +975,7 @@ unsigned Platform::kernel_cpu_id(Affinity::Location location) const
 }
 
 
-unsigned Platform::pager_index(Affinity::Location location) const
+unsigned Core::Platform::pager_index(Affinity::Location location) const
 {
 	return (location.xpos() * _cpus.height() + location.ypos())
 	       % (_cpus.width() * _cpus.height());
@@ -1013,7 +990,7 @@ bool Mapped_mem_allocator::_map_local(addr_t virt_addr, addr_t phys_addr, size_t
 {
 	/* platform_specific()->core_pd_sel() deadlocks if called from platform constructor */
 	Hip const &hip  = *(Hip const *)__initial_sp;
-	Genode::addr_t const core_pd_sel = hip.sel_exc;
+	addr_t const core_pd_sel = hip.sel_exc;
 
 	map_local(core_pd_sel,
 	          *(Utcb *)Thread::myself()->utcb(), phys_addr,
@@ -1035,5 +1012,5 @@ bool Mapped_mem_allocator::_unmap_local(addr_t virt_addr, addr_t, size_t size)
  ** Generic platform interface **
  ********************************/
 
-void Platform::wait_for_exit() { sleep_forever(); }
+void Core::Platform::wait_for_exit() { sleep_forever(); }
 

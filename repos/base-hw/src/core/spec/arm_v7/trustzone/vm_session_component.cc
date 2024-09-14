@@ -18,7 +18,7 @@
 #include <vm_session_component.h>
 #include <platform.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 static Board::Vm_page_table_array & dummy_array()
@@ -50,6 +50,12 @@ void * Vm_session_component::_alloc_table()
 
 
 static unsigned id_alloc = 0;
+
+
+Genode::addr_t Vm_session_component::_alloc_vcpu_data(Genode::addr_t ds_addr)
+{
+	return ds_addr;
+}
 
 
 Vm_session_component::Vm_session_component(Rpc_entrypoint  &ep,
@@ -86,7 +92,7 @@ Vm_session_component::~Vm_session_component()
 		if (!_map.any_block_addr(&out_addr))
 			break;
 
-		detach(out_addr);
+		detach_at(out_addr);
 	}
 
 	/* free region in allocator */

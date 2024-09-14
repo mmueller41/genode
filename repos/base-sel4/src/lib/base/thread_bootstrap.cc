@@ -17,13 +17,14 @@
 
 /* base-internal includes */
 #include <base/internal/stack.h>
+#include <base/internal/globals.h>
 
 
 /*****************************
  ** Startup library support **
  *****************************/
 
-void prepare_init_main_thread() { }
+void Genode::prepare_init_main_thread() { }
 
 
 /************
@@ -37,3 +38,6 @@ void Genode::Thread::_thread_bootstrap()
 		native_thread().lock_sel = (unsigned)_stack->utcb().lock_sel();
 	}
 }
+
+
+void Genode::init_thread_bootstrap(Cpu_session &, Thread_capability) { }

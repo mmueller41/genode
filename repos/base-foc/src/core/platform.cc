@@ -13,7 +13,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <base/allocator_avl.h>
 #include <base/sleep.h>
 #include <dataspace/capability.h>
@@ -38,7 +37,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /***********************************
@@ -121,7 +120,7 @@ static void _core_pager_loop()
 }
 
 
-Platform::Sigma0::Sigma0(Cap_index* i)
+Core::Platform::Sigma0::Sigma0(Cap_index* i)
 :
 	Pager_object(Cpu_session_capability(), Thread_capability(),
 	             0, Affinity::Location(), Session_label(),
@@ -135,7 +134,7 @@ Platform::Sigma0::Sigma0(Cap_index* i)
 }
 
 
-Platform::Core_pager::Core_pager(Platform_pd &core_pd, Sigma0 &sigma0)
+Core::Platform::Core_pager::Core_pager(Platform_pd &core_pd, Sigma0 &sigma0)
 :
 	Platform_thread("core.pager"),
 	Pager_object(Cpu_session_capability(), Thread_capability(),
@@ -162,7 +161,7 @@ Platform::Core_pager::Core_pager(Platform_pd &core_pd, Sigma0 &sigma0)
 }
 
 
-Platform::Core_pager &Platform::core_pager()
+Core::Platform::Core_pager &Core::Platform::core_pager()
 {
 	static Core_pager _core_pager(core_pd(), _sigma0);
 	return _core_pager;
@@ -281,14 +280,14 @@ static Foc::l4_kernel_info_t &sigma0_map_kip()
 }
 
 
-void Platform::_setup_mem_alloc()
+void Core::Platform::_setup_mem_alloc()
 {
 	/*
 	 * Completely map program image by touching all pages read-only to
 	 * prevent sigma0 from handing out those page as anonymous memory.
 	 */
 	volatile const char *beg, *end;
-	beg = (const char *)(((Genode::addr_t)&_prog_img_beg) & L4_PAGEMASK);
+	beg = (const char *)(((addr_t)&_prog_img_beg) & L4_PAGEMASK);
 	end = (const char *)&_prog_img_end;
 	for ( ; beg < end; beg += L4_PAGESIZE) (void)(*beg);
 
@@ -330,7 +329,7 @@ void Platform::_setup_mem_alloc()
 }
 
 
-void Platform::_setup_irq_alloc()
+void Core::Platform::_setup_irq_alloc()
 {
 	using namespace Foc;
 
@@ -343,7 +342,7 @@ void Platform::_setup_irq_alloc()
 }
 
 
-void Platform::_setup_basics()
+void Core::Platform::_setup_basics()
 {
 	using namespace Foc;
 
@@ -356,9 +355,6 @@ void Platform::_setup_basics()
 	log("KIP @ ", &kip);
 	log("    magic: ", Hex(kip.magic));
 	log("  version: ", Hex(kip.version));
-
-	/* add KIP as ROM module */
-	_rom_fs.insert(&_kip_rom);
 
 	/* update multi-boot info pointer from KIP */
 	addr_t const mb_info_addr = kip.user_ptr;
@@ -419,12 +415,12 @@ void Platform::_setup_basics()
 }
 
 
-Platform::Platform()
+Core::Platform::Platform()
 :
 	_ram_alloc(nullptr), _io_mem_alloc(&core_mem_alloc()),
 	_io_port_alloc(&core_mem_alloc()), _irq_alloc(&core_mem_alloc()),
 	_region_alloc(&core_mem_alloc()), _cap_id_alloc(core_mem_alloc()),
-	_kip_rom((addr_t)&sigma0_map_kip(), L4_PAGESIZE, "l4v2_kip"),
+	_kip_rom(_rom_fs, "l4v2_kip", (addr_t)&sigma0_map_kip(), L4_PAGESIZE),
 	_sigma0(cap_map().insert(_cap_id_alloc.alloc(), Foc::L4_BASE_PAGER_CAP))
 {
 	/*
@@ -492,8 +488,8 @@ Platform::Platform()
 						memset(core_local_ptr, 0, bytes);
 						content_fn((char *)core_local_ptr, bytes);
 
-						_rom_fs.insert(new (core_mem_alloc())
-						               Rom_module(phys_addr, bytes, rom_name));
+						new (core_mem_alloc())
+							Rom_module(_rom_fs, rom_name, phys_addr, bytes);
 					},
 					[&] (Range_allocator::Alloc_error) {
 						warning("failed allocate virtual memory to export ",
@@ -509,17 +505,17 @@ Platform::Platform()
 
 	export_page_as_rom_module("platform_info",
 		[&] (char *core_local_ptr, size_t size) {
-			Xml_generator xml(core_local_ptr, size, "platform_info", [&] ()
+			Xml_generator xml(core_local_ptr, size, "platform_info", [&]
 			{
-				xml.node("kernel", [&] () {
+				xml.node("kernel", [&] {
 					xml.attribute("name", "foc");
 					xml.attribute("acpi", true);
 					xml.attribute("msi" , true);
 				});
-				xml.node("hardware", [&] () {
+				xml.node("hardware", [&] {
 					_setup_platform_info(xml, sigma0_map_kip()); });
 
-				xml.node("affinity-space", [&] () {
+				xml.node("affinity-space", [&] {
 					xml.attribute("width", affinity_space().width());
 					xml.attribute("height", affinity_space().height()); });
 			});
@@ -585,7 +581,7 @@ Platform::Platform()
  ** Generic platform interface **
  ********************************/
 
-void Platform::wait_for_exit()
+void Core::Platform::wait_for_exit()
 {
 	/*
 	 * On Fiasco.OC, core never exits. So let us sleep forever.
@@ -594,7 +590,7 @@ void Platform::wait_for_exit()
 }
 
 
-Affinity::Space Platform::affinity_space() const
+Affinity::Space Core::Platform::affinity_space() const
 {
 	using namespace Foc;
 

@@ -23,7 +23,8 @@
 namespace Genode {
 
 	struct Register_set_plain_access;
-	template <typename> class Register_set;
+	struct Register_set_base;
+	template <typename, size_t> class Register_set;
 }
 
 
@@ -68,6 +69,21 @@ struct Genode::Register_set_plain_access
 };
 
 
+struct Genode::Register_set_base : Noncopyable
+{
+	/**
+	 * Interface for delaying the execution of a calling thread
+	 */
+	struct Delayer : Interface
+	{
+		/**
+		 * Delay execution of the caller for 'us' microseconds
+		 */
+		virtual void usleep(uint64_t us) = 0;
+	};
+};
+
+
 /**
  * Set of fine-grained and typesafe accessible registers with offsets
  *
@@ -83,8 +99,8 @@ struct Genode::Register_set_plain_access
  * must not define members named 'Register_base', 'Bitfield_base',
  * 'Register_array_base' or 'Array_bitfield_base'.
  */
-template <typename PLAIN_ACCESS>
-class Genode::Register_set : Noncopyable
+template <typename PLAIN_ACCESS, Genode::size_t REGISTER_SET_SIZE>
+class Genode::Register_set : public Register_set_base
 {
 	private:
 
@@ -149,13 +165,13 @@ class Genode::Register_set : Noncopyable
 			{
 				private:
 
-					typedef typename T::access_t access_t;
+					using access_t = typename T::access_t;
 
 					access_t const _reference_val;
 
 				public:
 
-					typedef T Object;
+					using Object = T;
 
 					/**
 					 * Constructor
@@ -198,7 +214,6 @@ class Genode::Register_set : Noncopyable
 		 */
 		template <off_t _OFFSET, unsigned long _ACCESS_WIDTH,
 		          bool _STRICT_WRITE = false>
-
 		struct Register
 		:
 			public Genode::Register<_ACCESS_WIDTH>,
@@ -220,11 +235,10 @@ class Genode::Register_set : Noncopyable
 			 * that solely must not be redefined by the deriving
 			 * class to ensure correct template selection.
 			 */
-			typedef Register<_OFFSET, _ACCESS_WIDTH, _STRICT_WRITE>
-				Register_base;
+			using Register_base = Register<_OFFSET, _ACCESS_WIDTH, _STRICT_WRITE>;
+			using access_t = typename Genode::Register<_ACCESS_WIDTH>::access_t;
 
-			typedef typename Genode::Register<_ACCESS_WIDTH>::access_t
-				access_t;
+			static_assert(OFFSET + sizeof(access_t) <= REGISTER_SET_SIZE);
 
 			/**
 			 * A region within a register
@@ -243,13 +257,11 @@ class Genode::Register_set : Noncopyable
 				public Conditions<Bitfield<_SHIFT, _WIDTH> >
 			{
 				/* analogous to 'Register_set::Register::Register_base' */
-				typedef Bitfield<_SHIFT, _WIDTH> Bitfield_base;
+				using Bitfield_base = Bitfield<_SHIFT, _WIDTH>;
 
 				/* back reference to containing register */
-				typedef Register<_OFFSET, _ACCESS_WIDTH, _STRICT_WRITE>
-					Compound_reg;
-
-				typedef Compound_reg::access_t access_t;
+				using Compound_reg = Register<_OFFSET, _ACCESS_WIDTH, _STRICT_WRITE>;
+				using access_t = Compound_reg::access_t;
 			};
 		};
 
@@ -286,12 +298,11 @@ class Genode::Register_set : Noncopyable
 		template <off_t _OFFSET, unsigned long _ACCESS_WIDTH,
 		          unsigned long _ITEMS, unsigned long _ITEM_WIDTH,
 		          bool _STRICT_WRITE = false>
-
 		struct Register_array : public Register<_OFFSET, _ACCESS_WIDTH,
 		                                        _STRICT_WRITE>
 		{
-			typedef typename Trait::Uint_width<_ACCESS_WIDTH>::
-			                 template Divisor<_ITEM_WIDTH> Item;
+			using Item = typename Trait::Uint_width<_ACCESS_WIDTH>
+			                           ::template Divisor<_ITEM_WIDTH>;
 
 			enum {
 				STRICT_WRITE    = _STRICT_WRITE,
@@ -306,12 +317,11 @@ class Genode::Register_set : Noncopyable
 			};
 
 			/* analogous to 'Register_set::Register::Register_base' */
-			typedef Register_array<OFFSET, ACCESS_WIDTH, ITEMS,
-			                       ITEM_WIDTH, STRICT_WRITE>
-				Register_array_base;
+			using Register_array_base = Register_array<OFFSET, ACCESS_WIDTH, ITEMS,
+			                                           ITEM_WIDTH, STRICT_WRITE>;
 
-			typedef typename Register<OFFSET, ACCESS_WIDTH, STRICT_WRITE>::
-			                 access_t access_t;
+			using access_t =
+				typename Register<OFFSET, ACCESS_WIDTH, STRICT_WRITE>:: access_t;
 
 			/**
 			 * A bit region within a register array item
@@ -327,35 +337,33 @@ class Genode::Register_set : Noncopyable
 				       template Bitfield<_SHIFT, _SIZE>
 			{
 				/* analogous to 'Register_set::Register::Register_base' */
-				typedef Bitfield<_SHIFT, _SIZE> Array_bitfield_base;
+				using Array_bitfield_base = Bitfield<_SHIFT, _SIZE>;
 
 				/* back reference to containing register array */
-				typedef Register_array<OFFSET, ACCESS_WIDTH, ITEMS,
-				                       ITEM_WIDTH, STRICT_WRITE>
-					Compound_array;
+				using Compound_array = Register_array<OFFSET, ACCESS_WIDTH, ITEMS,
+				                                      ITEM_WIDTH, STRICT_WRITE>;
 			};
+
+
+			struct Dst { off_t offset; uint8_t shift; };
 
 			/**
 			 * Calculate destination of an array-item access
 			 *
-			 * \param offset  Gets overridden with the offset of the
-			 *                access type instance, that contains the
-			 *                access destination
-			 * \param shift   Gets overridden with the shift of the
-			 *                destination within the access type instance
-			 *                targeted by 'offset'.
 			 * \param index   index of the targeted array item
 			 */
-			static inline void dst(off_t & offset,
-			                       unsigned long & shift,
-			                       unsigned long const index)
+			static constexpr Dst dst(unsigned long index)
 			{
-				unsigned long const bit_off = index << ITEM_WIDTH_LOG2;
-				offset  = (off_t) ((bit_off >> BYTE_WIDTH_LOG2)
-				          & ~(sizeof(access_t)-1) );
-				shift   = bit_off - ( offset << BYTE_WIDTH_LOG2 );
+				off_t   bit_offset  = off_t(index << ITEM_WIDTH_LOG2);
+				off_t   byte_offset = bit_offset >> BYTE_WIDTH_LOG2;
+				off_t   offset      = byte_offset & ~(sizeof(access_t) - 1);
+				uint8_t shift       = uint8_t(bit_offset - (offset << BYTE_WIDTH_LOG2));
 				offset += OFFSET;
+
+				return { .offset = offset, .shift = shift };
 			}
+
+			static_assert(dst(MAX_INDEX).offset + sizeof(access_t) <= REGISTER_SET_SIZE);
 
 			/**
 			 * Calc destination of a simple array-item access without shift
@@ -391,8 +399,8 @@ class Genode::Register_set : Noncopyable
 		template <typename T>
 		inline typename T::Register_base::access_t read() const
 		{
-			typedef typename T::Register_base Register;
-			typedef typename Register::access_t access_t;
+			using Register = typename T::Register_base;
+			using access_t = typename Register::access_t;
 			return Plain_access::read<access_t>(_plain_access,
 			                                    Register::OFFSET);
 		}
@@ -404,8 +412,8 @@ class Genode::Register_set : Noncopyable
 		inline void
 		write(typename T::Register_base::access_t const value)
 		{
-			typedef typename T::Register_base Register;
-			typedef typename Register::access_t access_t;
+			using Register = typename T::Register_base;
+			using access_t = typename Register::access_t;
 			Plain_access::write<access_t>(_plain_access, Register::OFFSET,
 			                              value);
 		}
@@ -418,12 +426,12 @@ class Genode::Register_set : Noncopyable
 		 * Read the bitfield 'T' of a register
 		 */
 		template <typename T>
-		inline typename T::Bitfield_base::Compound_reg::access_t
+		inline typename T::Bitfield_base::bitfield_t
 		read() const
 		{
-			typedef typename T::Bitfield_base Bitfield;
-			typedef typename Bitfield::Compound_reg Register;
-			typedef typename Register::access_t access_t;
+			using Bitfield = typename T::Bitfield_base;
+			using Register = typename Bitfield::Compound_reg;
+			using access_t = typename Register::access_t;
 			return
 				Bitfield::get(Plain_access::read<access_t>(_plain_access,
 				                                           Register::OFFSET));
@@ -438,9 +446,9 @@ class Genode::Register_set : Noncopyable
 		inline void
 		write(typename T::Bitfield_base::Compound_reg::access_t const value)
 		{
-			typedef typename T::Bitfield_base Bitfield;
-			typedef typename Bitfield::Compound_reg Register;
-			typedef typename Register::access_t access_t;
+			using Bitfield = typename T::Bitfield_base;
+			using Register = typename Bitfield::Compound_reg;
+			using access_t = typename Register::access_t;
 
 			/* initialize the pattern written finally to the register */
 			access_t write_value;
@@ -473,8 +481,8 @@ class Genode::Register_set : Noncopyable
 		inline typename T::Register_array_base::access_t
 		read(unsigned long const index) const
 		{
-			typedef typename T::Register_array_base Array;
-			typedef typename Array::access_t access_t;
+			using Array = typename T::Register_array_base;
+			using access_t = typename Array::access_t;
 
 			/* reads outside the array return 0 */
 			if (index > Array::MAX_INDEX) return 0;
@@ -487,10 +495,9 @@ class Genode::Register_set : Noncopyable
 
 			/* access width and item width differ */
 			} else {
-				long unsigned shift;
-				Array::dst(offset, shift, index);
-				return (Plain_access::read<access_t>(_plain_access, offset)
-				        >> shift) & Array::ITEM_MASK;
+				typename Array::Dst dst { Array::dst(index) };
+				return (Plain_access::read<access_t>(_plain_access, dst.offset)
+				        >> dst.shift) & Array::ITEM_MASK;
 			}
 		}
 
@@ -505,8 +512,8 @@ class Genode::Register_set : Noncopyable
 		write(typename T::Register_array_base::access_t const value,
 		      unsigned long const index)
 		{
-			typedef typename T::Register_array_base Array;
-			typedef typename Array::access_t access_t;
+			using Array = typename T::Register_array_base;
+			using access_t = typename Array::access_t;
 
 			/* ignore writes outside the array */
 			if (index > Array::MAX_INDEX) return;
@@ -519,8 +526,7 @@ class Genode::Register_set : Noncopyable
 
 			/* access width and item width differ */
 			} else {
-				long unsigned shift;
-				Array::dst(offset, shift, index);
+				typename Array::Dst dst { Array::dst(index) };
 
 				/* insert new value into old register value */
 				access_t write_value;
@@ -532,12 +538,12 @@ class Genode::Register_set : Noncopyable
 
 					/* apply bitfield to the old register value */
 					write_value = Plain_access::read<access_t>(_plain_access,
-					                                           offset);
-					write_value &= ~(Array::ITEM_MASK << shift);
+					                                           dst.offset);
+					write_value &= ~(Array::ITEM_MASK << dst.shift);
 				}
 				/* apply bitfield value and override register */
-				write_value |= (value & Array::ITEM_MASK) << shift;
-				Plain_access::write<access_t>(_plain_access, offset,
+				write_value |= (value & Array::ITEM_MASK) << dst.shift;
+				Plain_access::write<access_t>(_plain_access, dst.offset,
 				                              write_value);
 			}
 		}
@@ -553,11 +559,11 @@ class Genode::Register_set : Noncopyable
 		 * \param index  index of the targeted item
 		 */
 		template <typename T>
-		inline typename T::Array_bitfield_base::Compound_array::access_t
+		inline typename T::Array_bitfield_base::bitfield_t
 		read(unsigned long const index) const
 		{
-			typedef typename T::Array_bitfield_base Bitfield;
-			typedef typename Bitfield::Compound_array Array;
+			using Bitfield = typename T::Array_bitfield_base;
+			using Array    = typename Bitfield::Compound_array;
 			return Bitfield::get(read<Array>(index));
 		}
 
@@ -572,9 +578,9 @@ class Genode::Register_set : Noncopyable
 		write(typename T::Array_bitfield_base::Compound_array::access_t const value,
 		      long unsigned const index)
 		{
-			typedef typename T::Array_bitfield_base Bitfield;
-			typedef typename Bitfield::Compound_array Array;
-			typedef typename Array::access_t access_t;
+			using Bitfield = typename T::Array_bitfield_base;
+			using Array    = typename Bitfield::Compound_array;
+			using access_t = typename Array::access_t;
 
 			/* initialize the pattern written finally to the register */
 			access_t write_value;
@@ -604,9 +610,9 @@ class Genode::Register_set : Noncopyable
 		template <typename T>
 		inline typename T::Bitset_2_base::access_t const read()
 		{
-			typedef typename T::Bitset_2_base::Bits_0 Bits_0;
-			typedef typename T::Bitset_2_base::Bits_1 Bits_1;
-			typedef typename T::Bitset_2_base::access_t access_t;
+			using Bits_0 = typename T::Bitset_2_base::Bits_0;
+			using Bits_1 = typename T::Bitset_2_base::Bits_1;
+			using access_t = typename T::Bitset_2_base::access_t;
 			enum { V1_SHIFT = Bits_0::BITFIELD_WIDTH };
 			access_t const v0 = read<Bits_0>();
 			access_t const v1 = read<Bits_1>();
@@ -621,10 +627,10 @@ class Genode::Register_set : Noncopyable
 		template <typename T>
 		inline void write(typename T::Bitset_2_base::access_t v)
 		{
-			typedef typename T::Bitset_2_base::Bits_0 Bits_0;
-			typedef typename T::Bitset_2_base::Bits_1 Bits_1;
-			write<Bits_0>(v);
-			write<Bits_1>(v >> Bits_0::BITFIELD_WIDTH);
+			using Bits_0 = typename T::Bitset_2_base::Bits_0;
+			using Bits_1 = typename T::Bitset_2_base::Bits_1;
+			write<Bits_0>(typename Bits_0::access_t(v));
+			write<Bits_1>(typename Bits_1::access_t(v >> Bits_0::BITFIELD_WIDTH));
 		}
 
 		/**
@@ -633,15 +639,15 @@ class Genode::Register_set : Noncopyable
 		template <typename T>
 		inline typename T::Bitset_3_base::access_t const read()
 		{
-			typedef typename T::Bitset_3_base::Bits_0 Bits_0;
-			typedef typename T::Bitset_3_base::Bits_1 Bits_1;
-			typedef typename T::Bitset_3_base::Bits_2 Bits_2;
-			typedef typename T::Bitset_3_base::access_t access_t;
-			enum {
-				BITS_0_WIDTH = Bits_0::BITFIELD_WIDTH,
-				BITS_1_WIDTH = Bits_1::BITFIELD_WIDTH,
-				V1_SHIFT     = BITS_0_WIDTH + BITS_1_WIDTH,
-			};
+			using Bits_0 = typename T::Bitset_3_base::Bits_0;
+			using Bits_1 = typename T::Bitset_3_base::Bits_1;
+			using Bits_2 = typename T::Bitset_3_base::Bits_2;
+			using access_t = typename T::Bitset_3_base::access_t;
+
+			static constexpr size_t BITS_0_WIDTH = Bits_0::BITFIELD_WIDTH;
+			static constexpr size_t BITS_1_WIDTH = Bits_1::BITFIELD_WIDTH;
+			static constexpr size_t V1_SHIFT     = BITS_0_WIDTH + BITS_1_WIDTH;
+
 			access_t const v0 = read<Bitset_2<Bits_0, Bits_1> >();
 			access_t const v1 = read<Bits_2>();
 			return v0 | (v1 << V1_SHIFT);
@@ -655,12 +661,12 @@ class Genode::Register_set : Noncopyable
 		template <typename T>
 		inline void write(typename T::Bitset_3_base::access_t v)
 		{
-			typedef typename T::Bitset_3_base::Bits_0 Bits_0;
-			typedef typename T::Bitset_3_base::Bits_1 Bits_1;
-			typedef typename T::Bitset_3_base::Bits_2 Bits_2;
-			write<Bitset_2<Bits_0, Bits_1> >(v);
-			write<Bits_2>(v >> (Bits_0::BITFIELD_WIDTH +
-			                    Bits_1::BITFIELD_WIDTH));
+			using Bits_0 = typename T::Bitset_3_base::Bits_0;
+			using Bits_1 = typename T::Bitset_3_base::Bits_1;
+			using Bits_2 = typename T::Bitset_3_base::Bits_2;
+			write<Bitset_2<Bits_0, Bits_1> >(typename Bitset_2<Bits_0, Bits_1>::access_t(v));
+			write<Bits_2>(typename Bits_2::access_t(v >> (Bits_0::BITFIELD_WIDTH +
+			                                              Bits_1::BITFIELD_WIDTH)));
 		}
 
 
@@ -680,17 +686,6 @@ class Genode::Register_set : Noncopyable
 		{
 			uint64_t value;
 			explicit Microseconds(uint64_t value) : value(value) { }
-		};
-
-		/**
-		 * Interface for delaying the execution of a calling thread
-		 */
-		struct Delayer : Interface
-		{
-			/**
-			 * Delay execution of the caller for 'us' microseconds
-			 */
-			virtual void usleep(uint64_t us) = 0;
 		};
 
 

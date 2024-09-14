@@ -22,19 +22,23 @@
 #include <trace/source_registry.h>
 #include <nova_native_vcpu/nova_native_vcpu.h>
 
-namespace Genode { class Vm_session_component; }
+/* core includes */
+#include <types.h>
 
-class Genode::Vm_session_component
+namespace Core { class Vm_session_component; }
+
+
+class Core::Vm_session_component
 :
 	private Ram_quota_guard,
 	private Cap_quota_guard,
-	public Rpc_object<Vm_session, Vm_session_component>,
-	public Region_map_detach
+	public  Rpc_object<Vm_session, Vm_session_component>,
+	private Region_map_detach
 {
 	private:
 
-		typedef Constrained_ram_allocator Con_ram_allocator;
-		typedef Allocator_avl_tpl<Rm_region> Avl_region;
+		using Con_ram_allocator = Constrained_ram_allocator;
+		using Avl_region        = Allocator_avl_tpl<Rm_region>;
 
 		class Vcpu : public Rpc_object<Vm_session::Native_vcpu, Vcpu>,
 		             public Trace::Source::Info_accessor
@@ -137,6 +141,7 @@ class Genode::Vm_session_component
 		/* helpers for vm_session_common.cc */
 		void _attach_vm_memory(Dataspace_component &, addr_t, Attach_attr);
 		void _detach_vm_memory(addr_t, size_t);
+		void _with_region(addr_t, auto const &);
 
 	protected:
 
@@ -153,13 +158,16 @@ class Genode::Vm_session_component
 		                     Trace::Source_registry &);
 		~Vm_session_component();
 
+
 		/*********************************
 		 ** Region_map_detach interface **
 		 *********************************/
 
 		/* used on destruction of attached dataspaces */
-		void detach(Region_map::Local_addr) override; /* vm_session_common.cc */
-		void unmap_region(addr_t, size_t) override;   /* vm_session_common.cc */
+		void detach_at(addr_t) override;
+		void unmap_region(addr_t, size_t) override;
+		void reserve_and_flush(addr_t) override;
+
 
 		/**************************
 		 ** Vm session interface **
@@ -168,8 +176,8 @@ class Genode::Vm_session_component
 		Capability<Native_vcpu> create_vcpu(Thread_capability);
 		void attach_pic(addr_t) override { /* unused on NOVA */ }
 
-		void attach(Dataspace_capability, addr_t, Attach_attr) override; /* vm_session_common.cc */
-		void detach(addr_t, size_t) override;                            /* vm_session_common.cc */
+		void attach(Dataspace_capability, addr_t, Attach_attr) override;
+		void detach(addr_t, size_t) override;
 
 };
 

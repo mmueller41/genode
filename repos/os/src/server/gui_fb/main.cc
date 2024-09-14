@@ -29,9 +29,9 @@ namespace Nit_fb {
 	using Genode::Xml_node;
 	using Genode::size_t;
 
-	typedef Genode::Surface_base::Point Point;
-	typedef Genode::Surface_base::Area  Area;
-	typedef Genode::Surface_base::Rect  Rect;
+	using Point = Genode::Surface_base::Point;
+	using Area  = Genode::Surface_base::Area;
+	using Rect  = Genode::Surface_base::Rect;
 }
 
 
@@ -50,20 +50,20 @@ static Input::Event translate_event(Input::Event        ev,
 
 	/* function to clamp point to bounday */
 	auto clamp = [boundary] (Point p) {
-		return Point(Genode::min((int)boundary.w() - 1, Genode::max(0, p.x())),
-		             Genode::min((int)boundary.h() - 1, Genode::max(0, p.y()))); };
+		return Point(Genode::min((int)boundary.w - 1, Genode::max(0, p.x)),
+		             Genode::min((int)boundary.h - 1, Genode::max(0, p.y))); };
 
 	/* function to translate point to 'input_origin' */
 	auto translate = [input_origin] (Point p) { return p - input_origin; };
 
 	ev.handle_absolute_motion([&] (int x, int y) {
 		Point p = clamp(translate(Point(x, y)));
-		ev = Input::Absolute_motion{p.x(), p.y()};
+		ev = Input::Absolute_motion{p.x, p.y};
 	});
 
 	ev.handle_touch([&] (Input::Touch_id id, float x, float y) {
 		Point p = clamp(translate(Point((int)x, (int)y)));
-		ev = Input::Touch{id, (float)p.x(), (float)p.y()};
+		ev = Input::Touch{id, (float)p.x, (float)p.y};
 	});
 
 	return ev;
@@ -89,8 +89,6 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 
 	Gui::Connection &_gui;
 
-	Framebuffer::Session &_gui_fb = *_gui.framebuffer();
-
 	Genode::Signal_context_capability _mode_sigh { };
 
 	Genode::Signal_context_capability _sync_sigh { };
@@ -103,7 +101,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 	 */
 	Framebuffer::Mode _next_mode;
 
-	typedef Genode::size_t size_t;
+	using size_t = Genode::size_t;
 
 	/*
 	 * Number of bytes used for backing the current virtual framebuffer at
@@ -148,7 +146,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 	void size(Gui::Area size)
 	{
 		/* ignore calls that don't change the size */
-		if (Gui::Area(_next_mode.area.w(), _next_mode.area.h()) == size)
+		if (Gui::Area(_next_mode.area.w, _next_mode.area.h) == size)
 			return;
 
 		Framebuffer::Mode const mode { .area = size };
@@ -189,7 +187,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 		 */
 		_dataspace_is_new = true;
 
-		return _gui_fb.dataspace();
+		return _gui.framebuffer.dataspace();
 	}
 
 	Mode mode() const override
@@ -210,7 +208,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 			_dataspace_is_new = false;
 		}
 
-		_gui_fb.refresh(x, y, w, h);
+		_gui.framebuffer.refresh(x, y, w, h);
 	}
 
 	void sync_sigh(Genode::Signal_context_capability sigh) override
@@ -223,7 +221,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 		 */
 		_sync_sigh = sigh;
 
-		_gui_fb.sync_sigh(sigh);
+		_gui.framebuffer.sync_sigh(sigh);
 	}
 };
 
@@ -244,11 +242,9 @@ struct Nit_fb::Main : View_updater
 
 	unsigned refresh_rate = 0;
 
-	typedef Gui::Session::View_handle View_handle;
+	Gui::Top_level_view const view { gui };
 
-	View_handle view = gui.create_view();
-
-	Genode::Attached_dataspace input_ds { env.rm(), gui.input()->dataspace() };
+	Genode::Attached_dataspace input_ds { env.rm(), gui.input.dataspace() };
 
 	struct Initial_size
 	{
@@ -266,15 +262,15 @@ struct Nit_fb::Main : View_updater
 		unsigned width(Framebuffer::Mode const &mode) const
 		{
 			if (_width > 0) return (unsigned)_width;
-			if (_width < 0) return (unsigned)(mode.area.w() + _width);
-			return mode.area.w();
+			if (_width < 0) return (unsigned)(mode.area.w + _width);
+			return mode.area.w;
 		}
 
 		unsigned height(Framebuffer::Mode const &mode) const
 		{
 			if (_height > 0) return (unsigned)_height;
-			if (_height < 0) return (unsigned)(mode.area.h() + _height);
-			return mode.area.h();
+			if (_height < 0) return (unsigned)(mode.area.h + _height);
+			return mode.area.h;
 		}
 
 		bool valid() const { return _width != 0 && _height != 0; }
@@ -304,9 +300,9 @@ struct Nit_fb::Main : View_updater
 	 */
 	void update_view() override
 	{
-		typedef Gui::Session::Command Command;
-		gui.enqueue<Command::Geometry>(view, Rect(position, fb_session.size()));
-		gui.enqueue<Command::To_front>(view, View_handle());
+		using Command = Gui::Session::Command;
+		gui.enqueue<Command::Geometry>(view.id(), Rect(position, fb_session.size()));
+		gui.enqueue<Command::Front>(view.id());
 		gui.execute();
 	}
 
@@ -320,13 +316,13 @@ struct Nit_fb::Main : View_updater
 		if (!config.has_attribute(attr))
 			return Point(0, 0);
 
-		typedef Genode::String<32> Value;
+		using Value = Genode::String<32>;
 		Value const value = config.attribute_value(attr, Value());
 
 		if (value == "top_left")     return Point(0, 0);
-		if (value == "top_right")    return Point(mode.area.w(), 0);
-		if (value == "bottom_left")  return Point(0, mode.area.h());
-		if (value == "bottom_right") return Point(mode.area.w(), mode.area.h());
+		if (value == "top_right")    return Point(mode.area.w, 0);
+		if (value == "bottom_left")  return Point(0, mode.area.h);
+		if (value == "bottom_right") return Point(mode.area.w, mode.area.h);
 
 		warning("unsupported ", attr, " attribute value '", value, "'");
 		return Point(0, 0);
@@ -338,9 +334,7 @@ struct Nit_fb::Main : View_updater
 
 		Framebuffer::Mode const gui_mode = gui.mode();
 
-		position = _coordinate_origin(gui_mode, config)
-		         + Point((int)config.attribute_value("xpos", 0L),
-		                 (int)config.attribute_value("ypos", 0L));
+		position = _coordinate_origin(gui_mode, config) + Point::from_xml(config);
 
 		bool const attr = config.has_attribute("width") ||
 		                  config.has_attribute("height");
@@ -351,11 +345,11 @@ struct Nit_fb::Main : View_updater
 			_initial_size.set = true;
 		}
 
-		unsigned const gui_width  = gui_mode.area.w();
-		unsigned const gui_height = gui_mode.area.h();
+		unsigned const gui_width  = gui_mode.area.w;
+		unsigned const gui_height = gui_mode.area.h;
 
-		long width  = config.attribute_value("width",  (long)gui_mode.area.w()),
-		     height = config.attribute_value("height", (long)gui_mode.area.h());
+		long width  = config.attribute_value("width",  (long)gui_mode.area.w),
+		     height = config.attribute_value("height", (long)gui_mode.area.h);
 
 		if (!_initial_size.set && _initial_size.valid()) {
 			width  = _initial_size.width (gui_mode);
@@ -399,7 +393,7 @@ struct Nit_fb::Main : View_updater
 	{
 		Input::Event const * const events = input_ds.local_addr<Input::Event>();
 
-		unsigned const num = gui.input()->flush();
+		unsigned const num = gui.input.flush();
 		bool update = false;
 
 		for (unsigned i = 0; i < num; i++) {
@@ -438,7 +432,7 @@ struct Nit_fb::Main : View_updater
 		 */
 		config_rom.sigh(config_update_handler);
 		gui.mode_sigh(mode_update_handler);
-		gui.input()->sigh(input_handler);
+		gui.input.sigh(input_handler);
 	}
 };
 

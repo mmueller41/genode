@@ -15,41 +15,42 @@
 #define _CORE__INCLUDE__ROM_ROOT_H_
 
 #include <root/component.h>
-#include "rom_session_component.h"
 
-namespace Genode {
+/* Genode includes */
+#include <rom_session_component.h>
 
-	class Rom_root : public Root_component<Rom_session_component>
-	{
+namespace Core { class Rom_root; }
 
-		private:
 
-			Rom_fs         &_rom_fs;  /* rom file system */
-			Rpc_entrypoint &_ds_ep;   /* entry point for managing rom dataspaces */
+class Core::Rom_root : public Root_component<Rom_session_component>
+{
+	private:
 
-		protected:
+		Rom_fs         &_rom_fs;  /* rom file system */
+		Rpc_entrypoint &_ds_ep;   /* entry point for managing rom dataspaces */
 
-			Rom_session_component *_create_session(const char *args) override {
-				return new (md_alloc()) Rom_session_component(_rom_fs, _ds_ep, args); }
+	protected:
 
-		public:
+		Rom_session_component *_create_session(const char *args) override {
+			return new (md_alloc()) Rom_session_component(_rom_fs, _ds_ep, args); }
 
-			/**
-			 * Constructor
-			 *
-			 * \param session_ep  entry point for managing ram session objects
-			 * \param ds_ep       entry point for managing dataspaces
-			 * \param rom_fs      platform ROM file system
-			 * \param md_alloc    meta-data allocator to be used by root component
-			 */
-			Rom_root(Rpc_entrypoint &session_ep,
-			         Rpc_entrypoint &ds_ep,
-			         Rom_fs         &rom_fs,
-			         Allocator      &md_alloc)
-			:
-				Root_component<Rom_session_component>(&session_ep, &md_alloc),
-				_rom_fs(rom_fs), _ds_ep(ds_ep) { }
-	};
-}
+	public:
+
+		/**
+		 * Constructor
+		 *
+		 * \param session_ep  entry point for managing ram session objects
+		 * \param ds_ep       entry point for managing dataspaces
+		 * \param rom_fs      platform ROM file system
+		 * \param md_alloc    meta-data allocator to be used by root component
+		 */
+		Rom_root(Rpc_entrypoint &session_ep,
+		         Rpc_entrypoint &ds_ep,
+		         Rom_fs         &rom_fs,
+		         Allocator      &md_alloc)
+		:
+			Root_component<Rom_session_component>(&session_ep, &md_alloc),
+			_rom_fs(rom_fs), _ds_ep(ds_ep) { }
+};
 
 #endif /* _CORE__INCLUDE__ROM_ROOT_H_ */

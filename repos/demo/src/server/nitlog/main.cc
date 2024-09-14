@@ -33,11 +33,11 @@
 enum { LOG_W = 80 };  /* number of visible characters per line */
 enum { LOG_H = 25 };  /* number of lines of log window         */
 
-typedef Text_painter::Font          Font;
-typedef Genode::Surface_base::Point Point;
-typedef Genode::Surface_base::Area  Area;
-typedef Genode::Surface_base::Rect  Rect;
-typedef Genode::Color               Color;
+using Font  = Text_painter::Font;
+using Point = Genode::Surface_base::Point;
+using Area  = Genode::Surface_base::Area;
+using Rect  = Genode::Surface_base::Rect;
+using Color = Genode::Color;
 
 
 /*
@@ -88,7 +88,7 @@ class Canvas : public Canvas_base
 		void draw_string(Point p, Font const &font, Color color,
 		                 char const *sstr) override
 		{
-			Text_painter::paint(_surface, Text_painter::Position(p.x(), p.y()),
+			Text_painter::paint(_surface, Text_painter::Position(p.x, p.y),
 			                    font, color, sstr);
 		}
 
@@ -148,25 +148,25 @@ class Log_entry
 		 */
 		void draw(Canvas_base &canvas, Font const &font, int y, int new_section = false)
 		{
-			Color label_fgcol = Color(Genode::min(255, _color.r + 200),
-			                          Genode::min(255, _color.g + 200),
-			                          Genode::min(255, _color.b + 200));
-			Color label_bgcol = Color(_color.r, _color.g, _color.b);
-			Color text_fgcol  = Color(180, 180, 180);
-			Color text_bgcol  = Color(_color.r / 2, _color.g / 2, _color.b / 2);
+			Color label_fgcol = Color::clamped_rgb(_color.r + 200,
+			                                       _color.g + 200,
+			                                       _color.b + 200);
+			Color label_bgcol = _color;
+			Color text_fgcol  = Color::rgb(180, 180, 180);
+			Color text_bgcol  = Color::rgb(_color.r / 2, _color.g / 2, _color.b / 2);
 
 			/* calculate label dimensions */
 			int label_w = font.string_width(_label).decimal();
-			int label_h = font.bounding_box().h();
+			int label_h = font.bounding_box().h;
 
 			if (new_section) {
 				canvas.draw_box(Rect(Point(1, y), Area(label_w + 2, label_h - 1)), label_bgcol);
 				canvas.draw_string(Point(1, y - 1), font, label_fgcol, _label);
-				canvas.draw_box(Rect(Point(1, y + label_h - 1), Area(label_w + 2, 1)), Color(0, 0, 0));
+				canvas.draw_box(Rect(Point(1, y + label_h - 1), Area(label_w + 2, 1)), Color::black());
 				canvas.draw_box(Rect(Point(label_w + 2, y), Area(1, label_h - 1)), _color);
-				canvas.draw_box(Rect(Point(label_w + 3, y), Area(1, label_h - 1)), Color(0, 0, 0));
+				canvas.draw_box(Rect(Point(label_w + 3, y), Area(1, label_h - 1)), Color::black());
 				canvas.draw_box(Rect(Point(label_w + 4, y), Area(1000, label_h)), text_bgcol);
-				canvas.draw_box(Rect(Point(label_w + 4, y), Area(1000, 1)), Color(0, 0, 0));
+				canvas.draw_box(Rect(Point(label_w + 4, y), Area(1000, 1)), Color::black());
 			} else
 				canvas.draw_box(Rect(Point(1, y), Area(1000, label_h)), text_bgcol);
 
@@ -244,7 +244,7 @@ class Log_window
 				_dirty = false;
 			}
 
-			int line_h = _font.bounding_box().h();
+			int line_h = _font.bounding_box().h;
 			int curr_session_id = -1;
 
 			for (int i = 0, y = 0; i < LOG_H; i++, y += line_h) {
@@ -282,7 +282,7 @@ class Nitlog::Session_component : public Rpc_object<Log_session>
 			int g = (_bit(id, 4) + 2*_bit(id, 1))*scale + offset;
 			int b = (_bit(id, 5) + 2*_bit(id, 2))*scale + offset;
 
-			return Color(r, g, b);
+			return Color::clamped_rgb(r, g, b);
 		}
 
 		Color const _color = _session_color(_id);
@@ -348,50 +348,6 @@ class Nitlog::Root : public Root_component<Session_component>
 };
 
 
-class Log_view
-{
-	private:
-
-		Gui::Session_client      &_gui;
-		Gui::Point                _pos;
-		Gui::Area                 _size;
-		Gui::Session::View_handle _handle;
-
-		typedef Gui::Session::Command     Command;
-		typedef Gui::Session::View_handle View_handle;
-
-	public:
-
-		Log_view(Gui::Session_client &gui, Gui::Rect geometry)
-		:
-			_gui(gui),
-			_pos(geometry.p1()),
-			_size(geometry.area()),
-			_handle(gui.create_view())
-		{
-			move(_pos);
-			top();
-		}
-
-		void top()
-		{
-			_gui.enqueue<Command::To_front>(_handle, View_handle());
-			_gui.execute();
-		}
-
-		void move(Gui::Point pos)
-		{
-			_pos = pos;
-
-			Gui::Rect rect(_pos, _size);
-			_gui.enqueue<Command::Geometry>(_handle, rect);
-			_gui.execute();
-		}
-
-		Gui::Point pos() const { return _pos; }
-};
-
-
 struct Nitlog::Main
 {
 	Env &_env;
@@ -401,8 +357,8 @@ struct Nitlog::Main
 	Tff_font _font { _binary_mono_tff_start, _glyph_buffer };
 
 	/* calculate size of log view in pixels */
-	unsigned const _win_w = _font.bounding_box().w() * LOG_W + 2;
-	unsigned const _win_h = _font.bounding_box().h() * LOG_H + 2;
+	unsigned const _win_w = _font.bounding_box().w * LOG_W + 2;
+	unsigned const _win_h = _font.bounding_box().h * LOG_H + 2;
 
 	/* init sessions to the required external services */
 	Gui::Connection   _gui   { _env };
@@ -418,7 +374,7 @@ struct Nitlog::Main
 	Sliced_heap _sliced_heap { _env.ram(), _env.rm() };
 
 	/* create log window */
-	Attached_dataspace _fb_ds { _env.rm(), _gui.framebuffer()->dataspace() };
+	Attached_dataspace _fb_ds { _env.rm(), _gui.framebuffer.dataspace() };
 
 	Canvas<Pixel_rgb888> _canvas { _fb_ds.local_addr<Pixel_rgb888>(),
 	                               ::Area(_win_w, _win_h) };
@@ -437,15 +393,12 @@ struct Nitlog::Main
 
 	bool const _canvas_initialized = (_init_canvas(), true);
 
-	/* create view for log window */
-	Gui::Rect const _view_geometry { Gui::Point(20, 20),
-	                                 Gui::Area(_win_w, _win_h) };
-	Log_view _view { _gui, _view_geometry };
+	Gui::Top_level_view _view { _gui, { { 20, 20 }, { _win_w, _win_h } } };
 
 	/* create root interface for service */
 	Root _root { _env.ep(), _sliced_heap, _log_window };
 
-	Attached_dataspace _ev_ds { _env.rm(), _gui.input()->dataspace() };
+	Attached_dataspace _ev_ds { _env.rm(), _gui.input.dataspace() };
 
 	Gui::Point const _initial_mouse_pos { -1, -1 };
 
@@ -460,7 +413,7 @@ struct Nitlog::Main
 	{
 		Input::Event const *ev_buf = _ev_ds.local_addr<Input::Event const>();
 
-		for (int i = 0, num_ev = _gui.input()->flush(); i < num_ev; i++) {
+		for (int i = 0, num_ev = _gui.input.flush(); i < num_ev; i++) {
 
 			Input::Event const &ev = ev_buf[i];
 
@@ -473,14 +426,14 @@ struct Nitlog::Main
 				Gui::Point const mouse_pos(x, y);
 
 				if (_key_cnt && _old_mouse_pos != _initial_mouse_pos)
-					_view.move(_view.pos() + mouse_pos - _old_mouse_pos);
+					_view.at(_view.at() + mouse_pos - _old_mouse_pos);
 
 				_old_mouse_pos = mouse_pos;
 			});
 
 			/* find selected view and bring it to front */
 			if (ev.press() && _key_cnt == 1)
-				_view.top();
+				_view.front();
 
 		}
 	}
@@ -491,7 +444,7 @@ struct Nitlog::Main
 	void _handle_timer()
 	{
 		if (_log_window.draw())
-			_gui.framebuffer()->refresh(0, 0, _win_w, _win_h);
+			_gui.framebuffer.refresh(0, 0, _win_w, _win_h);
 	}
 
 	Main(Env &env) : _env(env)
@@ -502,7 +455,7 @@ struct Nitlog::Main
 		_timer.sigh(_timer_handler);
 		_timer.trigger_periodic(20*1000);
 
-		_gui.input()->sigh(_input_handler);
+		_gui.input.sigh(_input_handler);
 	}
 };
 

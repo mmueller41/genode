@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2019-2022 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -21,10 +21,16 @@ using namespace Kernel;
 unsigned Timer::interrupt_id() const { return Board::TIMER_IRQ; }
 
 
-unsigned long Board::Timer::_freq() { return Genode::Cpu::Cntfrq::read(); }
+unsigned long Board::Timer::_freq() { return Core::Cpu::Cntfrq::read(); }
 
 
 Board::Timer::Timer(unsigned) : ticks_per_ms((unsigned)(_freq() / 1000))
+{
+	init();
+}
+
+
+void Board::Timer::init()
 {
 	Cpu::Cntp_ctl::access_t ctl = 0;
 	Cpu::Cntp_ctl::Enable::set(ctl, 1);
@@ -34,7 +40,6 @@ Board::Timer::Timer(unsigned) : ticks_per_ms((unsigned)(_freq() / 1000))
 
 void Timer::_start_one_shot(time_t const ticks)
 {
-	_device.last_time = Cpu::Cntpct::read();
 	Cpu::Cntp_tval::write((Cpu::Cntp_tval::access_t)ticks);
 	Cpu::Cntp_ctl::access_t ctl = Cpu::Cntp_ctl::read();
 	Cpu::Cntp_ctl::Istatus::set(ctl, 0);
@@ -44,7 +49,7 @@ void Timer::_start_one_shot(time_t const ticks)
 
 time_t Timer::_duration() const
 {
-	return Cpu::Cntpct::read() - _device.last_time;
+	return Cpu::Cntpct::read() - _time;
 }
 
 
@@ -53,7 +58,7 @@ time_t Timer::ticks_to_us(time_t const ticks) const {
 
 
 time_t Timer::us_to_ticks(time_t const us) const {
-	return (us / 1000) * _device.ticks_per_ms; }
+	return (us * _device.ticks_per_ms) / 1000; }
 
 
 time_t Timer::_max_value() const {

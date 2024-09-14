@@ -45,6 +45,8 @@ namespace Depot_deploy {
 		void print(Genode::Output &output) const;
 	};
 
+	using Log_prefix = String<256>;
+
 	class Child;
 	class Event;
 	class Timeout_event;
@@ -169,16 +171,31 @@ class Depot_deploy::Log_event : public Event,
 				}
 		};
 
-		Genode::Allocator          &_alloc;
-		size_t                      _log_offset     { 0 };
-		size_t                      _pattern_offset { 0 };
-		Genode::Fifo<Plain_string>  _plain_strings  { };
+		Genode::Allocator &_alloc;
 
-		void _replace_wildcards_with_0();
+		/*
+		 * Defines a point inside the concatenation of all chunks of the
+		 * buffered log. Up to that point the buffered log has been processed
+		 * by this log event already.
+		 */
+		size_t _log_offset { 0 };
+
+		/*
+		 * Defines a point inside the concatenation of all chunks of the log
+		 * pattern of this event. Up to that point the pattern could be
+		 * successfully matched against the log so far.
+		 */
+		size_t _pattern_offset { 0 };
+
+		Genode::Fifo<Plain_string> _plain_strings  { };
+		Log_prefix const _log_prefix;
+		bool const _log_prefix_valid;
 
 		Log_event(Log_event const &);
 
 		Log_event const & operator=(const Log_event&);
+
+		Log_prefix _init_log_prefix(Xml_node const &xml);
 
 	public:
 
@@ -223,13 +240,13 @@ class Depot_deploy::Child : public List_model<Child>::Element
 {
 	public:
 
-		typedef String<100> Name;
-		typedef String<80>  Binary_name;
-		typedef String<80>  Config_name;
-		typedef String<32>  Depot_rom_server;
-		typedef String<16>  State_name;
-		typedef String<100> Launcher_name;
-		typedef String<128> Conclusion;
+		using Name             = String<100>;
+		using Binary_name      = String<80>;
+		using Config_name      = String<80>;
+		using Depot_rom_server = String<32>;
+		using State_name       = String<16>;
+		using Launcher_name    = String<100>;
+		using Conclusion       = String<128>;
 
 	private:
 
@@ -387,6 +404,19 @@ class Depot_deploy::Child : public List_model<Child>::Element
 
 			return _condition != orig_condition;
 		}
+
+		/**
+		 * List_model::Element
+		 */
+		bool matches(Xml_node const &node) const
+		{
+			return node.attribute_value("name", Child::Name()) == _name;
+		}
+
+		/**
+		 * List_model::Element
+		 */
+		static bool type_matches(Xml_node const &node) { return node.has_type("start"); }
 
 
 		/***************

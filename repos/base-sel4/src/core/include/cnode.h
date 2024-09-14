@@ -15,21 +15,20 @@
 #define _CORE__INCLUDE__CNODE_H_
 
 /* Genode includes */
-#include <util/noncopyable.h>
 #include <base/exception.h>
 #include <base/allocator.h>
 
 /* core includes */
 #include <kernel_object.h>
 
-namespace Genode {
+namespace Core {
 
 	class Cnode_base;
 	class Cnode;
 }
 
 
-class Genode::Cnode_base
+class Core::Cnode_base
 {
 	private:
 
@@ -38,7 +37,7 @@ class Genode::Cnode_base
 
 	public:
 
-		typedef Cnode_index Index;
+		using Index = Cnode_index;
 
 		Cap_sel sel()       const { return _sel; }
 		uint8_t size_log2() const { return _size_log2; }
@@ -127,7 +126,7 @@ class Genode::Cnode_base
 };
 
 
-class Genode::Cnode : public Cnode_base, Noncopyable
+class Core::Cnode : public Cnode_base, Noncopyable
 {
 	private:
 

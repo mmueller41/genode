@@ -36,7 +36,7 @@ struct Glyph_painter
 		int decimal() const { return value >> 8; }
 	};
 
-	typedef Genode::Point<Fixpoint_number> Position;
+	using Position = Genode::Point<Fixpoint_number>;
 
 
 	struct Glyph
@@ -77,8 +77,8 @@ struct Glyph_painter
 	                         int const clip_left, int const clip_right,
 	                         PT const color, int const alpha)
 	{
-		Fixpoint_number const x = position.x();
-		int             const y = position.y().decimal();
+		Fixpoint_number const x = position.x;
+		int             const y = position.y.decimal();
 
 		int const dst_y1 = y + glyph.vpos,
 		          dst_y2 = dst_y1 + glyph.height;
@@ -106,7 +106,7 @@ struct Glyph_painter
 		PT *dst_column   = dst + dst_x
 		                 + dst_line_len*(dst_y1 + clipped_from_top);
 
-		typedef Glyph::Opacity Opacity;
+		using Opacity = Glyph::Opacity;
 		Opacity const *glyph_column = glyph.values + glyph_x
 		                            + glyph_line_len*clipped_from_top;
 

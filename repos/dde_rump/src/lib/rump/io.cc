@@ -17,6 +17,7 @@
 #include <block_session/connection.h>
 #include <rump/env.h>
 #include <rump_fs/fs.h>
+#include <format/snprintf.h>
 
 static const bool verbose = false;
 
@@ -33,7 +34,7 @@ class Io_signal_blockade : public Genode::Io_signal_handler<Io_signal_blockade>
 
 		bool _signal_handler_called { false };
 
-		typedef Genode::Registered_no_delete<Genode::Blockade> Registered_blockade;
+		using Registered_blockade = Genode::Registered_no_delete<Genode::Blockade>;
 		Genode::Registry<Registered_blockade> _blockades;
 
 		void _handle_io_signal()
@@ -108,6 +109,8 @@ class Backend
 		Genode::Allocator_avl  _alloc   { &Rump::env().heap() };
 		Genode::Entrypoint    &_ep      {  Rump::env().env().ep() };
 
+		Rump_fs_user_wakeup &_user_wakeup;
+
 		/*
 		 * The tx_buf_size is chosen such that one I/O request fits into the
 		 * I/O buffer at once. The size of NetBSD's I/O requests is bounded by
@@ -120,6 +123,15 @@ class Backend
 		Genode::Mutex          _session_mutex;
 		Io_signal_blockade     _io_signal_blockade { _ep,
 		                                             Genode::Thread::myself() };
+
+		Genode::Io_signal_handler<Backend> _io_signal_handler {
+			_ep, *this, &Backend::_handle_io_signal };
+
+		void _handle_io_signal()
+		{
+			_io_signal_blockade.dispatch(1);
+			_user_wakeup.wakeup_rump_fs_user();
+		}
 
 		int _blocked_for_synchronous_io = 0;
 
@@ -190,9 +202,11 @@ class Backend
 
 	public:
 
-		Backend()
+		Backend(Rump_fs_user_wakeup &user_wakeup)
+		:
+			_user_wakeup(user_wakeup)
 		{
-			_session.sigh(_io_signal_blockade);
+			_session.sigh(_io_signal_handler);
 		}
 
 		uint64_t block_count() const { return _info.block_count; }
@@ -214,7 +228,7 @@ class Backend
 				.type         = (op & RUMPUSER_BIO_WRITE)
 				              ? Block::Operation::Type::WRITE
 				              : Block::Operation::Type::READ,
-				.block_number = offset / _info.block_size,
+				.block_number = block_number_t(offset / _info.block_size),
 				.count        = length / _info.block_size };
 
 			bool const success = _synchronous_io(data, operation);
@@ -230,9 +244,15 @@ class Backend
 };
 
 
+static Rump_fs_user_wakeup *_user_wakeup_ptr = nullptr;
+
+
 static Backend &backend()
 {
-	static Backend _b;
+	if (!_user_wakeup_ptr)
+		Genode::error("rump: missing call of rump_io_backend_init");
+
+	static Backend _b { *_user_wakeup_ptr };
 	return _b;
 }
 
@@ -315,8 +335,10 @@ extern "C" void rumpns_modctor_msdos(void);
 extern "C" void rumpns_modctor_wapbl(void);
 
 
-void rump_io_backend_init()
+void rump_io_backend_init(Rump_fs_user_wakeup &user_wakeup)
 {
+	_user_wakeup_ptr = &user_wakeup;
+
 	/* call init/constructor functions of rump_fs.lib.so (order is important!) */
 	rumpcompctor_RUMP_COMPONENT_KERN_SYSCALL();
 	rumpns_modctor_wapbl();
@@ -340,7 +362,7 @@ void rumpuser_dprintf(const char *format, ...)
 	va_start(list, format);
 
 	char buf[128] { };
-	Genode::String_console(buf, sizeof(buf)).vprintf(format, list);
+	Format::String_console(buf, sizeof(buf)).vprintf(format, list);
 	Genode::log(Genode::Cstring(buf));
 
 	va_end(list);

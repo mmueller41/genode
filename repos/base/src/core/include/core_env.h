@@ -17,7 +17,6 @@
 
 /* Genode includes */
 #include <base/env.h>
-#include <deprecated/env.h>
 
 /* base-internal includes */
 #include <base/internal/globals.h>
@@ -29,14 +28,14 @@
 #include <synced_ram_allocator.h>
 #include <assertion.h>
 
-namespace Genode {
+namespace Core {
 
 	class Core_env;
 	extern Core_env &core_env();
 }
 
 
-class Genode::Core_env : public Env_deprecated, Noncopyable
+class Core::Core_env : public Noncopyable
 {
 	private:
 
@@ -76,12 +75,11 @@ class Genode::Core_env : public Env_deprecated, Noncopyable
 			            _region_map,
 			            *((Pager_entrypoint *)nullptr),
 			            "" /* args to native PD */,
-			            platform_specific().core_mem_alloc())
+			            platform_specific().core_mem_alloc(),
+			            *((Core::System_control *)nullptr))
 		{
 			_pd_session.init_cap_and_ram_accounts();
 		}
-
-		~Core_env() { parent()->exit(0); }
 
 		Rpc_entrypoint &entrypoint()    { return _entrypoint; }
 		Ram_allocator  &ram_allocator() { return _synced_ram_allocator; }
@@ -89,16 +87,12 @@ class Genode::Core_env : public Env_deprecated, Noncopyable
 
 		Rpc_entrypoint &signal_ep();
 
-		/******************************
-		 ** Env_deprecated interface **
-		 ******************************/
-
-		Parent                 *parent()          override { return nullptr; }
-		Region_map             *rm_session()      override { return &_region_map; }
-		Pd_session             *pd_session()      override { return &_pd_session; }
-		Cpu_session            *cpu_session()     override { ASSERT_NEVER_CALLED; }
-		Cpu_session_capability  cpu_session_cap() override { ASSERT_NEVER_CALLED; }
-		Pd_session_capability   pd_session_cap()  override { return _pd_session.cap(); }
+		Parent                 *parent()          { return nullptr; }
+		Region_map             *rm_session()      { return &_region_map; }
+		Pd_session             *pd_session()      { return &_pd_session; }
+		Cpu_session            *cpu_session()     { ASSERT_NEVER_CALLED; }
+		Cpu_session_capability  cpu_session_cap() { ASSERT_NEVER_CALLED; }
+		Pd_session_capability   pd_session_cap()  { return _pd_session.cap(); }
 };
 
 #endif /* _CORE__INCLUDE__CORE_ENV_H_ */

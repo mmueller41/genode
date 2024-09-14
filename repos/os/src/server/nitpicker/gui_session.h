@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2006-2017 Genode Labs GmbH
+ * Copyright (C) 2006-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -25,31 +25,20 @@
 #include <gui_session/gui_session.h>
 
 /* local includes */
-#include "canvas.h"
-#include "domain_registry.h"
-#include "framebuffer_session.h"
-#include "input_session.h"
-#include "focus.h"
-#include "view.h"
+#include <canvas.h>
+#include <domain_registry.h>
+#include <framebuffer_session.h>
+#include <input_session.h>
+#include <focus.h>
+#include <view.h>
 
 namespace Nitpicker {
 
-	class Visibility_controller;
 	class Gui_session;
 	class View;
 
-	typedef List<Gui_session> Session_list;
+	using Session_list = List<Gui_session>;
 }
-
-
-struct Nitpicker::Visibility_controller : Interface
-{
-	using Suffix = Gui::Session::Label;
-
-	virtual void hide_matching_sessions(Session_label const &, Suffix const &) = 0;
-
-	virtual void show_matching_sessions(Session_label const &, Suffix const &) = 0;
-};
 
 
 class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
@@ -58,6 +47,35 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
                                private Session_list::Element
 {
 	private:
+
+		struct View_ref : Gui::View_ref
+		{
+			Weak_ptr<View> _weak_ptr;
+
+			View_ids::Element id;
+
+			View_ref(Weak_ptr<View> view, View_ids &ids)
+			: _weak_ptr(view), id(*this, ids) { }
+
+			View_ref(Weak_ptr<View> view, View_ids &ids, View_id id)
+			: _weak_ptr(view), id(*this, ids, id) { }
+
+			auto with_view(auto const &fn, auto const &missing_fn) -> decltype(missing_fn())
+			{
+				/*
+				 * Release the lock before calling 'fn' to allow the nesting of
+				 * 'with_view' calls. The locking aspect of the weak ptr is not
+				 * needed here because the component is single-threaded.
+				 */
+				View *ptr = nullptr;
+				{
+					Locked_ptr<View> view(_weak_ptr);
+					if (view.valid())
+						ptr = view.operator->();
+				}
+				return ptr ? fn(*ptr) : missing_fn();
+			}
+		};
 
 		friend class List<Gui_session>;
 
@@ -116,6 +134,8 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		Tslab<View, 4000> _view_alloc { &_session_alloc };
 
+		Tslab<View_ref, 4000> _view_ref_alloc { &_session_alloc };
+
 		/* capabilities for sub sessions */
 		Framebuffer::Session_capability _framebuffer_session_cap;
 		Input::Session_capability       _input_session_cap;
@@ -133,13 +153,9 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		Command_buffer &_command_buffer = *_command_ds.local_addr<Command_buffer>();
 
-		typedef Handle_registry<View_handle, View> View_handle_registry;
-
-		View_handle_registry _view_handle_registry;
+		View_ids _view_ids { };
 
 		Reporter &_focus_reporter;
-
-		Visibility_controller &_visibility_controller;
 
 		Gui_session *_forwarded_focus = nullptr;
 
@@ -154,18 +170,25 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 			return _domain ? _domain->phys_pos(pos, screen_area) : Point(0, 0);
 		}
 
-		/**
-		 * Helper for performing sanity checks in OP_TO_FRONT and OP_TO_BACK
-		 *
-		 * We have to check for the equality of both the specified view and
-		 * neighbor. If both arguments refer to the same view, the creation of
-		 * locked pointers for both views would result in a deadlock.
-		 */
-		bool _views_are_equal(View_handle, View_handle);
-
 		void _execute_command(Command const &);
 
 		void _destroy_view(View &);
+
+		void _adopt_new_view(View &);
+
+		View_result _create_view_and_ref(View_id, View_attr const &attr, auto const &);
+
+		auto _with_view(View_id id, auto const &fn, auto const &missing_fn)
+		-> decltype(missing_fn())
+		{
+			return _view_ids.apply<View_ref>(id,
+				[&] (View_ref &view_ref) {
+					return view_ref.with_view(
+						[&] (View &view)        { return fn(view); },
+						[&] /* view vanished */ { return missing_fn(); });
+				},
+				[&] /* ID does not exist */ { return missing_fn(); });
+		}
 
 	public:
 
@@ -179,8 +202,7 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		            View                  &pointer_origin,
 		            View                  &builtin_background,
 		            bool                   provides_default_bg,
-		            Reporter              &focus_reporter,
-		            Visibility_controller &visibility_controller)
+		            Reporter              &focus_reporter)
 		:
 			Session_object(env.ep(), resources, label, diag),
 			_env(env),
@@ -194,15 +216,16 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 			_framebuffer_session_cap(_env.ep().manage(_framebuffer_session_component)),
 			_input_session_cap(_env.ep().manage(_input_session_component)),
 			_provides_default_bg(provides_default_bg),
-			_view_handle_registry(_session_alloc),
-			_focus_reporter(focus_reporter),
-			_visibility_controller(visibility_controller)
+			_focus_reporter(focus_reporter)
 		{ }
 
 		~Gui_session()
 		{
 			_env.ep().dissolve(_framebuffer_session_component);
 			_env.ep().dissolve(_input_session_component);
+
+			while (_view_ids.apply_any<View_ref>([&] (View_ref &view_ref) {
+				destroy(_view_ref_alloc, &view_ref); }));
 
 			destroy_all_views();
 		}
@@ -275,11 +298,11 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 			if (!_input_mask || !_texture.valid()) return 0;
 
 			/* check boundaries */
-			if ((unsigned)p.x() >= _texture.size().w()
-			 || (unsigned)p.y() >= _texture.size().h())
+			if ((unsigned)p.x >= _texture.size().w
+			 || (unsigned)p.y >= _texture.size().h)
 				return 0;
 
-			return _input_mask[p.y()*_texture.size().w() + p.x()];
+			return _input_mask[p.y*_texture.size().w + p.x];
 		}
 
 		void submit_input_event(Input::Event e) override;
@@ -351,25 +374,27 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		}
 
 
-		/*********************************
+		/***************************
 		 ** GUI session interface **
-		 *********************************/
+		 ***************************/
 
-		Framebuffer::Session_capability framebuffer_session() override {
+		Framebuffer::Session_capability framebuffer() override {
 			return _framebuffer_session_cap; }
 
-		Input::Session_capability input_session() override {
+		Input::Session_capability input() override {
 			return _input_session_cap; }
 
-		View_handle create_view(View_handle parent_handle) override;
+		View_result view(View_id, View_attr const &attr) override;
 
-		void destroy_view(View_handle handle) override;
+		Child_view_result child_view(View_id, View_id, View_attr const &attr) override;
 
-		View_handle view_handle(View_capability view_cap, View_handle handle) override;
+		void destroy_view(View_id) override;
 
-		View_capability view_capability(View_handle handle) override;
+		Associate_result associate(View_id, View_capability) override;
 
-		void release_view_handle(View_handle handle) override;
+		View_capability_result view_capability(View_id) override;
+
+		void release_view_id(View_id) override;
 
 		Dataspace_capability command_dataspace() override { return _command_ds.cap(); }
 
@@ -379,11 +404,9 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		void mode_sigh(Signal_context_capability sigh) override { _mode_sigh = sigh; }
 
-		void buffer(Framebuffer::Mode mode, bool use_alpha) override;
+		Buffer_result buffer(Framebuffer::Mode, bool) override;
 
-		void focus(Capability<Gui::Session> session_cap) override;
-
-		void session_control(Label suffix, Session_control control) override;
+		void focus(Capability<Gui::Session>) override;
 
 
 		/*******************************

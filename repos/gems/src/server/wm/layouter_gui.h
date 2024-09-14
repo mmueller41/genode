@@ -27,7 +27,7 @@ namespace Wm {
 struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
 {
 	using View_capability = Gui::View_capability;
-	using View_handle     = Gui::Session::View_handle;
+	using View_id         = Gui::View_id;
 
 	Input::Session_capability _input_session_cap;
 
@@ -52,31 +52,39 @@ struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
 	 ** GUI session interface **
 	 ***************************/
 	
-	Framebuffer::Session_capability framebuffer_session() override
+	Framebuffer::Session_capability framebuffer() override
 	{
 		return Framebuffer::Session_capability();
 	}
 
-	Input::Session_capability input_session() override
+	Input::Session_capability input() override
 	{
 		return _input_session_cap;
 	}
 
-	View_handle create_view(View_handle) override { return View_handle(); }
-
-	void destroy_view(View_handle) override { }
-
-	View_handle view_handle(View_capability, View_handle) override
+	View_result view(View_id, View_attr const &) override
 	{
-		return View_handle();
+		return View_result::OK;
 	}
 
-	View_capability view_capability(View_handle) override
+	Child_view_result child_view(View_id, View_id, View_attr const &) override
+	{
+		return Child_view_result::OK;
+	}
+
+	void destroy_view(View_id) override { }
+
+	Associate_result associate(View_id, View_capability) override
+	{
+		return Associate_result::OK;
+	}
+
+	View_capability_result view_capability(View_id) override
 	{
 		return View_capability();
 	}
 
-	void release_view_handle(View_handle) override { }
+	void release_view_id(View_id) override { }
 
 	Genode::Dataspace_capability command_dataspace() override
 	{
@@ -98,7 +106,7 @@ struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
 		_mode_sigh_gui.mode_sigh(sigh);
 	}
 
-	void buffer(Framebuffer::Mode, bool) override { }
+	Buffer_result buffer(Framebuffer::Mode, bool) override { return Buffer_result::OK; }
 
 	void focus(Genode::Capability<Gui::Session>) override { }
 };

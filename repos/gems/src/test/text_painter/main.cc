@@ -33,9 +33,9 @@
 namespace Test {
 	using namespace Genode;
 
-	typedef Surface_base::Point Point;
-	typedef Surface_base::Area  Area;
-	typedef Surface_base::Rect  Rect;
+	using Point = Surface_base::Point;
+	using Area  = Surface_base::Area;
+	using Rect  = Surface_base::Rect;
 	struct Main;
 };
 
@@ -55,7 +55,7 @@ struct Test::Main
 
 	Attached_dataspace _fb_ds { _env.rm(), _fb.dataspace() };
 
-	typedef Pixel_rgb888 PT;
+	using PT = Pixel_rgb888;
 
 	Surface_base::Area const _size = _fb.mode().area;
 
@@ -80,52 +80,52 @@ struct Test::Main
 
 	Vfs_font _font_4 { _heap, _root, "fonts/regular" };
 
-	void _refresh() { _fb.refresh(0, 0, _size.w(), _size.h()); }
+	void _refresh() { _fb.refresh(0, 0, _size.w, _size.h); }
 
 	Main(Env &env) : _env(env)
 	{
 		/* test positioning of text */
 		_surface.clip(Rect(Point(0, 0), _size));
-		Box_painter::paint(_surface, Rect(Point(200, 10), Area(250, 50)), Color(0, 100, 0));
+		Box_painter::paint(_surface, Rect(Point(200, 10), Area(250, 50)), Color::rgb(0, 100, 0));
 		Text_painter::paint(_surface,
 		                    Text_painter::Position(200, 10), _font_1,
-		                    Color(255, 255, 255),
+		                    Color::rgb(255, 255, 255),
 		                    "Text aligned at the top-left corner");
 
-		Box_painter::paint(_surface, Rect(Point(200, 100), Area(250, 50)), Color(0, 100, 0));
+		Box_painter::paint(_surface, Rect(Point(200, 100), Area(250, 50)), Color::rgb(0, 100, 0));
 		Text_painter::paint(_surface,
 		                    Text_painter::Position(210, (int)(100 - _font_1.baseline())), _font_1,
-		                    Color(255, 255, 255),
+		                    Color::rgb(255, 255, 255),
 		                    "Baseline of text aligned at the top");
 
 		/* test horizontal clipping boundaries */
 		_surface.clip(Rect(Point(20, 15), Area(40, 300)));
-		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color(150, 20, 10));
+		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color::rgb(150, 20, 10));
 
-		for (int x = 0, y = -30; y < (int)_size.h() + 30; x++, y += _font_2.bounding_box().h())
+		for (int x = 0, y = -30; y < (int)_size.h + 30; x++, y += _font_2.bounding_box().h)
 			Text_painter::paint(_surface,
 			                    Text_painter::Position(x, y), _font_2,
-			                    Color(255, 255, 255),
+			                    Color::rgb(255, 255, 255),
 			                    "Text painter at work");
 
 		/* test horizontal subpixel positioning */
 		_surface.clip(Rect(Point(90, 15), Area(100, 300)));
-		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color(150, 20, 10));
-		float const font_3_h = (float)_font_3.bounding_box().h();
+		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color::rgb(150, 20, 10));
+		float const font_3_h = (float)_font_3.bounding_box().h;
 
-		for (float x = 90, y = -30; y < (float)_size.h() + 30; x += 0.2f, y += font_3_h)
+		for (float x = 90, y = -30; y < (float)_size.h + 30; x += 0.2f, y += font_3_h)
 			Text_painter::paint(_surface,
 			                    Text_painter::Position(x, y), _font_3,
-			                    Color(255, 255, 255),
+			                    Color::rgb(255, 255, 255),
 			                    "This is a real textSub-=_HT-+=%@pixel positioning");
 
 		_surface.clip(Rect(Point(90, 320), Area(100, 300)));
-		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color(255, 255, 255));
+		Box_painter::paint(_surface, Rect(Point(0, 0), _size), Color::rgb(255, 255, 255));
 
-		for (float x = 90, y = 300; y < (float)_size.h() + 30; x += 0.2f, y += font_3_h)
+		for (float x = 90, y = 300; y < (float)_size.h + 30; x += 0.2f, y += font_3_h)
 			Text_painter::paint(_surface,
 			                    Text_painter::Position(x, y), _font_3,
-			                    Color(0, 0, 0),
+			                    Color::rgb(0, 0, 0),
 			                    "This is a real textSub-=_HT-+=%@pixel positioning");
 		_refresh();
 
@@ -151,7 +151,7 @@ struct Test::Main
 		for (unsigned x = 0; x < 256; x++)
 			Box_painter::paint(_surface,
 			                   Rect(Point(x + 512, 280 - lut.value[x]), Area(1, 1)),
-			                   Color(255, 255, 255));
+			                   Color::rgb(255, 255, 255));
 		_refresh();
 
 		_surface.clip(Rect(Point(0, 0), _size));
@@ -166,7 +166,7 @@ struct Test::Main
 				Text_painter::paint(_surface,
 				                    Text_painter::Position(260 + (i*133 % 500),
 				                                           320 + (i*87  % 400)),
-				                    _font_4, Color(150 + i*73, 0, 200),
+				                    _font_4, Color::clamped_rgb(150 + i*73, 0, 200),
 				                    "Glyphs obtained from VFS");
 
 			Genode::uint64_t const end_us = timer.elapsed_us();
@@ -190,7 +190,7 @@ struct Test::Main
 				Text_painter::paint(_surface,
 				                    Text_painter::Position(260 + (i*83  % 500),
 				                                           320 + (i*153 % 400)),
-				                    cached_font, Color(30, (int)limit_kib, 150 + i*73),
+				                    cached_font, Color::clamped_rgb(30, (int)limit_kib, 150 + i*73),
 				                    "Glyphs obtained from VFS");
 
 			Genode::uint64_t const end_us = timer.elapsed_us();

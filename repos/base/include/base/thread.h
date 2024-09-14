@@ -28,7 +28,6 @@ namespace Genode {
 	class Thread;
 	class Stack;
 	class Env;
-	template <unsigned> class Thread_deprecated;
 }
 
 
@@ -46,9 +45,9 @@ class Genode::Thread
 		class Stack_too_large    : public Exception { };
 		class Stack_alloc_failed : public Exception { };
 
-		typedef Affinity::Location  Location;
-		typedef Cpu_session::Name   Name;
-		typedef Cpu_session::Weight Weight;
+		using Location = Affinity::Location;
+		using Name     = Cpu_session::Name;
+		using Weight   = Cpu_session::Weight;
 
 		struct Stack_info { addr_t base; addr_t top;
 		                    addr_t libc_tls_pointer_offset; };
@@ -96,11 +95,12 @@ class Genode::Thread
 	protected:
 
 		/**
-		 * Capability for this thread (set by _start())
+		 * Capability for this thread or creation error (set by _start())
 		 *
 		 * Used if thread creation involves core's CPU service.
 		 */
-		Thread_capability _thread_cap { };
+		Cpu_session::Create_thread_result _thread_cap =
+			Cpu_session::Create_thread_error::DENIED;
 
 		/**
 		 * Pointer to cpu session used for this thread
@@ -167,11 +167,6 @@ class Genode::Thread
 		 * Constructor
 		 *
 		 * \noapi
-		 *
-		 * FIXME: With type = Forked_main_thread the stack allocation
-		 *        gets skipped but we should at least set Stack::ds_cap in a
-		 *        way that it references the dataspace of the already attached
-		 *        stack.
 		 *
 		 * \deprecated  superseded by the 'Thread(Env &...' constructor
 		 */
@@ -271,13 +266,15 @@ class Genode::Thread
 		 */
 		virtual void entry() = 0;
 
+		enum class Start_result { OK, DENIED };
+
 		/**
 		 * Start execution of the thread
 		 *
 		 * This method is virtual to enable the customization of threads
 		 * used as server activation.
 		 */
-		virtual void start();
+		virtual Start_result start();
 
 		/**
 		 * Request name of thread
@@ -316,7 +313,15 @@ class Genode::Thread
 		/**
 		 * Request capability of thread
 		 */
-		Thread_capability cap() const { return _thread_cap; }
+		Thread_capability cap() const
+		{
+			return _thread_cap.convert<Thread_capability>(
+				[&] (Thread_capability cap) { return cap; },
+				[&] (auto) {
+					error("attempt to obtain cap of incomplete thread");
+					return Thread_capability();
+				});
+		}
 
 		/**
 		 * Return kernel-specific thread meta data
@@ -421,8 +426,7 @@ class Genode::Thread
 		/**
 		 * Log trace event as defined in base/trace/events.h
 		 */
-		template <typename EVENT>
-		static void trace(EVENT const *event) { _logger()->log(event); }
+		static void trace(auto const *event) { _logger()->log(event); }
 
 		/**
 		 * Thread affinity

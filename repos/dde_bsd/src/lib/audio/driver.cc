@@ -19,6 +19,9 @@
 #include <os/reporter.h>
 #include <util/xml_node.h>
 
+/* format-string includes */
+#include <format/snprintf.h>
+
 /* local includes */
 #include <audio/audio.h>
 #include <bsd.h>
@@ -82,6 +85,8 @@ struct Mixer
 {
 	mixer_devinfo_t *info;
 	unsigned         num;
+
+	bool report_state;
 };
 
 
@@ -143,7 +148,7 @@ static bool set_mixer_value(Mixer &mixer, char const * const field,
 		char const * const class_name = mixer.info[mixer_class].label.name;
 		char const * const name       = info.label.name;
 
-		Genode::snprintf(buffer, sizeof(buffer), "%s.%s", class_name, name);
+		Format::snprintf(buffer, sizeof(buffer), "%s.%s", class_name, name);
 		if (Genode::strcmp(field, buffer) != 0)
 			continue;
 
@@ -238,7 +243,7 @@ static char const *get_mixer_value(mixer_devinfo_t const *info)
 		{
 			for (int i = 0; i < info->un.e.num_mem; i++)
 				if (ctrl.un.ord == info->un.e.member[i].ord) {
-					Genode::snprintf(buffer, sizeof(buffer),
+					Format::snprintf(buffer, sizeof(buffer),
 					                 "%s", info->un.e.member[i].label.name);
 					break;
 				}
@@ -250,7 +255,7 @@ static char const *get_mixer_value(mixer_devinfo_t const *info)
 			Genode::size_t n = 0;
 			for (int i = 0; i < info->un.s.num_mem; i++)
 				if (ctrl.un.mask & info->un.s.member[i].mask)
-					n += Genode::snprintf(p + n, sizeof(buffer) - n,
+					n += Format::snprintf(p + n, sizeof(buffer) - n,
 					                      "%s%s", n ? "," : "",
 					                      info->un.s.member[i].label.name);
 			break;
@@ -258,11 +263,11 @@ static char const *get_mixer_value(mixer_devinfo_t const *info)
 	case AUDIO_MIXER_VALUE:
 		{
 			if (ctrl.un.value.num_channels == 2)
-				Genode::snprintf(buffer, sizeof(buffer), "%d,%d",
+				Format::snprintf(buffer, sizeof(buffer), "%d,%d",
 				                 ctrl.un.value.level[0],
 				                 ctrl.un.value.level[1]);
 			else
-				Genode::snprintf(buffer, sizeof(buffer), "%d",
+				Format::snprintf(buffer, sizeof(buffer), "%d",
 				                 ctrl.un.value.level[0]);
 			break;
 		}
@@ -339,14 +344,50 @@ static bool open_audio_device(dev_t dev)
 }
 
 
-static void configure_mixer(Genode::Env &env, Mixer &mixer, Genode::Xml_node config)
+static void report_mixer_state(Mixer &mixer, Genode::Env *env = nullptr)
 {
 	using namespace Genode;
 
-	static Reporter mixer_reporter(env, "mixer_state");
+	static Constructible<Expanding_reporter> mixer_reporter { };
 
-	bool const v = config.attribute_value<bool>("report_mixer", false);
-	mixer_reporter.enabled(v);
+	if (!mixer.report_state)
+		return;
+
+	if (env && !mixer_reporter.constructed())
+		mixer_reporter.construct(*env, "mixer_state", "mixer_state");
+
+	if (!mixer_reporter.constructed())
+		return;
+
+	mixer_reporter->generate([&] (Xml_generator &xml) {
+
+		for (unsigned i = 0; i < mixer.num; i++) {
+			if (mixer.info[i].type == AUDIO_MIXER_CLASS)
+				continue;
+
+			unsigned mixer_class          = mixer.info[i].mixer_class;
+			char const * const class_name = mixer.info[mixer_class].label.name;
+			char const * const name       = mixer.info[i].label.name;
+			char const * const value      = get_mixer_value(&mixer.info[i]);
+
+			if (value) {
+				xml.node("mixer", [&]() {
+					char tmp[64];
+					Format::snprintf(tmp, sizeof(tmp), "%s.%s",
+					                 class_name, name);
+
+					xml.attribute("field", tmp);
+					xml.attribute("value", value);
+				});
+			}
+		}
+	});
+}
+
+
+static void configure_mixer(Genode::Env &env, Mixer &mixer, Genode::Xml_node config)
+{
+	using namespace Genode;
 
 	config.for_each_sub_node("mixer", [&] (Xml_node node) {
 
@@ -359,31 +400,8 @@ static void configure_mixer(Genode::Env &env, Mixer &mixer, Genode::Xml_node con
 		set_mixer_value(mixer, field.string(), value.string());
 	});
 
-	if (mixer_reporter.enabled()) try {
-		Genode::Reporter::Xml_generator xml(mixer_reporter, [&]() {
-
-			for (unsigned i = 0; i < mixer.num; i++) {
-				if (mixer.info[i].type == AUDIO_MIXER_CLASS)
-					continue;
-
-				unsigned mixer_class          = mixer.info[i].mixer_class;
-				char const * const class_name = mixer.info[mixer_class].label.name;
-				char const * const name       = mixer.info[i].label.name;
-				char const * const value      = get_mixer_value(&mixer.info[i]);
-
-				if (value) {
-					xml.node("mixer", [&]() {
-						char tmp[64];
-						Genode::snprintf(tmp, sizeof(tmp), "%s.%s",
-						                 class_name, name);
-
-						xml.attribute("field", tmp);
-						xml.attribute("value", value);
-					});
-				}
-			}
-		});
-	} catch (...) { Genode::warning("Could not report mixer state"); }
+	mixer.report_state = config.attribute_value<bool>("report_mixer", false);
+	report_mixer_state(mixer, &env);
 }
 
 
@@ -598,6 +616,8 @@ extern "C" void notify_record()
 extern "C" void notify_hp_sense(int const sense)
 {
 	set_mixer_value(mixer, "record.adc-0:1_source", sense ? "mic2" : "mic");
+
+	report_mixer_state(mixer, nullptr);
 }
 
 

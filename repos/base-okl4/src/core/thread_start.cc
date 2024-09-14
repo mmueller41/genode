@@ -34,20 +34,20 @@ void Thread::_thread_start()
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/* create and start platform thread */
-	native_thread().pt = new (platform_specific().thread_slab())
-		Platform_thread(_stack->name().string());
-
-	platform_specific().core_pd().bind_thread(*native_thread().pt);
+	native_thread().pt = new (Core::platform_specific().thread_slab())
+		Core::Platform_thread(Core::platform_specific().core_pd(), _stack->name().string());
 
 	native_thread().pt->start((void *)_thread_start, stack_top());
+
+	return Start_result::OK;
 }
 
 
 void Thread::_deinit_platform_thread()
 {
 	/* destruct platform thread */
-	destroy(platform_specific().thread_slab(), native_thread().pt);
+	destroy(Core::platform_specific().thread_slab(), native_thread().pt);
 }

@@ -54,6 +54,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	Env  &_env;
 	Heap &_heap;
 
+	Pd_intrinsics &_pd_intrinsics;
+
 	Registry<Parent_service>  _parent_services { };
 	Registry<Routed_service>  _child_services  { };
 	Registry<Local_service>  &_local_services;
@@ -143,7 +145,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	/**
 	 * Child::Cpu_quota_transfer interface
 	 */
-	void transfer_cpu_quota(Cpu_session_capability cap, Cpu_quota quota) override
+	void transfer_cpu_quota(Capability<Pd_session> pd_cap, Pd_session &pd,
+	                        Capability<Cpu_session> cpu, Cpu_quota quota) override
 	{
 		Cpu_quota const remaining { 100 - min(100u, _transferred_cpu.percent) };
 
@@ -154,7 +157,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 		size_t const fraction =
 			Cpu_session::quota_lim_upscale(quota.percent, remaining.percent);
 
-		_env.cpu().transfer_quota(cap, fraction);
+		Child::with_pd_intrinsics(_pd_intrinsics, pd_cap, pd, [&] (auto &intrinsics) {
+			intrinsics.ref_cpu.transfer_quota(cpu, fraction); });
 
 		_transferred_cpu.percent += quota.percent;
 	}
@@ -247,11 +251,43 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 		return *new (_heap) Parent_service(_parent_services, _env, name);
 	}
 
+	/**
+	 * Default way of using the 'Env::pd' as the child's 'ref_pd' and accessing
+	 * the child's address space via RPC.
+	 */
+	struct Default_pd_intrinsics : Pd_intrinsics
+	{
+		Env &_env;
+
+		void with_intrinsics(Capability<Pd_session>, Pd_session &pd, Fn const &fn) override
+		{
+			Region_map_client region_map(pd.address_space());
+
+			Intrinsics intrinsics { _env.pd(),  _env.pd_session_cap(),
+			                        _env.cpu(), _env.cpu_session_cap(), region_map };
+			fn.call(intrinsics);
+		}
+
+		void start_initial_thread(Capability<Cpu_thread> cap, addr_t ip) override
+		{
+			Cpu_thread_client(cap).start(ip, 0);
+		}
+
+		Default_pd_intrinsics(Env &env) : _env(env) { }
+
+	} _default_pd_intrinsics { _env };
+
+	Library(Env &env, Heap &heap, Registry<Local_service> &local_services,
+	        State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
+	:
+		_env(env), _heap(heap), _pd_intrinsics(pd_intrinsics),
+		_local_services(local_services), _state_reporter(_env, *this, state_handler)
+	{ }
+
 	Library(Env &env, Heap &heap, Registry<Local_service> &local_services,
 	        State_handler &state_handler)
 	:
-		_env(env), _heap(heap), _local_services(local_services),
-		_state_reporter(_env, *this, state_handler)
+		Library(env, heap, local_services, state_handler, _default_pd_intrinsics)
 	{ }
 
 	void apply_config(Xml_node const &);
@@ -341,7 +377,8 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 			      Child::Id { ++_child_cnt }, _state_reporter,
 			      start_node, *this, *this, _children, *this, *this, *this, *this,
 			      _prio_levels, _effective_affinity_space(),
-			      _parent_services, _child_services, _local_services);
+			      _parent_services, _child_services, _local_services,
+			      _pd_intrinsics);
 		_children.insert(&child);
 
 		_avail_cpu.percent -= min(_avail_cpu.percent, child.cpu_quota().percent);
@@ -365,11 +402,8 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 		warning("local capabilities exhausted during child creation"); }
 	catch (Child::Missing_name_attribute) {
 		warning("skipped startup of nameless child"); }
-	catch (Region_map::Region_conflict) {
+	catch (Attached_dataspace::Region_conflict) {
 		warning("failed to attach dataspace to local address space "
-		        "during child construction"); }
-	catch (Region_map::Invalid_dataspace) {
-		warning("attempt to attach invalid dataspace to local address space "
 		        "during child construction"); }
 	catch (Service_denied) {
 		warning("failed to create session during child construction"); }
@@ -625,6 +659,13 @@ void Genode::Sandbox::generate_state_report(Xml_generator &xml) const
 {
 	_library.generate_state_report(xml);
 }
+
+
+Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
+:
+	_heap(env.ram(), env.rm()),
+	_library(*new (_heap) Library(env, _heap, _local_services, state_handler, pd_intrinsics))
+{ }
 
 
 Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler)

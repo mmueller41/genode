@@ -60,9 +60,9 @@ struct Report::Session : Genode::Session
 	 * session-object allocation, the session capability, and a dataspace
 	 * capability for the report buffer.
 	 */
-	enum { CAP_QUOTA = 3 };
+	static constexpr unsigned CAP_QUOTA = 3;
 
-	typedef Session_client Client;
+	using Client = Session_client;
 
 	/**
 	 * Request the dataspace used to carry reports and responses

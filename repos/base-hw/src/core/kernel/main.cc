@@ -12,13 +12,8 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* base includes */
-#include <util/reconstructible.h>
-
-/* base Core includes */
+/* core includes */
 #include <map_local.h>
-
-/* base-hw Core includes */
 #include <kernel/cpu.h>
 #include <kernel/lock.h>
 #include <kernel/main.h>
@@ -28,11 +23,7 @@
 /* base-hw-internal includes */
 #include <hw/boot_info.h>
 
-
-namespace Kernel {
-
-	class Main;
-}
+namespace Kernel { class Main; }
 
 
 class Kernel::Main
@@ -49,33 +40,25 @@ class Kernel::Main
 		static Main *_instance;
 
 		Lock                                    _data_lock           { };
-		Cpu_pool                                _cpu_pool;
+		Cpu_pool                                _cpu_pool            { };
 		Irq::Pool                               _user_irq_pool       { };
 		Board::Address_space_id_allocator       _addr_space_id_alloc { };
-		Genode::Core_platform_pd                _core_platform_pd    { _addr_space_id_alloc };
+		Core::Core_platform_pd                  _core_platform_pd    { _addr_space_id_alloc };
 		Genode::Constructible<Core_main_thread> _core_main_thread    { };
 		Board::Global_interrupt_controller      _global_irq_ctrl     { };
-		Board::Serial                           _serial              { Genode::Platform::mmio_to_virt(Board::UART_BASE),
+		Board::Serial                           _serial              { Core::Platform::mmio_to_virt(Board::UART_BASE),
 		                                                               Board::UART_CLOCK,
 		                                                               SERIAL_BAUD_RATE };
 
 		void _handle_kernel_entry();
 
-		Main(unsigned nr_of_cpus);
-
 	public:
 
-		static Genode::Platform_pd &core_platform_pd();
+		static Core::Platform_pd &core_platform_pd();
 };
 
 
 Kernel::Main *Kernel::Main::_instance;
-
-
-Kernel::Main::Main(unsigned nr_of_cpus)
-:
-	_cpu_pool { nr_of_cpus }
-{ }
 
 
 void Kernel::Main::_handle_kernel_entry()
@@ -101,12 +84,9 @@ void Kernel::main_handle_kernel_entry()
 
 void Kernel::main_initialize_and_handle_kernel_entry()
 {
-	static_assert(sizeof(Genode::sizet_arithm_t) >= 2 * sizeof(size_t),
-		"Bad result type for size_t arithmetics.");
-
 	using Boot_info = Hw::Boot_info<Board::Boot_info>;
 
-	static volatile bool     instance_initialized   { false };
+	static Lock              init_lock;
 	static volatile unsigned nr_of_initialized_cpus { 0 };
 	static volatile bool     kernel_initialized     { false };
 
@@ -114,24 +94,46 @@ void Kernel::main_initialize_and_handle_kernel_entry()
 		*reinterpret_cast<Boot_info*>(Hw::Mm::boot_info().base) };
 
 	unsigned const nr_of_cpus  { boot_info.cpus };
-	bool     const primary_cpu { Cpu::executing_id() == Cpu::primary_id() };
 
-	if (primary_cpu) {
+	/**
+	 * Let the first CPU create a Main object and initialize the static
+	 * reference to it.
+	 */
+	{
+		Lock::Guard guard(init_lock);
 
-		/**
-		 * Let the primary CPU create a Main object and initialize the static
-		 * reference to it.
-		 */
-		static Main instance { nr_of_cpus };
+		static Main instance;
 		Main::_instance = &instance;
 
-	} else {
+	}
 
-		/**
-		 * Let secondary CPUs block until the primary CPU has managed to set
-		 * up the Main instance.
-		 */
-		while (!instance_initialized) { }
+	/* the CPU resumed if the kernel is already initialized */
+	if (kernel_initialized) {
+
+		{
+			Lock::Guard guard(Main::_instance->_data_lock);
+
+			if (nr_of_initialized_cpus == nr_of_cpus) {
+				nr_of_initialized_cpus = 0;
+
+				Main::_instance->_serial.init();
+				Main::_instance->_global_irq_ctrl.init();
+			}
+
+			nr_of_initialized_cpus = nr_of_initialized_cpus + 1;
+
+			Main::_instance->_cpu_pool.cpu(Cpu::executing_id()).reinit_cpu();
+
+			if (nr_of_initialized_cpus == nr_of_cpus) {
+				Genode::raw("kernel resumed");
+			}
+		}
+
+		while (nr_of_initialized_cpus < nr_of_cpus) { }
+
+		Main::_instance->_handle_kernel_entry();
+		/* never reached */
+		return;
 	}
 
 	{
@@ -140,14 +142,13 @@ void Kernel::main_initialize_and_handle_kernel_entry()
 		 * CPU pool.
 		 */
 		Lock::Guard guard(Main::_instance->_data_lock);
-		instance_initialized = true;
 		Main::_instance->_cpu_pool.initialize_executing_cpu(
 			Main::_instance->_addr_space_id_alloc,
 			Main::_instance->_user_irq_pool,
 			Main::_instance->_core_platform_pd.kernel_pd(),
 			Main::_instance->_global_irq_ctrl);
 
-		nr_of_initialized_cpus++;
+		nr_of_initialized_cpus = nr_of_initialized_cpus + 1;
 	};
 
 	/**
@@ -156,47 +157,45 @@ void Kernel::main_initialize_and_handle_kernel_entry()
 	 */
 	while (nr_of_initialized_cpus < nr_of_cpus) { }
 
-	if (primary_cpu) {
-
-		/**
-		 * Let the primary CPU initialize the core main thread and finish
-		 * initialization of the boot info.
-		 */
-
+	/**
+	 * Let the primary CPU initialize the core main thread and finish
+	 * initialization of the boot info.
+	 */
+	{
 		Lock::Guard guard(Main::_instance->_data_lock);
 
-		Main::_instance->_cpu_pool.for_each_cpu([&] (Kernel::Cpu &cpu) {
-			boot_info.kernel_irqs.add(cpu.timer().interrupt_id());
-		});
-		boot_info.kernel_irqs.add((unsigned)Board::Pic::IPI);
+		if (Cpu::executing_id() == Main::_instance->_cpu_pool.primary_cpu().id()) {
+			Main::_instance->_cpu_pool.for_each_cpu([&] (Kernel::Cpu &cpu) {
+				boot_info.kernel_irqs.add(cpu.timer().interrupt_id());
+			});
+			boot_info.kernel_irqs.add((unsigned)Board::Pic::IPI);
 
-		Main::_instance->_core_main_thread.construct(
-			Main::_instance->_addr_space_id_alloc,
-			Main::_instance->_user_irq_pool,
-			Main::_instance->_cpu_pool,
-			Main::_instance->_core_platform_pd.kernel_pd());
+			Main::_instance->_core_main_thread.construct(
+				Main::_instance->_addr_space_id_alloc,
+				Main::_instance->_user_irq_pool,
+				Main::_instance->_cpu_pool,
+				Main::_instance->_core_platform_pd.kernel_pd());
 
-		boot_info.core_main_thread_utcb =
-			(addr_t)Main::_instance->_core_main_thread->utcb();
+			boot_info.core_main_thread_utcb =
+				(addr_t)Main::_instance->_core_main_thread->utcb();
 
-		Genode::log("");
-		Genode::log("kernel initialized");
-		kernel_initialized = true;
-
-	} else {
-
-		/**
-		 * Let secondary CPUs block until the primary CPU has initialized the
-		 * core main thread and finished initialization of the boot info.
-		 */
-		while (!kernel_initialized) {;}
+			Genode::log("");
+			Genode::log("kernel initialized");
+			kernel_initialized = true;
+		}
 	}
+
+	/**
+	 * Let secondary CPUs block until the primary CPU has initialized the
+	 * core main thread and finished initialization of the boot info.
+	 */
+	while (!kernel_initialized) {;}
 
 	Main::_instance->_handle_kernel_entry();
 }
 
 
-Genode::Platform_pd &Kernel::Main::core_platform_pd()
+Core::Platform_pd &Kernel::Main::core_platform_pd()
 {
 	return _instance->_core_platform_pd;
 }
@@ -214,15 +213,14 @@ Kernel::time_t Kernel::main_read_idle_thread_execution_time(unsigned cpu_idx)
 }
 
 
-Genode::Platform_pd &
-Genode::Platform_thread::_kernel_main_get_core_platform_pd()
+Core::Platform_pd &Core::Platform_thread::_kernel_main_get_core_platform_pd()
 {
 	return Kernel::Main::core_platform_pd();
 }
 
 
-bool Genode::map_local(addr_t from_phys, addr_t to_virt, size_t num_pages,
-                       Page_flags flags)
+bool Core::map_local(addr_t from_phys, addr_t to_virt, size_t num_pages,
+                     Page_flags flags)
 {
 	return
 		Kernel::Main::core_platform_pd().insert_translation(
@@ -230,7 +228,7 @@ bool Genode::map_local(addr_t from_phys, addr_t to_virt, size_t num_pages,
 }
 
 
-bool Genode::unmap_local(addr_t virt_addr, size_t num_pages)
+bool Core::unmap_local(addr_t virt_addr, size_t num_pages)
 {
 	Kernel::Main::core_platform_pd().flush(
 		virt_addr, num_pages * get_page_size());

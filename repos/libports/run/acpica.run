@@ -9,11 +9,11 @@ if {
 
 set build_components {
 	core init timer
-	drivers/platform
+	driver/platform
+	driver/acpi
 	server/event_dump
 	app/pci_decode
 	app/acpica
-	app/acpi_event
 }
 
 build $build_components
@@ -22,11 +22,11 @@ create_boot_directory
 
 import_from_depot [depot_user]/src/dynamic_rom \
                   [depot_user]/src/event_filter \
-                  [depot_user]/src/pc_usb_host_drv \
-                  [depot_user]/src/ps2_drv \
-                  [depot_user]/src/rom_filter \
+                  [depot_user]/src/pc_usb_host \
+                  [depot_user]/src/ps2 \
                   [depot_user]/src/report_rom \
-                  [depot_user]/src/usb_hid_drv
+                  [depot_user]/src/usb_hid \
+                  [depot_user]/src/acpi_event
 
 set config {
 	<config>
@@ -57,13 +57,13 @@ set config {
 				<service name="ROM"/>
 			</provides>
 			<config verbose="no">
-				<policy label="pci_decode -> system" report="acpi_drv -> acpi"/>
-				<policy label="rom_filter -> pci_devices" report="pci_decode -> devices"/>
-				<policy label="usb_hid_drv -> report" report="usb_drv -> devices"/>
+				<policy label="pci_decode -> system" report="acpi -> acpi"/>
+				<policy label="platform -> devices"  report="pci_decode -> devices"/>
+				<policy label="usb_hid -> report"    report="usb -> devices"/>
 			</config>
 		</start>
 
-		<start name="acpi_drv" caps="350">
+		<start name="acpi" caps="350">
 			<resource name="RAM" quantum="4M"/>
 			<route>
 				<service name="Report"> <child name="drivers_reports"/> </service>
@@ -72,7 +72,7 @@ set config {
 		</start>
 
 		<start name="pci_decode" caps="350">
-			<resource name="RAM" quantum="1M"/>
+			<resource name="RAM" quantum="2M"/>
 			<route>
 				<service name="ROM" label="system"> <child name="drivers_reports"/> </service>
 				<service name="Report"> <child name="drivers_reports"/> </service>
@@ -80,60 +80,40 @@ set config {
 			</route>
 		</start>
 
-		<start name="rom_filter" caps="70">
-			<resource name="RAM" quantum="1M"/>
-			<provides> <service name="ROM"/> </provides>
-			<config buffer="32K">
-				<input name="devices"/>
-				<input name="pci_devices"/>
-				<output node="devices">
-					<input name="devices"     skip_toplevel="yes"/>
-					<input name="pci_devices" skip_toplevel="yes"/>
-				</output>
-			</config>
-			<route>
-				<service name="ROM" label="pci_devices"> <child name="drivers_reports"/> </service>
-				<service name="LOG"> <parent/> </service>
-				<service name="PD">  <parent/> </service>
-				<service name="CPU"> <parent/> </service>
-				<service name="ROM"> <parent/> </service>
-			</route>
-		</start>
-
-		<start name="platform_drv" caps="400" managing_system="yes">
+		<start name="platform" caps="400" managing_system="yes">
 			<resource name="RAM" quantum="4M"/>
 			<provides>
 				<service name="Platform"/>
 			</provides>
 			<config>
-				<policy label_prefix="ps2_drv"> <device name="ps2"/> </policy>
-				<policy label_prefix="usb_drv" info="yes"> <pci class="USB"/> </policy>
-				<policy label_prefix="acpica"/>
+				<policy label_prefix="ps2"> <device name="ps2"/> </policy>
+				<policy label_prefix="usb" info="yes"> <pci class="USB"/> </policy>
+				<policy label_prefix="acpica"> <device name="acpi"/> </policy>
 			</config>
 			<route>
-				<service name="ROM" label="devices"> <child name="rom_filter"/> </service>
+				<service name="ROM" label="devices"> <child name="drivers_reports"/> </service>
 				<any-service> <parent/> <any-child/> </any-service>
 			</route>
 		</start>
 
-		<start name="ps2_drv" caps="100">
+		<start name="ps2" caps="100">
 			<resource name="RAM" quantum="2M"/>
 			<config verbose_keyboard="no" verbose_mouse="no" verbose_scancodes="no"/>
 			<route>
-				<service name="Platform"> <child name="platform_drv"/> </service>
+				<service name="Platform"> <child name="platform"/> </service>
 				<service name="Timer"> <child name="timer"/> </service>
 				<service name="Event"> <child name="event_filter" label="ps2"/> </service>
 				<any-service> <parent/> </any-service>
 			</route>
 		</start>
 
-		<start name="usb_drv" caps="200">
-			<binary name="pc_usb_host_drv"/>
+		<start name="usb" caps="200">
+			<binary name="pc_usb_host"/>
 			<resource name="RAM" quantum="20M"/>
 			<provides> <service name="Usb"/> </provides>
 			<config bios_handoff="no">
 				<report devices="yes"/>
-				<policy label_prefix="usb_hid_drv" class="0x3"/>
+				<policy label_prefix="usb_hid"><device class="0x3"/></policy>
 			</config>
 			<route>
 				<service name="Report"> <child name="drivers_reports"/> </service>
@@ -141,13 +121,12 @@ set config {
 			</route>
 		</start>
 
-		<start name="usb_hid_drv" caps="140">
+		<start name="usb_hid" caps="140">
 			<resource name="RAM" quantum="10M"/>
-			<config use_report="yes"/>
 			<route>
 				<service name="ROM" label="report"> <child name="drivers_reports"/> </service>
 				<service name="Event"> <child name="event_filter" label="usb"/> </service>
-				<service name="Usb">   <child name="usb_drv"/> </service>
+				<service name="Usb">   <child name="usb"/> </service>
 				<any-service><parent/><any-child/></any-service>
 			</route>
 		</start>
@@ -182,9 +161,10 @@ set config {
 			</route>
 		</start>
 
-		<start name="acpica" caps="200">
+		<start name="acpica" caps="400">
 			<resource name="RAM" quantum="8M"/>
-			<config ld_verbose="yes" reset="yes" poweroff="yes" report="yes">
+			<config ld_verbose="yes" reset="yes" poweroff="yes" report="yes"
+			        report_period_ms="0" verbose="yes">
 			</config>
 			<route>
 				<service name="ROM" label="system"> <child name="dynamic_rom"/> </service>
@@ -269,26 +249,19 @@ set config {
 
 install_config $config
 
-# non PCI devices for platform_drv, e.g. ps2/pit
+# non PCI devices for the platform driver, e.g. ps2/pit
 file copy [select_from_repositories board/[board]/devices] [run_dir]/genode/devices
 
-set boot_modules {
-	core init ld.lib.so
-	timer platform_drv pci_decode acpi_drv
-	acpica
-	acpi_event
-	event_dump
-}
-
-build_boot_image $boot_modules
+build_boot_image [build_artifacts]
 
 append qemu_args "-nographic "
 
-run_genode_until {\[init -\> acpi.*SCI IRQ:.*\n} 30
-
 if {![have_include "power_on/qemu"]} {
+	run_genode_until forever
 	exit 0
 }
+
+run_genode_until {\[init -\> acpi_state.*\n} 30
 
 set spawn_id $qemu_spawn_id
 

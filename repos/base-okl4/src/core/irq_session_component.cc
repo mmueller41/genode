@@ -13,11 +13,11 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <util/arg_string.h>
 
 /* core includes */
 #include <irq_root.h>
+#include <irq_args.h>
 #include <irq_session_component.h>
 
 /* base-internal includes */
@@ -25,7 +25,7 @@
 #include <base/internal/okl4.h>
 
 using namespace Okl4;
-using namespace Genode;
+using namespace Core;
 
 
 /* bit to use for IRQ notifications */
@@ -80,10 +80,11 @@ void Irq_object::_wait_for_irq()
 }
 
 
-void Irq_object::start()
+Thread::Start_result Irq_object::start()
 {
-	::Thread::start();
+	Start_result const result = ::Thread::start();
 	_sync_bootup.block();
+	return result;
 }
 
 
@@ -108,7 +109,7 @@ void Irq_object::entry()
 		if (!_sig_cap.valid())
 			continue;
 
-		Genode::Signal_transmitter(_sig_cap).submit(1);
+		Signal_transmitter(_sig_cap).submit(1);
 
 		_sync_ack.block();
 	}
@@ -134,7 +135,8 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 	_irq_alloc(irq_alloc),
 	_irq_object(_irq_number)
 {
-	long msi = Arg_string::find_arg(args, "device_config_phys").long_value(0);
+	Irq_args irq_args(args);
+	bool msi { irq_args.type() != Irq_session::TYPE_LEGACY };
 	if (msi)
 		throw Service_denied();
 
@@ -159,7 +161,7 @@ void Irq_session_component::ack_irq()
 }
 
 
-void Irq_session_component::sigh(Genode::Signal_context_capability cap)
+void Irq_session_component::sigh(Signal_context_capability cap)
 {
 	_irq_object.sigh(cap);
 }

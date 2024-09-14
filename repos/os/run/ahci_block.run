@@ -2,10 +2,10 @@ assert_spec x86
 
 create_boot_directory
 build {
-	core init timer
-	drivers/platform
-	drivers/acpi
-	drivers/ahci
+	core init timer lib/ld
+	driver/platform
+	driver/acpi
+	driver/ahci
 	app/pci_decode
 	server/report_rom
 	app/block_tester
@@ -45,12 +45,12 @@ install_config {
 		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
-			<policy label="pci_decode -> system"    report="acpi_drv -> acpi"/>
-			<policy label="platform_drv -> devices" report="pci_decode -> devices"/>
+			<policy label="pci_decode -> system" report="acpi -> acpi"/>
+			<policy label="platform -> devices"  report="pci_decode -> devices"/>
 		</config>
 	</start>
 
-	<start name="acpi_drv" caps="350">
+	<start name="acpi" caps="350">
 		<resource name="RAM" quantum="4M"/>
 		<route>
 			<service name="Report"> <child name="report_rom"/> </service>
@@ -64,7 +64,7 @@ install_config {
 	</start>
 
 	<start name="pci_decode" caps="350">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="2M"/>
 		<route>
 			<service name="Report">             <child name="report_rom"/> </service>
 			<service name="ROM" label="system"> <child name="report_rom"/> </service>
@@ -77,7 +77,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="platform_drv" caps="100" managing_system="yes">
+	<start name="platform" caps="100" managing_system="yes">
 		<resource name="RAM" quantum="1M"/>
 		<provides>
 			<service name="Platform"/>
@@ -92,11 +92,11 @@ install_config {
 			<service name="PD">      <parent/> </service>
 			<service name="CPU">     <parent/> </service>
 			<service name="LOG">     <parent/> </service>
-			<service name="Timer">   <parent/> </service>
+			<service name="Timer">   <child name="timer"/> </service>
 		</route>
 		<config>
 			<report devices="yes"/>
-			<policy label="ahci_drv -> "> <pci class="AHCI"/> </policy>
+			<policy label="ahci -> "> <pci class="AHCI"/> </policy>
 		</config>
 	</start>
 
@@ -107,7 +107,7 @@ install_config {
 		<config verbose="yes"/>
 	</start>
 
-	<start name="ahci_drv">
+	<start name="ahci">
 		<resource name="RAM" quantum="10M" />
 		<provides><service name="Block" /></provides>
 		<config atapi="yes">
@@ -131,7 +131,7 @@ install_config {
 			</tests>
 		</config>
 		<route>
-			<service name="Block"><child name="ahci_drv"/></service>
+			<service name="Block"><child name="ahci"/></service>
 			<any-service> <parent/> <any-child /> </any-service>
 		</route>
 	</start>
@@ -145,7 +145,7 @@ install_config {
 			</tests>
 		</config>
 		<route>
-			<service name="Block"><child name="ahci_drv"/></service>
+			<service name="Block"><child name="ahci"/></service>
 			<any-service> <parent/> <any-child /> </any-service>
 		</route>
 	</start>
@@ -154,10 +154,7 @@ install_config {
 #
 # Boot modules
 #
-build_boot_image {
-	core ld.lib.so init timer
-	pci_decode platform_drv report_rom acpi_drv
-	ahci_drv report_rom block_tester }
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic -device ahci,id=ahci -boot d "
 append qemu_args " -drive id=disk,file=bin/ext2.raw,format=raw,if=none             -device ide-hd,drive=disk,bus=ahci.0 "

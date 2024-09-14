@@ -18,6 +18,9 @@
 #include <base/log.h>
 #include <util/misc_math.h>
 
+/* format-string includes */
+#include <format/snprintf.h>
+
 /* local includes */
 #include <extern_c_begin.h>
 #include <qemu_emul.h>
@@ -157,7 +160,7 @@ void qemu_printf(char const *fmt, ...)
 	char buf[BUF_SIZE] { };
 	va_list args;
 	va_start(args, fmt);
-	Genode::String_console sc(buf, BUF_SIZE);
+	Format::String_console sc(buf, BUF_SIZE);
 	sc.vprintf(fmt, args);
 	Genode::log(Genode::Cstring(buf));
 	va_end(args);
@@ -169,7 +172,7 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
 	va_list args;
 
 	va_start(args, fmt);
-	Genode::String_console sc(buf, size);
+	Format::String_console sc(buf, size);
 	sc.vprintf(fmt, args);
 	va_end(args);
 
@@ -445,12 +448,14 @@ static USBHostDevice *_create_usbdevice(int const type, FUNC const &fn_init)
 }
 
 
-USBHostDevice *create_usbdevice(void *data)
+USBHostDevice *create_usbdevice(void *data, int speed)
 {
 	return _create_usbdevice(Object_pool::USB_HOST_DEVICE,
 	                         [&](Wrapper &obj) {
 		/* set data pointer */
 		obj._usb_host_device.data = data;
+		obj._usb_device.speed     = speed;
+		obj._usb_device.speedmask = (1 << speed);
 	});
 }
 
@@ -630,18 +635,28 @@ struct Controller : public Qemu::Controller
 		MemoryRegionOps const *ops;
 	} mmio_regions [max_numports() + 4 /* number of HC MMIO regions */];
 
+
 	uint64_t _mmio_size;
 
 	typedef Genode::Hex Hex;
+
+	/*
+	 * The device model does not implement the whole _mmio_size, add read/write
+	 * for the gaps.
+	 */
+	static uint64_t _read_unsued(void *, hwaddr, unsigned) { return 0ul; }
+	static void     _write_unsused(void *, hwaddr, uint64_t, unsigned) { }
+	MemoryRegionOps _ops { _read_unsued, _write_unsused };
+	Mmio            _unused_region { 0, 0, 0, &_ops };
 
 	Controller()
 	{
 		Genode::memset(mmio_regions, 0, sizeof(mmio_regions));
 	}
 
-	void   mmio_add_region(uint64_t size) { _mmio_size = size; }
+	void mmio_add_region(uint64_t size) { _mmio_size = size; }
 
-	void   mmio_add_region_io(Genode::addr_t id, uint64_t size, MemoryRegionOps const *ops)
+	void mmio_add_region_io(Genode::addr_t id, uint64_t size, MemoryRegionOps const *ops)
 	{
 		for (Mmio &mmio : mmio_regions) {
 			if (mmio.id != 0) continue;
@@ -661,12 +676,10 @@ struct Controller : public Qemu::Controller
 				return mmio;
 		}
 
-		Genode::error("could not find MMIO region for offset: ",
-		              Genode::Hex(offset));
-		throw -1;
+		return _unused_region;
 	}
 
-	void   mmio_add_sub_region(Genode::addr_t id, Genode::off_t offset)
+	void mmio_add_sub_region(Genode::addr_t id, Genode::off_t offset)
 	{
 		for (Mmio &mmio : mmio_regions) {
 			if (mmio.id != id) continue;
@@ -936,8 +949,10 @@ size_t iov_from_buf(const struct iovec *iov, unsigned int iov_cnt,
 	unsigned int i;
 	for (i = 0, done = 0; (offset || done < bytes) && i < iov_cnt; i++) {
 		if (offset < iov[i].iov_len) {
-			size_t len = Genode::min(iov[i].iov_len - offset, bytes - done);
-			memcpy((char*)iov[i].iov_base + offset, (char*)buf + done, len);
+			size_t       const len      = Genode::min(iov[i].iov_len - offset, bytes - done);
+			Qemu::addr_t const dma_addr = (Qemu::addr_t)((char *)iov[i].iov_base + offset);
+
+			_pci_device->write_dma(dma_addr, (char*)buf + done, len);
 			done += len;
 			offset = 0;
 		} else {
@@ -958,8 +973,10 @@ size_t iov_to_buf(const struct iovec *iov, const unsigned int iov_cnt,
 	unsigned int i;
 	for (i = 0, done = 0; (offset || done < bytes) && i < iov_cnt; i++) {
 		if (offset < iov[i].iov_len) {
-			size_t len = Genode::min(iov[i].iov_len - offset, bytes - done);
-			memcpy((char*)buf + done, (char*)iov[i].iov_base + offset, len);
+			size_t       const len      = Genode::min(iov[i].iov_len - offset, bytes - done);
+			Qemu::addr_t const dma_addr = (Qemu::addr_t)((char *)iov[i].iov_base + offset);
+
+			_pci_device->read_dma(dma_addr, (char*)buf + done, len);
 			done += len;
 			offset = 0;
 		} else {
@@ -986,55 +1003,23 @@ void qemu_sglist_destroy(QEMUSGList *sgl) {
 
 int usb_packet_map(USBPacket *p, QEMUSGList *sgl)
 {
-	Qemu::Pci_device::Dma_direction dir =
-		(p->pid == USB_TOKEN_IN) ? Qemu::Pci_device::Dma_direction::IN
-		                         : Qemu::Pci_device::Dma_direction::OUT;
-
-	void *mem;
-
+	/*
+	 * We add the SGL entries themself to be able to call 'read_dma'
+	 * and 'write_dma' directly (and to satisfy asserts in the contrib
+	 * code).
+	 */
 	for (int i = 0; i < sgl->niov; i++) {
-		dma_addr_t base = (dma_addr_t) sgl->iov[i].iov_base;
-		dma_addr_t len = sgl->iov[i].iov_len;
+		dma_addr_t const base = (dma_addr_t) sgl->iov[i].iov_base;
+		dma_addr_t const len = sgl->iov[i].iov_len;
 
-		while (len) {
-			dma_addr_t xlen = len;
-			mem = _pci_device->map_dma(base, xlen, dir);
-			if (verbose_iov)
-				Genode::log("mem: ", mem, " base: ", (void *)base, " len: ",
-				            Genode::Hex(len));
-
-			if (!mem) {
-				goto err;
-			}
-			if (xlen > len) {
-				xlen = len;
-			}
-			qemu_iovec_add(&p->iov, mem, xlen);
-			len -= xlen;
-			base += xlen;
-		}
+		qemu_iovec_add(&p->iov, (void*)base, len);
 	}
+
 	return 0;
-
-err:
-	Genode::error("could not map dma");
-	usb_packet_unmap(p, sgl);
-	return -1;
 }
 
 
-void usb_packet_unmap(USBPacket *p, QEMUSGList *sgl)
-{
-	Qemu::Pci_device::Dma_direction dir =
-		(p->pid == USB_TOKEN_IN) ? Qemu::Pci_device::Dma_direction::IN
-		                         : Qemu::Pci_device::Dma_direction::OUT;
-
-	for (int i = 0; i < p->iov.niov; i++) {
-		_pci_device->unmap_dma(p->iov.iov[i].iov_base,
-		                       p->iov.iov[i].iov_len,
-		                       dir);
-	}
-}
+void usb_packet_unmap(USBPacket *p, QEMUSGList *sgl) { }
 
 
 /******************
@@ -1056,7 +1041,7 @@ void error_setg(Error **errp, const char *fmt, ...)
 	va_list args;
 
 	va_start(args, fmt);
-	Genode::String_console sc(e->string, sizeof(e->string));
+	Format::String_console sc(e->string, sizeof(e->string));
 	sc.vprintf(fmt, args);
 	va_end(args);
 }

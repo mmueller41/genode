@@ -19,13 +19,17 @@
 #include <util/mmio.h>
 #include <util/reconstructible.h>
 
+#include <cpu.h>
 #include <gic.h>
 #include <ram.h>
 #include <mmio.h>
 
 namespace Vmm {
 	class  Virtio_split_queue;
+	struct Virtio_device_base;
 	template <typename QUEUE, unsigned NUM> class Virtio_device;
+
+	using Virtio_device_list = List<Virtio_device_base>;
 
 	using namespace Genode;
 }
@@ -43,7 +47,7 @@ class Vmm::Virtio_split_queue
 
 	protected:
 
-		template <unsigned LOG2>
+		template <uint16_t LOG2>
 		class Index
 		{
 			private:
@@ -54,12 +58,12 @@ class Vmm::Virtio_split_queue
 
 			public:
 
-				Index(unsigned idx = 0) : _idx(idx % (1 << LOG2)) {}
+				Index(uint16_t idx = 0) : _idx(idx % (1 << LOG2)) {}
 
 				void inc() {
-					_idx = ((_idx + 1) % (1 << LOG2)); }
+					_idx = ((_idx + 1U) % (1U << LOG2)); }
 
-				unsigned idx() const { return _idx; }
+				uint16_t idx() const { return _idx; }
 
 				bool operator != (Index const & o) const {
 					return _idx != o._idx; }
@@ -69,21 +73,24 @@ class Vmm::Virtio_split_queue
 		using Descriptor_index = Index<MAX_SIZE_LOG2>;
 
 
-		struct Queue_base : Mmio
+		template <size_t SIZE>
+		struct Queue_base : Mmio<SIZE>
 		{
-			unsigned const max;
+			using Base = Mmio<SIZE>;
 
-			Queue_base(addr_t base, unsigned max)
-			: Mmio(base), max(max) {}
+			uint16_t const max;
 
-			struct Flags : Register<0x0, 16> { };
-			struct Idx   : Register<0x2, 16> { };
+			Queue_base(Byte_range_ptr const &range, uint16_t max)
+			: Base(range), max(max) {}
 
-			Ring_index current() { return read<Idx>(); }
+			struct Flags : Base::template Register<0x0, 16> { };
+			struct Idx   : Base::template Register<0x2, 16> { };
+
+			Ring_index current() { return Base::template read<Idx>(); }
 		};
 
 
-		struct Avail_queue : Queue_base
+		struct Avail_queue : Queue_base<0x4 + MAX_SIZE * 2>
 		{
 			using Queue_base::Queue_base;
 
@@ -93,7 +100,7 @@ class Vmm::Virtio_split_queue
 
 			Descriptor_index get(Ring_index id)
 			{
-				unsigned v = read<Ring>(id.idx() % max);
+				uint16_t v = read<Ring>(id.idx() % max);
 				if (v >= max) {
 					throw Exception("Descriptor_index out of bounds"); }
 				return Descriptor_index(v);
@@ -101,7 +108,7 @@ class Vmm::Virtio_split_queue
 		} _avail;
 
 
-		struct Used_queue : Queue_base
+		struct Used_queue : Queue_base<0x4 + MAX_SIZE * 8>
 		{
 			using Queue_base::Queue_base;
 
@@ -125,7 +132,7 @@ class Vmm::Virtio_split_queue
 		} _used;
 
 
-		struct Descriptor : Mmio
+		struct Descriptor : Mmio<0x10>
 		{
 			using Mmio::Mmio;
 
@@ -150,36 +157,41 @@ class Vmm::Virtio_split_queue
 
 		struct Descriptor_array
 		{
-			size_t   const elem_size { 16 };
-			unsigned const max;
-			addr_t   const start;
+			size_t         const elem_size { 16 };
+			unsigned       const max;
+			Byte_range_ptr const guest_range;
+			Byte_range_ptr const local_range;
 
 			Descriptor_array(Ram & ram, addr_t base, unsigned const max)
 			:
 				max(max),
-				start(ram.local_address(base, max * elem_size)) {}
+				guest_range((char *)base, max * elem_size),
+				local_range(
+					ram.to_local_range(guest_range).start,
+					ram.to_local_range(guest_range).num_bytes) {}
 
 			Descriptor get(Descriptor_index idx)
 			{
 				if (idx.idx() >= max) error("Descriptor_index out of bounds");
-				return Descriptor(start + (elem_size * idx.idx()));
+				off_t offset = elem_size * idx.idx();
+				return Descriptor({local_range.start + offset, local_range.num_bytes - offset});
 			}
 		} _descriptors;
 
 
 		Ram      & _ram;
-		Ring_index _cur_idx;
+		Ring_index _cur_idx {};
 
 	public:
 
 		Virtio_split_queue(addr_t   const descriptor_area,
 		                   addr_t   const device_area,
 		                   addr_t   const driver_area,
-		                   unsigned const queue_num,
+		                   uint16_t const queue_num,
 		                   Ram          & ram)
 		:
-			_avail(ram.local_address(driver_area, 6+2*queue_num), queue_num),
-			_used(ram.local_address(device_area, 6+8*queue_num), queue_num),
+			_avail(ram.to_local_range({(char *)driver_area, 6+2*(size_t)queue_num}), queue_num),
+			_used(ram.to_local_range({(char *)device_area, 6+8*(size_t)queue_num}), queue_num),
 			_descriptors(ram, descriptor_area, queue_num),
 			_ram(ram) { }
 
@@ -201,8 +213,7 @@ class Vmm::Virtio_split_queue
 				if (!address || !size) { break; }
 
 				try {
-					addr_t data     = _ram.local_address(address, size);
-					size_t consumed = func(data, size);
+					size_t consumed = func(_ram.to_local_range({(char *)address, size}));
 					if (!consumed) { break; }
 					_used.add(_cur_idx, id, consumed);
 					written = true;
@@ -219,15 +230,18 @@ class Vmm::Virtio_split_queue
 };
 
 
+struct Vmm::Virtio_device_base : public List<Virtio_device_base>::Element { };
+
+
 template <typename QUEUE, unsigned NUM>
-class Vmm::Virtio_device : public Vmm::Mmio_device
+class Vmm::Virtio_device : public Vmm::Mmio_device, private Virtio_device_base
 {
 	protected:
 
 		Gic::Irq                   & _irq;
 		Ram                        & _ram;
-		Genode::Mutex                _mutex;
-		Genode::Constructible<QUEUE> _queue[NUM];
+		Genode::Mutex                _mutex {};
+		Genode::Constructible<QUEUE> _queue[NUM] {};
 
 		virtual void _notify(unsigned idx) = 0;
 
@@ -249,8 +263,10 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 				    Mmio_register::Type type,
 				    Genode::uint64_t    start,
 				    uint32_t            value = 0)
-				: Mmio_register(name, type, start, 4, value), _dev(dev) {
-					_dev.add(*this); }
+				:
+					Mmio_register(name, type, start, 4,
+					              dev.registers(), value),
+					_dev(dev) { }
 
 				Virtio_device & device() { return _dev; }
 		};
@@ -275,7 +291,7 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 				Register read(Address_range &, Cpu &) override {
 					return _regs[_selector.value()]; }
 
-				void write(Address_range & a, Cpu &, Register reg) override {
+				void write(Address_range &, Cpu &, Register reg) override {
 					_regs[_selector.value()] = reg; }
 
 				void set(Register value) override {
@@ -309,6 +325,13 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 		Set _device_low  { *this, _queue_sel, "QueueDeviceLow",  Reg::WO, 0xa0 };
 		Set _device_high { *this, _queue_sel, "QueueDeviceHigh", Reg::WO, 0xa4 };
 
+		Reg _shm_id        { *this, "SHMSel",           Reg::WO, 0xac };
+		Reg _shm_len_low   { *this, "SHMLenLow",        Reg::RO, 0xb0, 0xffffffff };
+		Reg _shm_len_high  { *this, "SHMLenHigh",       Reg::RO, 0xb4, 0xffffffff };
+		Reg _shm_base_low  { *this, "SHMBaseLow",       Reg::RO, 0xb8, 0xffffffff };
+		Reg _shm_base_high { *this, "SHMBaseHigh",      Reg::RO, 0xbc, 0xffffffff };
+		Reg _config_gen    { *this, "ConfigGeneration", Reg::RW, 0xfc, 0 };
+
 
 		uint64_t _descriptor_area() const
 		{
@@ -325,28 +348,47 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 			return ((uint64_t)_device_high.value()<<32) | _device_low.value();
 		}
 
-		void _assert_irq()
+		enum Irq : uint64_t {
+			NONE   = 0UL,
+			BUFFER = 1UL << 0,
+			CONFIG = 1UL << 1,
+		};
+
+		void _assert_irq(uint64_t irq)
 		{
-			_irq_status.set(0x1);
+			_irq_status.set(_irq_status.value() | irq);
 			_irq.assert();
 		}
 
-		void _deassert_irq()
+		void _deassert_irq(uint64_t irq)
 		{
-			_irq_status.set(0);
+			_irq_status.set(_irq_status.value() & ~irq);
 			_irq.deassert();
+		}
+
+		void _buffer_notification()
+		{
+			_assert_irq(BUFFER);
+		}
+
+		void _config_notification()
+		{
+			_config_gen.set(_config_gen.value() + 1);
+			_assert_irq(CONFIG);
 		}
 
 		void _construct_queue()
 		{
 			Genode::Mutex::Guard guard(mutex());
 
-			unsigned num = _queue_sel.value();
+			unsigned num = (unsigned)_queue_sel.value();
 
-			if (_queue[num].constructed()) { return; }
+			if (num >= NUM || _queue[num].constructed())
+				return;
 
-			_queue[num].construct(_descriptor_area(), _device_area(),
-			                      _driver_area(), _queue_num.value(), _ram);
+			_queue[num].construct((addr_t)_descriptor_area(), (addr_t)_device_area(),
+			                      (addr_t)_driver_area(), (uint16_t)_queue_num.value(),
+			                      _ram);
 		}
 
 		struct Queue_ready : Reg
@@ -375,7 +417,7 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 					return;
 				}
 
-				Reg::device()._notify(reg);
+				Reg::device()._notify((unsigned)reg);
 			}
 
 			Queue_notify(Virtio_device & device)
@@ -385,10 +427,10 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 
 		struct Interrupt_ack : Reg
 		{
-			void write(Address_range&, Cpu&, Register reg) override
+			void write(Address_range&, Cpu&, Register v) override
 			{
 				Genode::Mutex::Guard guard(Reg::device().mutex());
-				Reg::device()._deassert_irq();
+				Reg::device()._deassert_irq(v);
 			}
 
 			Interrupt_ack(Virtio_device &device)
@@ -401,12 +443,13 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 		              const Genode::uint64_t addr,
 		              const Genode::uint64_t size,
 		              unsigned               irq,
-		              Cpu                   &cpu,
-		              Mmio_bus              &bus,
-		              Ram                   &ram,
+		              Cpu                  & cpu,
+		              Space                & bus,
+		              Ram                  & ram,
+		              Virtio_device_list   & dev_list,
 		              uint32_t               dev_id)
 		:
-			Mmio_device(name, addr, size),
+			Mmio_device(name, addr, size, bus),
 			_irq(cpu.gic().irq(irq)),
 			_ram(ram)
 		{
@@ -419,7 +462,7 @@ class Vmm::Virtio_device : public Vmm::Mmio_device
 			_dev_feature.set(VIRTIO_F_VERSION_1);
 			_dev_sel.set(0); /* set to 0...31 feature bits */
 
-			bus.add(*this);
+			dev_list.insert(this);
 		}
 
 		Genode::Mutex & mutex() { return _mutex; }

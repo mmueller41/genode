@@ -11,8 +11,8 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-#include "view_stack.h"
-#include "clip_guard.h"
+#include <view_stack.h>
+#include <clip_guard.h>
 
 using namespace Nitpicker;
 
@@ -47,8 +47,8 @@ Nitpicker::Rect View_stack::_outline(View const &view) const
 	/* request thickness of view frame */
 	int const frame_size = view.frame_size(_focus);
 
-	return Rect(Point(rect.x1() - frame_size, rect.y1() - frame_size),
-	            Point(rect.x2() + frame_size, rect.y2() + frame_size));
+	return Rect::compound(Point(rect.x1() - frame_size, rect.y1() - frame_size),
+	                      Point(rect.x2() + frame_size, rect.y2() + frame_size));
 }
 
 
@@ -87,7 +87,7 @@ void View_stack::_optimize_label_rec(View const *cv, View const *lv,
                                      Rect rect, Rect *optimal)
 {
 	/* if label already fits in optimized rectangle, we are happy */
-	if (optimal->fits(lv->label_rect().area()))
+	if (optimal->fits(lv->label_rect().area))
 		return;
 
 	/* find next view that intersects with the rectangle or the target view */
@@ -100,11 +100,9 @@ void View_stack::_optimize_label_rec(View const *cv, View const *lv,
 
 	if (cv != lv && _next_view(*cv)) {
 
-		/* cut current view from rectangle and go into sub rectangles */
-		Rect r[4];
-		rect.cut(clipped, &r[0], &r[1], &r[2], &r[3]);
-		for (int i = 0; i < 4; i++)
-			_optimize_label_rec(_next_view(*cv), lv, r[i], optimal);
+		/* cut current view from rectangle and recurse into sub rectangles */
+		rect.cut(clipped).for_each([&] (Rect const &r) {
+			_optimize_label_rec(_next_view(*cv), lv, r, optimal); });
 
 		return;
 	}
@@ -122,7 +120,7 @@ void View_stack::_optimize_label_rec(View const *cv, View const *lv,
 	 * If label fits completely within current rectangle, we are done.
 	 * If label's width is not fully visible, choose the widest rectangle.
 	 */
-	if (rect.fits(lv->label_rect().area()) || (rect.w() > optimal->w())) {
+	if (rect.fits(lv->label_rect().area) || (rect.w() > optimal->w())) {
 		*optimal = rect;
 		return;
 	}
@@ -155,7 +153,7 @@ void View_stack::_place_labels(Rect rect)
 			 * (most important) part. Otherwise, we center the label horizontally.
 			 */
 			int x = best.x1();
-			if (best.fits(view->label_rect().area()))
+			if (best.fits(view->label_rect().area))
 				x += (best.w() - view->label_rect().w()) / 2;
 
 			view->label_pos(Point(x, best.y1()));
@@ -180,14 +178,13 @@ void View_stack::draw_rec(Canvas_base &canvas, Font const &font,
 	/* check if we hit the bottom of the view stack */
 	if (!view) return;
 
-	Rect top, left, right, bottom;
-	rect.cut(clipped, &top, &left, &right, &bottom);
+	Rect::Cut_remainder const r = rect.cut(clipped);
 
 	View const *next = _next_view(*view);
 
 	/* draw areas at the top/left of the current view */
-	if (next &&  top.valid()) draw_rec(canvas, font, next, top);
-	if (next && left.valid()) draw_rec(canvas, font, next, left);
+	if (next &&  r.top.valid()) draw_rec(canvas, font, next, r.top);
+	if (next && r.left.valid()) draw_rec(canvas, font, next, r.left);
 
 	/* draw current view */
 	{
@@ -202,8 +199,8 @@ void View_stack::draw_rec(Canvas_base &canvas, Font const &font,
 	}
 
 	/* draw areas at the bottom/right of the current view */
-	if (next &&  right.valid()) draw_rec(canvas, font, next, right);
-	if (next && bottom.valid()) draw_rec(canvas, font, next, bottom);
+	if (next &&  r.right.valid()) draw_rec(canvas, font, next, r.right);
+	if (next && r.bottom.valid()) draw_rec(canvas, font, next, r.bottom);
 }
 
 
@@ -212,7 +209,8 @@ void View_stack::refresh_view(View &view, Rect const rect)
 	/* rectangle constrained to view geometry */
 	Rect const view_rect = Rect::intersect(rect, _outline(view));
 
-	_damage.mark_as_damaged(view_rect);
+	if (view_rect.valid())
+		_damage.mark_as_damaged(view_rect);
 
 	view.for_each_child([&] (View &child) { refresh_view(child, rect); });
 }
@@ -279,7 +277,7 @@ void View_stack::stack(View &view, View const *neighbor, bool behind)
 }
 
 
-void View_stack::title(View &view, const char *title)
+void View_stack::title(View &view, Title const &title)
 {
 	view.title(_font, title);
 	_place_labels(view.abs_geometry());
@@ -316,7 +314,7 @@ void View_stack::remove_view(View const &view, bool /* redraw */)
 
 void View_stack::sort_views_by_layer()
 {
-	Genode::List<View_stack_elem> sorted;
+	List<View_stack_elem> sorted;
 
 	/* last element of the sorted list */
 	View_stack_elem *at = nullptr;

@@ -72,7 +72,7 @@ struct Event_listener
 	}
 };
 
-typedef ListenerImpl<Event_listener, Event_handler &> Event_listener_impl;
+using Event_listener_impl = ListenerImpl<Event_listener, Event_handler &>;
 
 VBOX_LISTENER_DECLARE(Event_listener_impl)
 
@@ -85,7 +85,7 @@ struct Main : Event_handler
 
 	struct Vbox_file_path
 	{
-		typedef String<128> Path;
+		using Path = String<128>;
 
 		Path const _path;
 
@@ -301,7 +301,7 @@ struct Main : Event_handler
 
 			Gui::Connection &gui = *new Registered<Gui::Connection>(_gui_connections, _env, label.string());
 
-			gui.input()->sigh(_input_handler);
+			gui.input.sigh(_input_handler);
 			gui.mode_sigh(_fb_mode_handler);
 
 			Genodefb *fb = new Genodefb(_env, gui, _idisplay);
@@ -335,6 +335,15 @@ struct Main : Event_handler
 
 		if (state != MachineState_Running) {
 			error("machine could not enter running state");
+
+			/* retrieve and print error information */
+			IVirtualBoxErrorInfo *info;
+			progress->COMGETTER(ErrorInfo)(&info);
+
+			PRUnichar *text = (PRUnichar *)malloc(4096);
+			info->GetText((PRUnichar **)&text);
+			Genode::log("Error: ", Utf8Str(text).c_str());
+
 			throw Fatal();
 		}
 	}
@@ -414,7 +423,7 @@ void Main::_handle_input()
 
 	Libc::with_libc([&] {
 		_gui_connections.for_each([&] (Gui::Connection &gui) {
-			gui.input()->for_each_event([&] (Input::Event const &ev) {
+			gui.input.for_each_event([&] (Input::Event const &ev) {
 				handle_one_event(ev); }); }); });
 }
 

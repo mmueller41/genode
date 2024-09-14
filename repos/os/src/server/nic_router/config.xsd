@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 
-	<xs:include schemaLocation="base_types.xsd"/>
-	<xs:include schemaLocation="net_types.xsd"/>
-	<xs:include schemaLocation="timeout_types.xsd"/>
+	<xs:include schemaLocation="genode://base_types.xsd"/>
+	<xs:include schemaLocation="genode://net_types.xsd"/>
+	<xs:include schemaLocation="genode://timeout_types.xsd"/>
 
 	<xs:simpleType name="Domain_name">
 		<xs:restriction base="xs:string">
@@ -189,6 +189,7 @@
 			<xs:attribute name="dhcp_request_timeout_sec"       type="Seconds" />
 			<xs:attribute name="dhcp_offer_timeout_sec"         type="Seconds" />
 			<xs:attribute name="udp_idle_timeout_sec"           type="Seconds" />
+			<xs:attribute name="arp_request_timeout_sec"        type="Seconds" />
 			<xs:attribute name="tcp_idle_timeout_sec"           type="Seconds" />
 			<xs:attribute name="icmp_idle_timeout_sec"          type="Seconds" />
 			<xs:attribute name="tcp_max_segm_lifetime_sec"      type="Seconds" />

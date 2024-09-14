@@ -2,13 +2,12 @@
 
 	<requires> <timer/> </requires>
 
-	<events>
-		<timeout meaning="failed" sec="80" />
-		<log meaning="failed">exited with exit value -1</log>
-		<log meaning="succeeded">child "test-libc_connect" exited with exit value 0</log>
-	</events>
+	<fail after_seconds="80"/>
+	<fail>exited with exit value -1</fail>
+	<succeed>child "test-libc_connect" exited with exit value 0</succeed>
 
 	<content>
+		<rom label="black_hole"/>
 		<rom label="ld.lib.so"/>
 		<rom label="libc.lib.so"/>
 		<rom label="libm.lib.so"/>
@@ -36,7 +35,7 @@
 		<default-route>
 			<any-service> <parent/> <any-child/> </any-service>
 		</default-route>
-		<default caps="256"/>
+		<default caps="200"/>
 
 		<start name="nic_router">
 			<resource name="RAM" quantum="10M"/>
@@ -45,14 +44,25 @@
 				<service name="Uplink"/>
 			</provides>
 			<config>
-				<domain name="default" interface="10.0.1.1/24"/>
+				<domain name="uplink"  interface="10.0.2.1/24"/>
+				<domain name="default" interface="10.0.1.1/24">
+					<ip dst="10.0.2.0/24" domain="uplink"/>
+				</domain>
+				<policy label_prefix="black_hole" domain="uplink"/>
 				<default-policy domain="default"/>
+			</config>
+		</start>
+
+		<start name="black_hole">
+			<resource name="RAM" quantum="2M"/>
+			<config>
+				<uplink_client/>
 			</config>
 		</start>
 
 		<start name="server">
 			<binary name="test-netty_tcp"/>
-			<resource name="RAM" quantum="32M"/>
+			<resource name="RAM" quantum="10M"/>
 			<config port="80" read_write="yes" nonblock="false">
 				<vfs>
 					<dir name="dev"> <log/> </dir>
@@ -66,7 +76,7 @@
 		</start>
 
 		<start name="test-libc_connect" caps="200">
-			<resource name="RAM" quantum="48M"/>
+			<resource name="RAM" quantum="10M"/>
 			<config>
 				<vfs>
 					<dir name="dev"> <log/> </dir>
@@ -74,7 +84,7 @@
 						<lxip ip_addr="10.0.1.3" netmask="255.255.255.0" gateway="10.0.1.1"/>
 					</dir>
 				</vfs>
-				<libc stdout="/dev/log" stderr="/dev/log" socket="/socket" />
+				<libc stdout="/dev/log" stderr="/dev/log" socket="/socket"/>
 			</config>
 		</start>
 

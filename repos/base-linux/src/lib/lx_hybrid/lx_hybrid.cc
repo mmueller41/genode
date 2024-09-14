@@ -20,7 +20,7 @@
 /* base-internal includes */
 #include <base/internal/native_thread.h>
 #include <base/internal/globals.h>
-#include <base/internal/platform_env.h>
+#include <base/internal/platform.h>
 
 
 /**
@@ -80,7 +80,6 @@ static Genode::Env *_env_ptr;
 
 namespace Genode {
 
-	extern void bootstrap_component();
 	extern void call_global_static_constructors();
 
 	struct Thread_meta_data_created;
@@ -89,14 +88,20 @@ namespace Genode {
 
 
 /*
- * This function is normally provided by the cxx library, which is not
- * used for lx_hybrid programs. For lx_hybrid programs, the exception
- * handling is initialized by the host system's regular startup code.
- *
- * However, we conveniently use this function to get hold of the
- * component's environment and initialize the default log output.
+ * For lx_hybrid programs, C++ support is initialized by the startup code
+ * provided by the host toolchain.
  */
-void Genode::init_exception_handling(Env &env)
+void Genode::init_exception_handling(Ram_allocator &, Region_map &) { }
+
+
+/*
+ * This function is normally provided by the dynamic linker, which is not used
+ * for lx_hybrid programs. For lx_hybrid programs.
+ *
+ * However, we conveniently use this function to get hold of the component's
+ * environment and initialize the default log output.
+ */
+void Genode::init_ldso_phdr(Env &env)
 {
 	_env_ptr = &env;
 
@@ -125,7 +130,9 @@ Genode::size_t Component::stack_size()
 
 int main()
 {
-	Genode::bootstrap_component();
+	using namespace Genode;
+
+	bootstrap_component(init_platform());
 
 	/* never reached */
 }
@@ -401,6 +408,18 @@ static void *thread_start(void *arg)
 }
 
 
+void Genode::init_thread(Cpu_session &, Region_map &)  { }
+void Genode::init_thread_start(Capability<Pd_session>) { }
+
+
+void Genode::init_thread_bootstrap(Cpu_session &cpu, Thread_capability main_cap)
+{
+	/* register TID and PID of the main thread at core */
+	Linux_native_cpu_client native_cpu(cpu.native_cpu());
+	native_cpu.thread_id(main_cap, lx_getpid(), lx_gettid());
+}
+
+
 extern "C" void *malloc(::size_t size);
 extern "C" void free(void *);
 
@@ -408,7 +427,7 @@ namespace {
 
 	struct Global_allocator : Allocator
 	{
-		typedef Genode::size_t size_t;
+		using size_t = Genode::size_t;
 
 		Alloc_result try_alloc(size_t size) override { return malloc(size); }
 
@@ -474,12 +493,13 @@ Thread *Thread::myself()
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/*
 	 * Unblock thread that is supposed to slumber in 'thread_start'.
 	 */
 	native_thread().meta_data->started();
+	return Start_result::OK;
 }
 
 
@@ -512,9 +532,14 @@ Thread::Thread(size_t weight, const char *name, size_t /* stack size */,
 
 	_thread_cap = _cpu_session->create_thread(_env_ptr->pd_session_cap(), name,
 	                                          Location(), Weight(weight));
-
-	Linux_native_cpu_client native_cpu(_cpu_session->native_cpu());
-	native_cpu.thread_id(_thread_cap, native_thread().pid, native_thread().tid);
+	_thread_cap.with_result(
+		[&] (Thread_capability cap) {
+			Linux_native_cpu_client native_cpu(_cpu_session->native_cpu());
+			native_cpu.thread_id(cap, native_thread().pid, native_thread().tid);
+		},
+		[&] (Cpu_session::Create_thread_error) {
+			error("failed to create hybrid thread"); }
+	);
 }
 
 
@@ -554,15 +579,17 @@ Thread::~Thread()
 	_native_thread = nullptr;
 
 	/* inform core about the killed thread */
-	_cpu_session->kill_thread(_thread_cap);
+	_thread_cap.with_result(
+		[&] (Thread_capability cap) { _cpu_session->kill_thread(cap); },
+		[&] (Cpu_session::Create_thread_error) { });
 }
 
 
-/******************
- ** Platform_env **
- ******************/
+/**************
+ ** Platform **
+ **************/
 
-void Platform_env::_attach_stack_area()
+void Platform::_attach_stack_area()
 {
 	/*
 	 * Omit attaching the stack area to the local address space for hybrid

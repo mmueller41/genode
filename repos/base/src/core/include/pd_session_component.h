@@ -17,7 +17,6 @@
 #define _CORE__INCLUDE__PD_SESSION_COMPONENT_H_
 
 /* Genode includes */
-#include <util/reconstructible.h>
 #include <base/session_object.h>
 #include <base/registry.h>
 #include <base/heap.h>
@@ -31,6 +30,7 @@
 #include <constrained_core_ram.h>
 #include <platform_pd.h>
 #include <signal_broker.h>
+#include <system_control.h>
 #include <rpc_cap_factory.h>
 #include <ram_dataspace_factory.h>
 #include <native_pd_component.h>
@@ -38,14 +38,19 @@
 #include <platform_generic.h>
 #include <account.h>
 
-namespace Genode { class Pd_session_component; }
+namespace Core {
+	class Pd_session_component;
+	class Cpu_thread_component;
+}
 
 
-class Genode::Pd_session_component : public Session_object<Pd_session>
+class Core::Pd_session_component : public Session_object<Pd_session>
 {
 	public:
 
 		enum class Managing_system { DENIED, PERMITTED };
+
+		using Threads = Registry<Cpu_thread_component>;
 
 	private:
 
@@ -53,6 +58,7 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		Constructible<Account<Ram_quota> > _ram_account { };
 
 		Rpc_entrypoint            &_ep;
+		Core::System_control      &_system_control;
 		Constrained_ram_allocator  _constrained_md_ram_alloc;
 		Constrained_core_ram       _constrained_core_ram_alloc;
 		Sliced_heap                _sliced_heap;
@@ -69,6 +75,8 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		Region_map_component _linker_area;
 
 		Managing_system _managing_system;
+
+		Threads _threads { };
 
 		friend class Native_pd_component;
 
@@ -114,8 +122,8 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 
 	public:
 
-		typedef Ram_dataspace_factory::Phys_range Phys_range;
-		typedef Ram_dataspace_factory::Virt_range Virt_range;
+		using Phys_range = Ram_dataspace_factory::Phys_range;
+		using Virt_range = Ram_dataspace_factory::Virt_range;
 
 		/**
 		 * Constructor
@@ -132,10 +140,12 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		                     Region_map       &local_rm,
 		                     Pager_entrypoint &pager_ep,
 		                     char const       *args,
-		                     Range_allocator  &core_mem)
+		                     Range_allocator  &core_mem,
+		                     Core::System_control &system_control)
 		:
 			Session_object(ep, resources, label, diag),
 			_ep(ep),
+			_system_control(system_control),
 			_constrained_md_ram_alloc(*this, _ram_quota_guard(), _cap_quota_guard()),
 			_constrained_core_ram_alloc(_ram_quota_guard(), _cap_quota_guard(), core_mem),
 			_sliced_heap(_constrained_md_ram_alloc, local_rm),
@@ -156,6 +166,8 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 			}
 		}
 
+		~Pd_session_component();
+
 		/**
 		 * Initialize cap and RAM accounts without providing a reference account
 		 *
@@ -168,19 +180,15 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 			_ram_account.construct(_ram_quota_guard(), _label);
 		}
 
-		/**
-		 * Associate thread with PD
-		 *
-		 * \return true on success
-		 *
-		 * This function may fail for platform-specific reasons such as a
-		 * limit on the number of threads per protection domain or a limited
-		 * thread ID namespace.
-		 */
-		bool bind_thread(Platform_thread &thread)
+		void with_platform_pd(auto const &fn)
 		{
-			return _pd->bind_thread(thread);
+			if (_pd.constructed())
+				fn(*_pd);
+			else
+				error("unexpected call for 'with_platform_pd'");
 		}
+
+		void with_threads(auto const &fn) { fn(_threads); }
 
 		Region_map_component &address_space_region_map()
 		{
@@ -195,24 +203,30 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 
 		bool assign_pci(addr_t, uint16_t) override;
 
-		void map(addr_t, addr_t) override;
+		Map_result map(Pd_session::Virt_range) override;
 
 
 		/****************
 		 ** Signalling **
 		 ****************/
 
-		Signal_source_capability alloc_signal_source() override
+		Signal_source_result signal_source() override
 		{
-			_consume_cap(SIG_SOURCE_CAP);
+			try { _consume_cap(SIG_SOURCE_CAP); }
+			catch (Out_of_caps) {
+				return Signal_source_error::OUT_OF_CAPS; }
+
+			Signal_source_result result = Capability<Signal_source>();
+
 			try { return _signal_broker.alloc_signal_source(); }
-			catch (Genode::Allocator::Out_of_memory) {
-				_released_cap_silent();
-				throw Out_of_ram();
-			}
+			catch (Out_of_ram)  { result = Signal_source_error::OUT_OF_RAM;  }
+			catch (Out_of_caps) { result = Signal_source_error::OUT_OF_CAPS; }
+
+			_released_cap_silent();
+			return result;
 		}
 
-		void free_signal_source(Signal_source_capability sig_rec_cap) override
+		void free_signal_source(Capability<Signal_source> sig_rec_cap) override
 		{
 			if (sig_rec_cap.valid()) {
 				_signal_broker.free_signal_source(sig_rec_cap);
@@ -220,21 +234,24 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 			}
 		}
 
-		Signal_context_capability
-		alloc_context(Signal_source_capability sig_rec_cap, unsigned long imprint) override
+		Alloc_context_result
+		alloc_context(Capability<Signal_source> sig_rec_cap, Imprint imprint) override
 		{
-			Cap_quota_guard::Reservation cap_costs(_cap_quota_guard(), Cap_quota{1});
 			try {
-				/* may throw 'Out_of_ram' or 'Invalid_signal_source' */
+				Cap_quota_guard::Reservation cap_costs(_cap_quota_guard(), Cap_quota{1});
+
+				/* may throw 'Out_of_ram', 'Out_of_caps', or 'Invalid_signal_source' */
 				Signal_context_capability cap =
-					_signal_broker.alloc_context(sig_rec_cap, imprint);
+					_signal_broker.alloc_context(sig_rec_cap, imprint.value);
 
 				cap_costs.acknowledge();
 				diag("consumed signal-context cap (", _cap_account, ")");
 				return cap;
 			}
 			catch (Signal_broker::Invalid_signal_source) {
-				throw Pd_session::Invalid_signal_source(); }
+				return Alloc_context_error::INVALID_SIGNAL_SOURCE; }
+			catch (Out_of_ram)  { return Alloc_context_error::OUT_OF_RAM;  }
+			catch (Out_of_caps) { return Alloc_context_error::OUT_OF_CAPS; }
 		}
 
 		void free_context(Signal_context_capability cap) override
@@ -251,14 +268,19 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		 ** RPC capability allocation **
 		 *******************************/
 
-		Native_capability alloc_rpc_cap(Native_capability ep) override
+		Alloc_rpc_cap_result alloc_rpc_cap(Native_capability ep) override
 		{
 			/* may throw 'Out_of_caps' */
-			_consume_cap(RPC_CAP);
+			try { _consume_cap(RPC_CAP); }
+			catch (Out_of_caps) {
+				return Alloc_rpc_cap_error::OUT_OF_CAPS; }
 
 			/* may throw 'Out_of_ram' */
-			try {  return _rpc_cap_factory.alloc(ep); }
-			catch (...) { _released_cap_silent(); throw; }
+			try {
+				return _rpc_cap_factory.alloc(ep); }
+			catch (...) {
+				_released_cap_silent();
+				return Alloc_rpc_cap_error::OUT_OF_RAM; }
 		}
 
 		void free_rpc_cap(Native_capability cap) override
@@ -286,10 +308,10 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		 ** Capability and RAM trading and accounting **
 		 ***********************************************/
 
-		void ref_account(Capability<Pd_session>) override;
+		Ref_account_result ref_account(Capability<Pd_session>) override;
 
-		void transfer_quota(Capability<Pd_session>, Cap_quota) override;
-		void transfer_quota(Capability<Pd_session>, Ram_quota) override;
+		Transfer_cap_quota_result transfer_quota(Capability<Pd_session>, Cap_quota) override;
+		Transfer_ram_quota_result transfer_quota(Capability<Pd_session>, Ram_quota) override;
 
 		Cap_quota cap_quota() const override
 		{
@@ -330,11 +352,17 @@ class Genode::Pd_session_component : public Session_object<Pd_session>
 		Capability<Native_pd> native_pd() override { return _native_pd.cap(); }
 
 
-		/*******************************
-		 ** Managing system interface **
-		 *******************************/
+		/******************************
+		 ** System control interface **
+		 ******************************/
 
-		Managing_system_state managing_system(Managing_system_state const &) override;
+		Capability<System_control> system_control_cap(Affinity::Location const location) override
+		{
+			if (_managing_system == Managing_system::PERMITTED)
+				return _system_control.control_cap(location);
+
+			return { };
+		}
 
 
 		/*******************************************

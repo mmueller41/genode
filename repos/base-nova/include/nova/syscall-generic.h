@@ -3,11 +3,12 @@
  * \author Norman Feske
  * \author Sebastian Sumpf
  * \author Alexander Boettcher
+ * \author Benjamin Lamowski
  * \date   2009-12-27
  */
 
 /*
- * Copyright (c) 2009 Genode Labs
+ * Copyright (c) 2009-2023 Genode Labs
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -56,7 +57,7 @@ namespace Nova {
 		NOVA_CREATE_PT  = 0x5,
 		NOVA_CREATE_SM  = 0x6,
 		NOVA_REVOKE     = 0x7,
-		NOVA_LOOKUP     = 0x8,
+		NOVA_MISC       = 0x8, /* lookup, delegate, acpi_suspend */
 		NOVA_EC_CTRL    = 0x9,
 		NOVA_SC_CTRL    = 0xa,
 		NOVA_PT_CTRL    = 0xb,
@@ -129,8 +130,9 @@ namespace Nova {
 		uint32_t const tsc_freq;    /* time-stamp counter frequency in kHz     */
 		uint32_t const bus_freq;    /* bus frequency in kHz                    */
 
-		bool has_feature_vmx() const { return feature_flags & (1 << 1); }
-		bool has_feature_svm() const { return feature_flags & (1 << 2); }
+		bool has_feature_iommu() const { return feature_flags & (1 << 0); }
+		bool has_feature_vmx()   const { return feature_flags & (1 << 1); }
+		bool has_feature_svm()   const { return feature_flags & (1 << 2); }
 
 		struct Cpu_desc {
 			uint8_t flags;
@@ -144,6 +146,9 @@ namespace Nova {
 			uint8_t platform:3;
 			uint8_t reserved:1;
 			uint32_t patch;
+
+			bool p_core() const { return flags & 0x2; }
+			bool e_core() const { return flags & 0x4; }
 			uint8_t numa_id;
 		} __attribute__((packed));
 
@@ -175,41 +180,102 @@ namespace Nova {
 		}
 
 		/**
-		 * Map kernel cpu ids to virtual cpu ids.
+		 * Resort CPU ids such, that
+		 * - the boot CPU id is ever logical CPU id 0
+		 * - SMT threads of one CPU have logical CPU ids close together
+		 * - P-Core has a smaller logical CPU id than E-Core CPUs
+		 *
+		 * Returns true, if re-mapping succeeded otherwise false.
+		 *
+		 * In case of failure, map_cpus will contain a 1:1 fallback mapping
+		 * without any sorting as mentioned above.
 		 */
-		bool remap_cpu_ids(uint8_t *map_cpus, uint8_t *cpu_numa_map, unsigned const boot_cpu) const {
+		bool remap_cpu_ids(uint16_t *map_cpus, uint8_t *cpu_numa_map, unsigned const max_cpus,
+		                   unsigned const boot_cpu) const
+		{
 			unsigned const num_cpus = cpus();
+			bool too_many_cpus = false;
 			unsigned cpu_i = 0;
+
+			/* fallback lambda in case re-ordering fails */
+			auto remap_failure = [&] {
+				for (uint16_t i = 0; i < max_cpus; i++) { map_cpus[i] = i; }
+				return false;
+			};
 
 			/* assign boot cpu ever the virtual cpu id 0 */
 			Cpu_desc const * const boot = cpu_desc_of_cpu(boot_cpu);
-			if (!boot || !is_cpu_enabled(boot_cpu))
-				return false;
+			if (!boot)
+				return remap_failure();
 
 			map_cpus[cpu_i++] = (uint8_t)boot_cpu;
 			if (cpu_i >= num_cpus)
 				return true;
+			if (cpu_i >= max_cpus)
+				return remap_failure();
 
-			/* assign remaining cores and afterwards all threads to the ids */
-			for (uint8_t package = 0; package < 255; package++) {
-				for (uint8_t core = 0; core < 255; core++) {
-					for (uint8_t thread = 0; thread < 255; thread++) {
+			/* assign cores + SMT threads first and skip E-cores */
+			bool done = for_all_cpus([&](auto const &cpu, auto const kernel_cpu_id) {
+				if (kernel_cpu_id == boot_cpu)
+					return false;
+
+				/* handle normal or P-core */
+				if (cpu.e_core())
+					return false;
+
+				map_cpus[cpu_i++] = (uint8_t)kernel_cpu_id;
+
+				too_many_cpus = !!(cpu_i >= max_cpus);
+
+				return (cpu_i >= num_cpus || too_many_cpus);
+			});
+
+			if (done)
+				return too_many_cpus ? remap_failure() : true;
+
+			/* assign remaining E-cores */
+			done = for_all_cpus([&](auto &cpu, auto &kernel_cpu_id) {
+				if (kernel_cpu_id == boot_cpu)
+					return false;
+
+				/* handle solely E-core */
+				if (!cpu.e_core())
+					return false;
+
+				map_cpus[cpu_i++] = (uint16_t)kernel_cpu_id;
+
+				too_many_cpus = !!(cpu_i >= max_cpus);
+
+				return (cpu_i >= num_cpus || too_many_cpus);
+			});
+
+			return too_many_cpus ? remap_failure() : done;
+		}
+
+		/**
+		 * Iterate over all CPUs in a _ever_ _consistent_ order.
+		 */
+		bool for_all_cpus(auto const &fn) const
+		{
+			for (uint16_t package = 0; package <= 255; package++) {
+				for (uint16_t core = 0; core <= 255; core++) {
+					for (uint16_t thread = 0; thread <= 255; thread++) {
 						for (unsigned i = 0; i < cpu_max(); i++) {
-							if (i == boot_cpu || !is_cpu_enabled(i))
+							if (!is_cpu_enabled(i))
 								continue;
 
-							Cpu_desc const * const c = cpu_desc_of_cpu(i);
-							if (!c)
+							auto const cpu = cpu_desc_of_cpu(i);
+							if (!cpu)
 								continue;
 
-							if (!(c->package == package && c->core == core &&
-							      c->thread == thread))
+							if (!(cpu->package == package && cpu->core == core &&
+							      cpu->thread == thread))
 								continue;
 
-							map_cpus[cpu_i++] = (uint8_t)i;
+							bool done = fn(*cpu, i);
 							cpu_numa_map[cpu_i++] = c->numa_id;
-							if (cpu_i >= num_cpus)
-								return true;
+							if (done)
+								return done;
 						}
 					}
 				}
@@ -217,14 +283,13 @@ namespace Nova {
 			return false;
 		}
 
-		template <typename FUNC>
-		void for_each_enabled_cpu(FUNC const &func) const
+		void for_each_enabled_cpu(auto const &fn) const
 		{
 			for (unsigned i = 0; i < cpu_max(); i++) {
 				Cpu_desc const * cpu = cpu_desc_of_cpu(i);
 				if (!is_cpu_enabled(i)) continue;
 				if (!cpu) return;
-				func(*cpu, i);
+				fn(*cpu, i);
 			}
 		}
 
@@ -246,6 +311,9 @@ namespace Nova {
 		EC_RESCHEDULE = 3U,
 		EC_MIGRATE = 4U,
 		EC_TIME = 5U,
+		EC_GET_VCPU_STATE = 6U,
+		EC_SET_VCPU_STATE = 7U,
+		EC_MSR_ACCESS = 8U
 	};
 
 	enum Sc_op {
@@ -352,6 +420,7 @@ namespace Nova {
 				SYSCALL_SWAPGS = 1U << 23,  /* SYSCALL and SWAPGS MSRs */
 				TPR            = 1U << 24,  /* TPR and TPR threshold */
 				TSC_AUX        = 1U << 25,  /* IA32_TSC_AUX used by rdtscp */
+				XSAVE          = 1U << 26,  /* XCR and XSS used with XSAVE */
 				FPU            = 1U << 31,  /* FPU state */
 
 				IRQ   = EFL | STA | INJ | TSC,
@@ -595,8 +664,8 @@ namespace Nova {
 #endif
 				unsigned long long qual[2];  /* exit qualification */
 				unsigned ctrl[2];
-				unsigned long long reserved;
 				mword_t cr0, cr2, cr3, cr4;
+				unsigned long long xcr0, xss;
 				mword_t pdpte[4];
 #ifdef __x86_64__
 				mword_t cr8, efer;
@@ -627,6 +696,8 @@ namespace Nova {
 #endif
 				} gdtr, idtr;
 				unsigned long long tsc_val, tsc_off, tsc_aux;
+				unsigned long long exit_reason;
+				uint8_t fpu[512];
 			} __attribute__((packed));
 			mword_t mr[(4096 - 4 * sizeof(mword_t)) / sizeof(mword_t)];
 		};
@@ -716,7 +787,7 @@ namespace Nova {
 		 * Calling this function has the side effect of removing all typed
 		 * message items from the message buffer.
 		 */
-		void set_msg_word(unsigned num) { items = num; }
+		void set_msg_word(mword_t const num) { items = num; }
 
 		/**
 		 * Return current number of message word in UTCB

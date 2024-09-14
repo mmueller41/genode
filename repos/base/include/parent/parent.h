@@ -14,7 +14,7 @@
 #ifndef _INCLUDE__PARENT__PARENT_H_
 #define _INCLUDE__PARENT__PARENT_H_
 
-#include <base/exception.h>
+#include <util/attempt.h>
 #include <base/rpc.h>
 #include <base/rpc_args.h>
 #include <base/thread.h>
@@ -53,12 +53,12 @@ class Genode::Parent
 
 	public:
 
-		typedef Rpc_in_buffer<64>  Service_name;
-		typedef Rpc_in_buffer<160> Session_args;
-		typedef Rpc_in_buffer<160> Upgrade_args;
+		using Service_name = Rpc_in_buffer<64>;
+		using Session_args = Rpc_in_buffer<160>;
+		using Upgrade_args = Rpc_in_buffer<160>;
 
-		struct Client : Interface { typedef Id_space<Client>::Id Id; };
-		struct Server : Interface { typedef Id_space<Server>::Id Id; };
+		struct Client : Interface { using Id = Id_space<Client>::Id; };
+		struct Server : Interface { using Id = Id_space<Server>::Id; };
 
 		/**
 		 * Predefined session IDs corresponding to the environment sessions
@@ -84,7 +84,7 @@ class Genode::Parent
 		 * Use 'String' instead of 'Rpc_in_buffer' because 'Resource_args'
 		 * is used as both in and out parameter.
 		 */
-		typedef String<160> Resource_args;
+		using Resource_args = String<160>;
 
 		virtual ~Parent() { }
 
@@ -125,7 +125,7 @@ class Genode::Parent
 		template <typename ROOT_INTERFACE>
 		void announce(Capability<ROOT_INTERFACE> const &service_root)
 		{
-			typedef typename ROOT_INTERFACE::Session_type Session;
+			using Session = typename ROOT_INTERFACE::Session_type;
 			announce(Session::service_name(), service_root);
 
 			/*
@@ -143,6 +143,16 @@ class Genode::Parent
 		 */
 		virtual void session_sigh(Signal_context_capability) = 0;
 
+		enum class Session_error {
+			OUT_OF_RAM,             /* session RAM quota exceeds our resources */
+			OUT_OF_CAPS,            /* session CAP quota exceeds our resources */
+			INSUFFICIENT_RAM_QUOTA, /* RAM donation does not suffice */
+			INSUFFICIENT_CAP_QUOTA, /* CAP donation does not suffice */
+			DENIED,                 /* parent or server denies request */
+		};
+
+		using Session_result = Attempt<Capability<Session>, Session_error>;
+
 		/**
 		 * Create session to a service
 		 *
@@ -151,39 +161,35 @@ class Genode::Parent
 		 * \param args             session constructor arguments
 		 * \param affinity         preferred CPU affinity for the session
 		 *
-		 * \throw Service_denied          parent denies session request
-		 * \throw Insufficient_cap_quota  donated cap quota does not suffice
-		 * \throw Insufficient_ram_quota  donated RAM quota does not suffice
-		 * \throw Out_of_caps             session CAP quota exceeds our resources
-		 * \throw Out_of_ram              session RAM quota exceeds our resources
-		 *
 		 * \return session capability if the new session is immediately
-		 *         available, or an invalid capability
+		 *         available, or an invalid capability, or an error of
+		 *         type 'Session_error'.
 		 *
 		 * If the returned capability is invalid, the request is pending at the
 		 * server. The parent delivers a signal to the handler as registered
 		 * via 'session_sigh' once the server responded to the request. Now the
 		 * session capability can be picked up by calling 'session_cap'.
 		 */
-		virtual Session_capability session(Client::Id          id,
-		                                   Service_name const &service_name,
-		                                   Session_args const &args,
-		                                   Affinity     const &affinity = Affinity()) = 0;
+		virtual Session_result session(Client::Id          id,
+		                               Service_name const &service_name,
+		                               Session_args const &args,
+		                               Affinity     const &affinity = Affinity()) = 0;
+
+		enum class Session_cap_error { INSUFFICIENT_RAM_QUOTA,
+		                               INSUFFICIENT_CAP_QUOTA, DENIED, };
+
+		using Session_cap_result = Attempt<Capability<Session>, Session_cap_error>;
 
 		/**
 		 * Request session capability
 		 *
-		 * \throw Service_denied
-		 * \throw Insufficient_cap_quota
-		 * \throw Insufficient_ram_quota
-		 *
 		 * See 'session' for more documentation.
 		 *
-		 * In the exception case, the parent implicitly closes the session.
+		 * In the error case, the parent implicitly closes the session.
 		 */
-		virtual Session_capability session_cap(Client::Id id) = 0;
+		virtual Session_cap_result session_cap(Client::Id id) = 0;
 
-		enum Upgrade_result { UPGRADE_DONE, UPGRADE_PENDING };
+		enum class Upgrade_result { OK, PENDING, OUT_OF_RAM, OUT_OF_CAPS };
 
 		/**
 		 * Transfer our quota to the server that provides the specified session
@@ -191,16 +197,13 @@ class Genode::Parent
 		 * \param id         ID of recipient session
 		 * \param args       description of the amount of quota to transfer
 		 *
-		 * \throw Out_of_caps
-		 * \throw Out_of_ram
-		 *
 		 * The 'args' argument has the same principle format as the 'args'
 		 * argument of the 'session' operation.
 		 */
 		virtual Upgrade_result upgrade(Client::Id to_session,
 		                               Upgrade_args const &args) = 0;
 
-		enum [[nodiscard]] Close_result { CLOSE_DONE, CLOSE_PENDING };
+		enum class [[nodiscard]] Close_result { DONE, PENDING };
 
 		/**
 		 * Close session
@@ -308,19 +311,11 @@ class Genode::Parent
 		GENODE_RPC(Rpc_announce, void, announce,
 		           Service_name const &);
 		GENODE_RPC(Rpc_session_sigh, void, session_sigh, Signal_context_capability);
-		GENODE_RPC_THROW(Rpc_session, Session_capability, session,
-		                 GENODE_TYPE_LIST(Service_denied, Out_of_caps,
-		                                  Out_of_ram, Insufficient_cap_quota,
-		                                  Insufficient_ram_quota),
-		                 Client::Id, Service_name const &, Session_args const &,
-		                 Affinity const &);
-		GENODE_RPC_THROW(Rpc_session_cap, Session_capability, session_cap,
-		                 GENODE_TYPE_LIST(Service_denied, Insufficient_cap_quota,
-		                                  Insufficient_ram_quota),
-		                 Client::Id);
-		GENODE_RPC_THROW(Rpc_upgrade, Upgrade_result, upgrade,
-		                 GENODE_TYPE_LIST(Out_of_ram, Out_of_caps),
-		                 Client::Id, Upgrade_args const &);
+		GENODE_RPC(Rpc_session, Session_result, session,
+		           Client::Id, Service_name const &, Session_args const &,
+		           Affinity const &);
+		GENODE_RPC(Rpc_session_cap, Session_cap_result, session_cap, Client::Id);
+		GENODE_RPC(Rpc_upgrade, Upgrade_result, upgrade, Client::Id, Upgrade_args const &);
 		GENODE_RPC(Rpc_close, Close_result, close, Client::Id);
 		GENODE_RPC(Rpc_session_response, void, session_response,
 		           Server::Id, Session_response);
@@ -353,11 +348,11 @@ Genode::Parent::_announce_base(Genode::Capability<ROOT_INTERFACE> const &service
                                Genode::Meta::Bool_to_type<true> *)
 {
 	/* shortcut for inherited session type */
-	typedef typename ROOT_INTERFACE::Session_type::Rpc_inherited_interface
-	        Session_type_inherited;
+	using Session_type_inherited =
+		typename ROOT_INTERFACE::Session_type::Rpc_inherited_interface;
 
 	/* shortcut for root interface type matching the inherited session type */
-	typedef Typed_root<Session_type_inherited> Root_inherited;
+	using Root_inherited = Typed_root<Session_type_inherited>;
 
 	/* convert root capability to match the inherited session type */
 	Capability<Root>           root           = service_root;

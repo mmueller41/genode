@@ -21,19 +21,22 @@
 #include <util/fifo.h>
 #include <base/signal.h>
 
-namespace Genode {
+/* core includes */
+#include <types.h>
+
+namespace Core {
 
 	class Signal_context_component;
 	class Signal_source_component;
 
-	typedef Fifo<Signal_context_component> Signal_queue;
+	using Signal_queue = Fifo<Signal_context_component>;
 
 	struct Signal_context_slab;
 }
 
 
-class Genode::Signal_context_component : public Rpc_object<Signal_context>,
-                                         private Signal_queue::Element
+class Core::Signal_context_component : public Rpc_object<Signal_context>,
+                                       private Signal_queue::Element
 {
 	private:
 
@@ -75,7 +78,7 @@ class Genode::Signal_context_component : public Rpc_object<Signal_context>,
 };
 
 
-class Genode::Signal_source_component : public Signal_source_rpc_object
+class Core::Signal_source_component : public Signal_source_rpc_object
 {
 	private:
 
@@ -105,7 +108,7 @@ class Genode::Signal_source_component : public Signal_source_rpc_object
 };
 
 
-Genode::Signal_context_component::~Signal_context_component()
+Core::Signal_context_component::~Signal_context_component()
 {
 	if (enqueued())
 		_source.release(*this);

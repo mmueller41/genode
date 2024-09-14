@@ -13,9 +13,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes */
 #include <irq_root.h>
 #include <irq_args.h>
@@ -25,7 +22,7 @@
 #include <nova/syscalls.h>
 #include <nova_util.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 static bool irq_ctrl(addr_t irq_sel, addr_t &msi_addr, addr_t &msi_data,
@@ -67,6 +64,9 @@ static void deassociate(addr_t irq_sel)
 static bool associate_msi(addr_t irq_sel, addr_t phys_mem, addr_t &msi_addr,
                           addr_t &msi_data, Signal_context_capability sig_cap)
 {
+	if (!phys_mem)
+		return irq_ctrl(irq_sel, msi_addr, msi_data, sig_cap.local_name(), Nova::Gsi_flags(), 0);
+
 	return platform().region_alloc().alloc_aligned(4096, 12).convert<bool>(
 
 		[&] (void *virt_ptr) {
@@ -118,7 +118,7 @@ void Irq_object::sigh(Signal_context_capability cap)
 
 	/* associate GSI or MSI to device belonging to device_phys */
 	bool ok = false;
-	if (_device_phys)
+	if (_device_phys || (_msi_addr && _msi_data))
 		ok = associate_msi(irq_sel(), _device_phys, _msi_addr, _msi_data, cap);
 	else
 		ok = associate_gsi(irq_sel(), cap, _gsi_flags);
@@ -176,10 +176,10 @@ void Irq_object::start(unsigned irq, addr_t const device_phys, Irq_args const &i
 
 	/* associate GSI or MSI to device belonging to device_phys */
 	bool ok = false;
-	if (device_phys)
-		ok = associate_msi(irq_sel(), device_phys, _msi_addr, _msi_data, _sigh_cap);
-	else
+	if (irq_args.type() == Irq_session::TYPE_LEGACY)
 		ok = associate_gsi(irq_sel(), _sigh_cap, _gsi_flags);
+	else
+		ok = associate_msi(irq_sel(), device_phys, _msi_addr, _msi_data, _sigh_cap);
 
 	if (!ok)
 		throw Service_denied();
@@ -212,17 +212,6 @@ Irq_object::~Irq_object()
  ***************************/
 
 
-static Nova::Hip const &kernel_hip()
-{
-	/**
-	 * Initial value of esp register, saved by the crt0 startup code.
-	 * This value contains the address of the hypervisor information page.
-	 */
-	extern addr_t __initial_sp;
-	return *reinterpret_cast<Nova::Hip const *>(__initial_sp);
-}
-
-
 Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
                                              const char      *args)
 :
@@ -231,8 +220,7 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 	Irq_args const irq_args(args);
 
 	long irq_number = irq_args.irq_number();
-	long device_phys = Arg_string::find_arg(args, "device_config_phys").long_value(0);
-	if (device_phys) {
+	if (irq_args.type() != Irq_session::TYPE_LEGACY) {
 
 		if ((unsigned long)irq_number >= kernel_hip().sel_gsi)
 			throw Service_denied();
@@ -250,6 +238,7 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 
 	_irq_number = (unsigned)irq_number;
 
+	long device_phys = Arg_string::find_arg(args, "device_config_phys").long_value(0);
 	_irq_object.start(_irq_number, device_phys, irq_args);
 }
 

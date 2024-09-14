@@ -33,8 +33,7 @@ namespace Genode { namespace Trait {
 		template <unsigned _WIDTH>
 		struct Raise_to_uint_width
 		{
-			enum { WIDTH = _WIDTH < 2  ? 1  :
-			               _WIDTH < 9  ? 8  :
+			enum { WIDTH = _WIDTH < 9  ? 8  :
 			               _WIDTH < 17 ? 16 :
 			               _WIDTH < 33 ? 32 :
 			               _WIDTH < 65 ? 64 : 0, };
@@ -45,10 +44,10 @@ namespace Genode { namespace Trait {
 		 */
 		template <unsigned long _WIDTH> struct Uint_width;
 
-		template <> struct Uint_width<1>
+		template <> struct Uint_width<8>
 		{
-			typedef bool Type;
-			enum { WIDTH_LOG2 = 0 };
+			using Type = uint8_t;
+			enum { WIDTH_LOG2 = 3 };
 
 			/**
 			 * Access widths wich are dividers to the compound type width
@@ -56,31 +55,25 @@ namespace Genode { namespace Trait {
 			template <unsigned long _DIVISOR_WIDTH> struct Divisor;
 		};
 
-		template <> struct Uint_width<8> : Uint_width<1>
-		{
-			typedef uint8_t Type;
-			enum { WIDTH_LOG2 = 3 };
-		};
-
 		template <> struct Uint_width<16> : Uint_width<8>
 		{
-			typedef uint16_t Type;
+			using Type = uint16_t;
 			enum { WIDTH_LOG2 = 4 };
 		};
 
 		template <> struct Uint_width<32> : Uint_width<16>
 		{
-			typedef uint32_t Type;
+			using Type = uint32_t;
 			enum { WIDTH_LOG2 = 5 };
 		};
 
 		template <> struct Uint_width<64> : Uint_width<32>
 		{
-			typedef uint64_t Type;
+			using Type = uint64_t;
 			enum { WIDTH_LOG2 = 6 };
 		};
 
-		template <> struct Uint_width<1>::Divisor<1>   { enum { WIDTH_LOG2 = 0 }; };
+		template <> struct Uint_width<8>::Divisor<1>   { enum { WIDTH_LOG2 = 0 }; };
 		template <> struct Uint_width<8>::Divisor<2>   { enum { WIDTH_LOG2 = 1 }; };
 		template <> struct Uint_width<8>::Divisor<4>   { enum { WIDTH_LOG2 = 2 }; };
 		template <> struct Uint_width<8>::Divisor<8>   { enum { WIDTH_LOG2 = 3 }; };
@@ -93,7 +86,6 @@ namespace Genode { namespace Trait {
 		 */
 		template <typename _TYPE> struct Uint_type;
 
-		template <> struct Uint_type<bool>     : Uint_width<1> { };
 		template <> struct Uint_type<uint8_t>  : Uint_width<8> { };
 		template <> struct Uint_type<uint16_t> : Uint_width<16> { };
 		template <> struct Uint_type<uint32_t> : Uint_width<32> { };
@@ -115,13 +107,11 @@ namespace Genode { namespace Trait {
 template <unsigned long _ACCESS_WIDTH>
 struct Genode::Register
 {
-	enum {
-		ACCESS_WIDTH      = _ACCESS_WIDTH,
-		ACCESS_WIDTH_LOG2 = Trait::Uint_width<ACCESS_WIDTH>::WIDTH_LOG2,
-		BITFIELD_WIDTH    = ACCESS_WIDTH,
-	};
+	static constexpr size_t ACCESS_WIDTH      = _ACCESS_WIDTH;
+	static constexpr size_t ACCESS_WIDTH_LOG2 = Trait::Uint_width<ACCESS_WIDTH>::WIDTH_LOG2;
+	static constexpr size_t BITFIELD_WIDTH    = ACCESS_WIDTH;
 
-	typedef typename Trait::Uint_width<ACCESS_WIDTH>::Type access_t;
+	using access_t = typename Trait::Uint_width<ACCESS_WIDTH>::Type;
 
 	/**
 	 * A bitregion within a register
@@ -136,15 +126,15 @@ struct Genode::Register
 	template <unsigned long _SHIFT, unsigned long _WIDTH>
 	struct Bitfield
 	{
-		enum {
+		/**
+		 * Fetch template parameters
+		 */
+		static constexpr size_t SHIFT          = _SHIFT;
+		static constexpr size_t WIDTH          = _WIDTH;
+		static constexpr size_t BITFIELD_WIDTH = WIDTH;
 
-			/**
-			 * Fetch template parameters
-			 */
-			SHIFT          = _SHIFT,
-			WIDTH          = _WIDTH,
-			BITFIELD_WIDTH = WIDTH,
-		};
+		using bitfield_t =
+			typename Trait::Uint_width<Trait::Raise_to_uint_width<WIDTH>::WIDTH>::Type;
 
 		/**
 		 * Get an unshifted mask of this field
@@ -172,7 +162,7 @@ struct Genode::Register
 		/**
 		 * Back reference to containing register
 		 */
-		typedef Register<ACCESS_WIDTH> Compound_reg;
+		using Compound_reg = Register<ACCESS_WIDTH>;
 
 		/**
 		 * Get register with this bitfield set to 'value' and rest left 0
@@ -195,8 +185,8 @@ struct Genode::Register
 		/**
 		 * Get value of this bitfield from 'reg'
 		 */
-		static inline access_t get(access_t const reg)
-		{ return (reg >> SHIFT) & mask(); }
+		static inline bitfield_t get(access_t const reg)
+		{ return (bitfield_t)((reg >> SHIFT) & mask()); }
 
 		/**
 		 * Get register value 'reg' with this bitfield set to zero
@@ -226,16 +216,16 @@ struct Genode::Register
 template <typename _BITS_0, typename _BITS_1>
 struct Genode::Bitset_2
 {
-	typedef _BITS_0 Bits_0;
-	typedef _BITS_1 Bits_1;
-	enum {
-		WIDTH          = Bits_0::BITFIELD_WIDTH +
-		                 Bits_1::BITFIELD_WIDTH,
-		BITFIELD_WIDTH = WIDTH,
-		ACCESS_WIDTH   = Trait::Raise_to_uint_width<WIDTH>::WIDTH,
-	};
-	typedef typename Trait::Uint_width<ACCESS_WIDTH>::Type access_t;
-	typedef Bitset_2<Bits_0, Bits_1> Bitset_2_base;
+	using Bits_0 = _BITS_0;
+	using Bits_1 = _BITS_1;
+
+	static constexpr size_t WIDTH          = Bits_0::BITFIELD_WIDTH +
+	                                         Bits_1::BITFIELD_WIDTH;
+	static constexpr size_t BITFIELD_WIDTH = WIDTH;
+	static constexpr size_t ACCESS_WIDTH   = Trait::Raise_to_uint_width<WIDTH>::WIDTH;
+
+	using access_t = typename Trait::Uint_width<ACCESS_WIDTH>::Type;
+	using Bitset_2_base = Bitset_2<Bits_0, Bits_1>;
 
 	/**
 	 * Convert bitset value to register representation
@@ -263,7 +253,7 @@ struct Genode::Bitset_2
 		Bits_1::clear(reg);
 		Bits_0::set(reg, value);
 		Bits_1::set(reg, value >> Bits_0::WIDTH);
-	};
+	}
 
 	/**
 	 * Read bitset from a given register value
@@ -276,7 +266,8 @@ struct Genode::Bitset_2
 	template <typename T>
 	static inline access_t get(T const reg)
 	{
-		return Bits_0::get(reg) | (Bits_1::get(reg) << Bits_0::WIDTH);
+		return (access_t)
+			(Bits_0::get(reg) | (Bits_1::get(reg) << Bits_0::WIDTH));
 	}
 };
 
@@ -292,19 +283,19 @@ struct Genode::Bitset_2
 template <typename _BITS_0, typename _BITS_1, typename _BITS_2>
 struct Genode::Bitset_3
 {
-	typedef _BITS_0 Bits_0;
-	typedef _BITS_1 Bits_1;
-	typedef _BITS_2 Bits_2;
-	typedef Bitset_2<Bits_0, Bits_1> Bits_0_1;
-	enum {
-		WIDTH          = Bits_0::BITFIELD_WIDTH +
-		                 Bits_1::BITFIELD_WIDTH +
-		                 Bits_2::BITFIELD_WIDTH,
-		BITFIELD_WIDTH = WIDTH,
-		ACCESS_WIDTH   = Trait::Raise_to_uint_width<WIDTH>::WIDTH,
-	};
-	typedef typename Trait::Uint_width<ACCESS_WIDTH>::Type access_t;
-	typedef Bitset_3<Bits_0, Bits_1, Bits_2> Bitset_3_base;
+	using Bits_0 = _BITS_0;
+	using Bits_1 = _BITS_1;
+	using Bits_2 = _BITS_2;
+	using Bits_0_1 = Bitset_2<Bits_0, Bits_1>;
+
+	static constexpr size_t WIDTH          = Bits_0::BITFIELD_WIDTH +
+	                                         Bits_1::BITFIELD_WIDTH +
+	                                         Bits_2::BITFIELD_WIDTH;
+	static constexpr size_t BITFIELD_WIDTH = WIDTH;
+	static constexpr size_t ACCESS_WIDTH   = Trait::Raise_to_uint_width<WIDTH>::WIDTH;
+
+	using access_t = typename Trait::Uint_width<ACCESS_WIDTH>::Type;
+	using Bitset_3_base = Bitset_3<Bits_0, Bits_1, Bits_2>;
 
 	/**
 	 * Convert bitset value to register representation
@@ -333,7 +324,7 @@ struct Genode::Bitset_3
 		Bits_2::clear(reg);
 		Bits_0_1::set(reg, value);
 		Bits_2::set(reg, value >> Bits_0_1::WIDTH);
-	};
+	}
 
 	/**
 	 * Read bitset from a given register value

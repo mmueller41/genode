@@ -16,10 +16,10 @@
 
 #include <sel4_boot_info.h>
 
-namespace Genode { class Core_cspace; }
+namespace Core { class Core_cspace; }
 
 
-class Genode::Core_cspace
+class Core::Core_cspace
 {
 	public:
 
@@ -35,12 +35,13 @@ class Genode::Core_cspace
 
 		/* selectors for initially created CNodes during core bootup */
 		static unsigned top_cnode_sel()       { return (unsigned)sel4_boot_info().empty.start; }
-		static unsigned core_pad_cnode_sel()  { return top_cnode_sel() + 1; }
+		static unsigned core_pad_cnode_sel()  { return top_cnode_sel()      + 1; }
 		static unsigned core_cnode_sel()      { return core_pad_cnode_sel() + 1; }
-		static unsigned phys_cnode_sel()      { return core_cnode_sel() + 1; }
-		static unsigned untyped_cnode_4k()    { return phys_cnode_sel() + 1; }
-		static unsigned untyped_cnode_16k()   { return untyped_cnode_4k() + 1; }
-		static unsigned core_static_sel_end() { return untyped_cnode_16k() + 1; }
+		static unsigned phys_cnode_sel()      { return core_cnode_sel()     + 1; }
+		static unsigned untyped_cnode_4k()    { return phys_cnode_sel()     + 1; }
+		static unsigned untyped_cnode_16k()   { return untyped_cnode_4k()   + 1; }
+		static unsigned io_port_sel()         { return untyped_cnode_16k()  + 1; }
+		static unsigned core_static_sel_end() { return io_port_sel()        + 1; }
 
 		/* indices within top-level CNode */
 		enum Top_cnode_idx {

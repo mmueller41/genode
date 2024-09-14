@@ -25,21 +25,17 @@
 #include <blit/painter.h>
 
 
-struct Gui_buffer
+struct Gui_buffer : Genode::Noncopyable
 {
-	typedef Genode::Pixel_rgb888 Pixel_rgb888;
-	typedef Genode::Pixel_alpha8 Pixel_alpha8;
-
-	typedef Genode::Surface<Pixel_rgb888> Pixel_surface;
-	typedef Genode::Surface<Pixel_alpha8> Alpha_surface;
-
-	typedef Genode::Surface_base::Area  Area;
-	typedef Genode::Surface_base::Rect  Rect;
-	typedef Genode::Surface_base::Point Point;
-
-	typedef Genode::Attached_ram_dataspace Ram_ds;
-
-	using size_t = Genode::size_t;
+	using Pixel_rgb888  = Genode::Pixel_rgb888;
+	using Pixel_alpha8  = Genode::Pixel_alpha8;
+	using Pixel_surface = Genode::Surface<Pixel_rgb888>;
+	using Alpha_surface = Genode::Surface<Pixel_alpha8>;
+	using Area          = Genode::Surface_base::Area;
+	using Rect          = Genode::Surface_base::Rect;
+	using Point         = Genode::Surface_base::Point;
+	using Ram_ds        = Genode::Attached_ram_dataspace;
+	using size_t        = Genode::size_t;
 
 	Genode::Ram_allocator &ram;
 	Genode::Region_map    &rm;
@@ -50,7 +46,7 @@ struct Gui_buffer
 
 	bool const use_alpha;
 
-	Pixel_rgb888 reset_color { 127, 127, 127, 255 };
+	Pixel_rgb888 const reset_color;
 
 	/**
 	 * Return dataspace capability for virtual framebuffer
@@ -60,7 +56,7 @@ struct Gui_buffer
 		/* setup virtual framebuffer mode */
 		gui.buffer(mode, use_alpha);
 
-		return gui.framebuffer()->dataspace();
+		return gui.framebuffer.dataspace();
 	}
 
 	Genode::Attached_dataspace fb_ds { rm, _ds_cap(gui) };
@@ -80,17 +76,24 @@ struct Gui_buffer
 
 	enum class Alpha { OPAQUE, ALPHA };
 
+	static Genode::Color default_reset_color()
+	{
+		return Genode::Color(127, 127, 127, 255);
+	}
+
 	/**
 	 * Constructor
 	 */
 	Gui_buffer(Gui::Connection &gui, Area size,
 	           Genode::Ram_allocator &ram, Genode::Region_map &rm,
-	           Alpha alpha = Alpha::ALPHA)
+	           Alpha alpha = Alpha::ALPHA,
+	           Genode::Color reset_color = default_reset_color())
 	:
 		ram(ram), rm(rm), gui(gui),
-		mode({ .area = { Genode::max(1U, size.w()),
-		                 Genode::max(1U, size.h()) } }),
-		use_alpha(alpha == Alpha::ALPHA)
+		mode({ .area = { Genode::max(1U, size.w),
+		                 Genode::max(1U, size.h) } }),
+		use_alpha(alpha == Alpha::ALPHA),
+		reset_color(reset_color.r, reset_color.g, reset_color.b, reset_color.a)
 	{
 		reset_surface();
 	}
@@ -174,7 +177,7 @@ struct Gui_buffer
 
 		/*
 		 * Set input mask for all pixels where the alpha value is above a
-		 * given threshold. The threshold is defines such that typical
+		 * given threshold. The threshold is defined such that typical
 		 * drop shadows are below the value.
 		 */
 		unsigned char const threshold = 100;

@@ -15,7 +15,6 @@
 #include <monitor.h>
 
 /* Genode includes */
-#include <trace_session/connection.h>
 #include <util/formatted_output.h>
 
 using namespace Genode;
@@ -31,7 +30,24 @@ struct Formatted_affinity
 
 	void print(Genode::Output &out) const
 	{
-		Genode::print(out, "at (", affinity.xpos(),",", affinity.ypos(), ")");
+		Genode::print(out, " at (", affinity.xpos(),",", affinity.ypos(), ")");
+	}
+};
+
+
+template<typename T>
+struct Formatted
+{
+	char const *type = "";
+
+	T const &value;
+
+	Formatted(T const &value) : value(value) { }
+	Formatted(char const *type, T const &value) : type(type), value(value) { }
+
+	void print(Genode::Output &out) const
+	{
+		Genode::print(out, " ", type, value);
 	}
 };
 
@@ -61,25 +77,6 @@ struct Conditional
 			Genode::print(out, _arg);
 	}
 };
-
-
-/******************
- ** Monitor_base **
- ******************/
-
-Monitor_base::Monitor_base(Trace::Connection &trace,
-                           Region_map        &rm,
-                           Trace::Subject_id  subject_id)
-:
-	_trace(trace), _rm(rm),
-	_buffer_raw(*(Trace::Buffer *)rm.attach(_trace.buffer(subject_id)))
-{ }
-
-
-Monitor_base::~Monitor_base()
-{
-	_rm.detach(&_buffer_raw);
-}
 
 
 /*************
@@ -112,17 +109,12 @@ Monitor::Monitor(Trace::Connection      &trace,
 
 void Monitor::update_info(Trace::Subject_info const &info)
 {
-	try {
-		uint64_t const last_execution_time =
-			_info.execution_time().thread_context;
+	_recent_exec_time = {
+		info.execution_time().thread_context     - _info.execution_time().thread_context,
+		info.execution_time().scheduling_context - _info.execution_time().scheduling_context
+	};
 
-		_info = info;
-
-		_recent_exec_time =
-			_info.execution_time().thread_context - last_execution_time;
-	}
-	catch (Trace::Nonexistent_subject) {
-		warning("Cannot update subject info: Nonexistent_subject"); }
+	_info = info;
 }
 
 
@@ -133,13 +125,16 @@ void Monitor::apply_formatting(Formatting &formatting) const
 		n = max(n, printed_length(arg));
 	};
 
-	typedef Trace::Subject_info Subject_info;
+	using Subject_info = Trace::Subject_info;
 
-	expand(formatting.thread_name, Quoted_name{_info.thread_name()});
+	expand(formatting.thread_name, Formatted("Thread ", Quoted_name{_info.thread_name()}));
 	expand(formatting.affinity,    Formatted_affinity{_info.affinity()});
-	expand(formatting.state,       Subject_info::state_name(_info.state()));
-	expand(formatting.total_cpu,   _info.execution_time().thread_context);
-	expand(formatting.recent_cpu,  _recent_exec_time);
+	expand(formatting.state,       Formatted(Subject_info::state_name(_info.state())));
+	expand(formatting.prio,        Formatted("prio:", _info.execution_time().priority));
+	expand(formatting.total_tc,    Formatted("total:", _info.execution_time().thread_context));
+	expand(formatting.recent_tc,   Formatted("recent:", _recent_exec_time.thread_context));
+	expand(formatting.total_sc,    Formatted("total_sc:", _info.execution_time().scheduling_context));
+	expand(formatting.recent_sc,   Formatted("recent_sc:", _recent_exec_time.scheduling_context));
 }
 
 
@@ -150,14 +145,18 @@ void Monitor::print(Formatting fmt, Level_of_detail detail)
 		return;
 
 	/* print general subject information */
-	typedef Trace::Subject_info Subject_info;
+	using Subject_info = Trace::Subject_info;
 	Subject_info::State const state = _info.state();
-	log(" Thread ", Left_aligned(fmt.thread_name, Quoted_name{_info.thread_name()}),
-	    " ",        Left_aligned(fmt.affinity, Formatted_affinity{_info.affinity()}),
-	    "  ",       Conditional(detail.state,
-	                            Left_aligned(fmt.state + 1, Subject_info::state_name(state))),
-	    "total:",   Left_aligned(fmt.total_cpu, _info.execution_time().thread_context), " "
-	    "recent:",  _recent_exec_time);
+
+	log(Left_aligned(fmt.thread_name, Formatted("Thread ", Quoted_name{_info.thread_name()})),
+	    Left_aligned(fmt.affinity, Formatted_affinity{_info.affinity()}),
+	    " ",
+	    Conditional(detail.state, Left_aligned(fmt.state, Formatted("", Subject_info::state_name(state)))),
+	    Conditional(detail.prio, Left_aligned(fmt.prio, Formatted("prio:", _info.execution_time().priority))),
+	    Left_aligned(fmt.total_tc,  Formatted("total:",  _info.execution_time().thread_context)),
+	    Left_aligned(fmt.recent_tc, Formatted("recent:", _recent_exec_time.thread_context)),
+	    Conditional(detail.sc_time, Left_aligned(fmt.total_sc,  Formatted("total_sc:",  _info.execution_time().scheduling_context))),
+	    Conditional(detail.sc_time, Left_aligned(fmt.recent_sc, Formatted("recent_sc:", _recent_exec_time.scheduling_context))));
 
 	/* print all buffer entries that we haven't yet printed */
 	_buffer.for_each_new_entry([&] (Trace::Buffer::Entry entry) {

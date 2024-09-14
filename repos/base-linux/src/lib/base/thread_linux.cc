@@ -15,12 +15,10 @@
 /* Genode includes */
 #include <base/env.h>
 #include <base/thread.h>
-#include <base/snprintf.h>
 #include <base/sleep.h>
 #include <base/log.h>
 #include <linux_native_cpu/client.h>
 #include <cpu_thread/client.h>
-#include <deprecated/env.h>
 
 /* base-internal includes */
 #include <base/internal/stack.h>
@@ -31,9 +29,25 @@
 
 using namespace Genode;
 
+
 extern int main_thread_futex_counter;
 
+
 static void empty_signal_handler(int) { }
+
+
+static Capability<Pd_session> pd_session_cap(Capability<Pd_session> pd_cap = { })
+{
+	static Capability<Pd_session> cap = pd_cap; /* defined once by 'init_thread_start' */
+	return cap;
+}
+
+
+static Thread_capability main_thread_cap(Thread_capability main_cap = { })
+{
+	static Thread_capability cap = main_cap; /* defined once by 'init_thread_bootstrap' */
+	return cap;
+}
 
 
 static Blockade &startup_lock()
@@ -89,15 +103,19 @@ void Thread::_thread_start()
 void Thread::_init_platform_thread(size_t /* weight */, Type type)
 {
 	/* if no cpu session is given, use it from the environment */
-	if (!_cpu_session)
-		_cpu_session = env_deprecated()->cpu_session();
+	if (!_cpu_session) {
+		error("Thread::_init_platform_thread: _cpu_session not initialized");
+		return;
+	}
 
 	/* for normal threads create an object at the CPU session */
 	if (type == NORMAL) {
-		_thread_cap = _cpu_session->create_thread(env_deprecated()->pd_session_cap(),
-		                                          _stack->name().string(),
-		                                          Affinity::Location(),
-		                                          Weight());
+		_cpu_session->create_thread(pd_session_cap(), _stack->name().string(),
+		                            Affinity::Location(), Weight()).with_result(
+			[&] (Thread_capability cap) { _thread_cap = cap; },
+			[&] (Cpu_session::Create_thread_error) {
+				error("Thread::_init_platform_thread: create_thread failed");
+			});
 		return;
 	}
 	/* adjust initial object state for main threads */
@@ -136,11 +154,13 @@ void Thread::_deinit_platform_thread()
 	}
 
 	/* inform core about the killed thread */
-	_cpu_session->kill_thread(_thread_cap);
+	_thread_cap.with_result(
+		[&] (Thread_capability cap) { _cpu_session->kill_thread(cap); },
+		[&] (Cpu_session::Create_thread_error) { });
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/* synchronize calls of the 'start' function */
 	static Mutex mutex;
@@ -165,4 +185,22 @@ void Thread::start()
 
 	/* wait until the 'thread_start' function got entered */
 	startup_lock().block();
+
+	return Start_result::OK;
+}
+
+
+void Genode::init_thread_start(Capability<Pd_session> pd_cap)
+{
+	pd_session_cap(pd_cap);
+}
+
+
+void Genode::init_thread_bootstrap(Cpu_session &cpu, Thread_capability main_cap)
+{
+	main_thread_cap(main_cap);
+
+	/* register TID and PID of the main thread at core */
+	Linux_native_cpu_client native_cpu(cpu.native_cpu());
+	native_cpu.thread_id(main_cap, lx_getpid(), lx_gettid());
 }

@@ -21,10 +21,10 @@
 /* core includes */
 #include <dataspace_component.h>
 
-namespace Genode { class Core_region_map; }
+namespace Core { class Core_region_map; }
 
 
-class Genode::Core_region_map : public Region_map
+class Core::Core_region_map : public Region_map
 {
 	private:
 
@@ -34,18 +34,11 @@ class Genode::Core_region_map : public Region_map
 
 		Core_region_map(Rpc_entrypoint &ep) : _ep(ep) { }
 
-		Local_addr attach(Dataspace_capability, size_t size = 0,
-		                  off_t offset=0, bool use_local_addr = false,
-		                  Local_addr local_addr = 0,
-		                  bool executable = false,
-		                  bool writeable = true) override;
-
-		void detach(Local_addr) override;
-
-		void  fault_handler (Signal_context_capability) override { }
-		State state         ()                          override { return State(); }
-
-		Dataspace_capability dataspace() override { return Dataspace_capability(); }
+		Attach_result        attach(Dataspace_capability, Attr const &) override;
+		void                 detach(addr_t) override;
+		void                 fault_handler (Signal_context_capability) override { }
+		Fault                fault()     override { return { }; }
+		Dataspace_capability dataspace() override { return { }; }
 };
 
 #endif /* _CORE__INCLUDE__CORE_REGION_MAP_H_ */

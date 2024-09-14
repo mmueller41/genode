@@ -86,17 +86,15 @@ class Scene : public Nano3d::Scene<PT>
 		{
 			_config.update();
 
-			try {
-				_shape = SHAPE_DODECAHEDRON;
-				if (_config.xml().attribute("shape").has_value("cube"))
-					_shape = SHAPE_CUBE;
-			} catch (...) { }
+			using Value = Genode::String<32>;
 
-			try {
-				_painter = PAINTER_TEXTURED;
-				if (_config.xml().attribute("painter").has_value("shaded"))
-					_painter = PAINTER_SHADED;
-			} catch (...) { }
+			_shape = SHAPE_DODECAHEDRON;
+			if (_config.xml().attribute_value("shape", Value()) == "cube")
+				_shape = SHAPE_CUBE;
+
+			_painter = PAINTER_TEXTURED;
+			if (_config.xml().attribute_value("painter", Value()) == "shaded")
+				_painter = PAINTER_SHADED;
 		}
 
 		Genode::Signal_handler<Scene> _config_handler;
@@ -116,8 +114,8 @@ class Scene : public Nano3d::Scene<PT>
 
 	private:
 
-		Polygon::Shaded_painter   _shaded_painter   { _heap, _size.h() };
-		Polygon::Textured_painter _textured_painter { _heap, _size.h() };
+		Polygon::Shaded_painter   _shaded_painter   { _heap, _size.h };
+		Polygon::Textured_painter _textured_painter { _heap, _size.h };
 
 		Nano3d::Cube_shape         const _cube         { 7000 };
 		Nano3d::Dodecahedron_shape const _dodecahedron { 10000 };
@@ -128,7 +126,7 @@ class Scene : public Nano3d::Scene<PT>
 		                   SHAPE const &shape, unsigned frame,
 		                   bool backward_facing)
 		{
-			typedef Genode::Color Color;
+			using Color = Genode::Color;
 
 			auto vertices = shape.vertex_array();
 
@@ -140,7 +138,7 @@ class Scene : public Nano3d::Scene<PT>
 
 			if (_painter == PAINTER_TEXTURED) {
 
-				typedef Polygon::Textured_painter::Point Textured_point;
+				using Textured_point = Polygon::Textured_painter::Point;
 
 				shape.for_each_face([&] (unsigned const vertex_indices[],
 				                         unsigned num_vertices) {
@@ -156,7 +154,7 @@ class Scene : public Nano3d::Scene<PT>
 							backward_facing ? points[num_vertices - 1 - i]
 							                : points[i];
 
-						int const r = _texture.size.w()/2;
+						int const r = _texture.size.w/2;
 
 						int const u = r + (r*Nano3d::cos_frac16(angle) >> 16);
 						int const v = r + (r*Nano3d::sin_frac16(angle) >> 16);
@@ -173,7 +171,7 @@ class Scene : public Nano3d::Scene<PT>
 
 			if (_painter == PAINTER_SHADED) {
 
-				typedef Polygon::Shaded_painter::Point Shaded_point;
+				using Shaded_point = Polygon::Shaded_painter::Point;
 
 				shape.for_each_face([&] (unsigned const vertex_indices[],
 				                         unsigned num_vertices) {
@@ -189,8 +187,8 @@ class Scene : public Nano3d::Scene<PT>
 							                : points[i];
 
 						Color const color =
-							backward_facing ? Color(i*10, i*10, i*10, 230 - i*18)
-							                : Color(240, 10*i, 0, 10 + i*35);
+							backward_facing ? Color::clamped_rgba(i*10, i*10, i*10, 230 - i*18)
+							                : Color::clamped_rgba(240, 10*i, 0, 10 + i*35);
 
 						point = Shaded_point(v.x(), v.y(), color);
 					}

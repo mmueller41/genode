@@ -28,7 +28,6 @@
 
 #include <base/attached_dataspace.h>
 #include <base/heap.h>
-#include <base/debug.h>
 #include <gui_session/connection.h>
 #include <libc/component.h>
 #include <libc/args.h>
@@ -43,14 +42,14 @@ Genode::Env *genode_env;
 
 struct Window : Genode_egl_window
 {
-	using View_handle = Gui::Session::View_handle;
 	using Command = Gui::Session::Command;
 
 	Genode::Env      &env;
 	Framebuffer::Mode mode;
 	Gui::Connection   gui { env };
 	Genode::Constructible<Genode::Attached_dataspace> ds { };
-	View_handle       view { };
+
+	Gui::Top_level_view view { gui };
 
 	Genode::addr_t fb_addr { 0 };
 	Genode::addr_t fb_size { 0 };
@@ -65,13 +64,8 @@ struct Window : Genode_egl_window
 		type   = WINDOW;
 
 		gui.buffer(mode, false);
-		view = gui.create_view();
 
 		mode_change();
-
-		gui.enqueue<Command::Title>(view, "eglut");
-		gui.enqueue<Command::To_front>(view, View_handle());
-		gui.execute();
 	}
 
 	void mode_change()
@@ -79,18 +73,16 @@ struct Window : Genode_egl_window
 		if (ds.constructed())
 			ds.destruct();
 
-		ds.construct(env.rm(), gui.framebuffer()->dataspace());
+		ds.construct(env.rm(), gui.framebuffer.dataspace());
 
 		addr = ds->local_addr<unsigned char>();
 
-		Gui::Rect rect { Gui::Point { 0, 0 }, mode.area };
-		gui.enqueue<Command::Geometry>(view, rect);
-		gui.execute();
+		view.area(mode.area);
 	}
 
 	void refresh()
 	{
-		gui.framebuffer()->refresh(0, 0, mode.area.w(), mode.area.h());
+		gui.framebuffer.refresh(0, 0, mode.area.w, mode.area.h);
 	}
 };
 
@@ -106,7 +98,7 @@ void _eglutNativeInitDisplay()
 
 void _eglutNativeFiniDisplay(void)
 {
-	PDBG("not implemented");
+	Genode::warning(__PRETTY_FUNCTION__, " not implemented");
 }
 
 
@@ -123,7 +115,7 @@ void _eglutNativeInitWindow(struct eglut_window *win, const char *title,
 
 void _eglutNativeFiniWindow(struct eglut_window *win)
 {
-	PDBG("not implemented");
+	Genode::warning(__PRETTY_FUNCTION__, " not implemented");
 }
 
 

@@ -20,8 +20,8 @@
 
 struct Line_painter
 {
-	typedef Genode::Surface_base::Rect  Rect;
-	typedef Genode::Surface_base::Point Point;
+	using Rect  = Genode::Surface_base::Rect;
+	using Point = Genode::Surface_base::Point;
 
 	/**
 	 * Fixpoint number with 8 fractional bits
@@ -126,7 +126,8 @@ struct Line_painter
 		 * Reduce clipping area by one pixel as the antialiased line touches an
 		 * area of 2x2 for each pixel.
 		 */
-		Rect const clip(surface.clip().p1(), surface.clip().p2() + Point(-1, -1));
+		Rect const clip = Rect::compound(surface.clip().p1(),
+		                                 surface.clip().p2() + Point(-1, -1));
 
 		if (!clip.valid())
 			return;
@@ -138,6 +139,8 @@ struct Line_painter
 
 		long const dx_f = x2.value - x1.value,
 		           dy_f = y2.value - y1.value;
+
+		auto abs = [] (auto v) { return v >= 0 ? v : -v; };
 
 		long const num_steps = max(abs(dx_f) + 127, abs(dy_f) + 127) >> 8;
 
@@ -156,7 +159,7 @@ struct Line_painter
 		int const alpha = color.a;
 
 		PT *     const dst   = surface.addr();
-		unsigned const dst_w = surface.size().w();
+		unsigned const dst_w = surface.size().w;
 
 		long x = x1.value << 8, y = y1.value << 8;
 
@@ -176,11 +179,11 @@ struct Line_painter
 	           Genode::Color color) const
 	{
 		paint(surface,
-		      Fixpoint::from_int(p1.x()), Fixpoint::from_int(p1.y()),
-		      Fixpoint::from_int(p2.x()), Fixpoint::from_int(p2.y()),
+		      Fixpoint::from_int(p1.x), Fixpoint::from_int(p1.y),
+		      Fixpoint::from_int(p2.x), Fixpoint::from_int(p2.y),
 		      color);
 
-		surface.flush_pixels(Rect(p1, p2));
+		surface.flush_pixels(Rect::compound(p1, p2));
 	}
 };
 

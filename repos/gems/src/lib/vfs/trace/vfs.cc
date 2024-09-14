@@ -5,13 +5,14 @@
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
 
 #include <base/attached_rom_dataspace.h>
+#include <base/attached_dataspace.h>
 #include <vfs/dir_file_system.h>
 #include <vfs/single_file_system.h>
 #include <vfs/value_file_system.h>
@@ -22,8 +23,7 @@
 #include <trace_session/connection.h>
 #include <trace/trace_buffer.h>
 
-#include "directory_tree.h"
-
+#include "directory_dictionary.h"
 
 namespace Vfs_trace {
 
@@ -55,14 +55,23 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 
 			void setup(Dataspace_capability ds)
 			{
-				_buffer.construct(*((Trace::Buffer *)_env.env().rm().attach(ds)));
+				_env.env().rm().attach(ds, {
+					.size       = { },  .offset    = { },
+					.use_at     = { },  .at        = { },
+					.executable = { },  .writeable = true
+				}).with_result(
+					[&] (Region_map::Range range) {
+						_buffer.construct(*(Trace::Buffer *)range.start); },
+					[&] (Region_map::Attach_error) {
+						error("failed to attach trace buffer"); }
+				);
 			}
 
 			void flush()
 			{
 				if (!_buffer.constructed()) return;
 
-				_env.env().rm().detach(_buffer->address());
+				_env.env().rm().detach(addr_t(_buffer->address()));
 				_buffer.destruct();
 			}
 
@@ -75,16 +84,17 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 
 		enum State { OFF, TRACE, PAUSED } _state { OFF };
 
+		using Policy_id = Trace::Connection::Alloc_policy_result;
+
 		Vfs::Env          &_env;
 		Trace::Connection &_trace;
-		Trace::Policy_id   _policy;
+		Policy_id          _policy;
 		Trace::Subject_id  _id;
-		size_t             _buffer_size { 1024 * 1024 };
+		Trace::Buffer_size _buffer_size { 1024 * 1024 };
 		size_t             _stat_size { 0 };
 		Trace_entries      _entries { _env };
 
-
-		typedef String<32> Config;
+		using Config = String<32>;
 
 		static Config _config()
 		{
@@ -99,12 +109,14 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 		{
 			_entries.flush();
 
-			try {
-				_trace.trace(_id, _policy, _buffer_size);
-			} catch (...) {
-				error("failed to start tracing");
-				return;
-			}
+			_policy.with_result(
+				[&] (Trace::Policy_id policy_id) {
+					if (_trace.trace(_id, policy_id, _buffer_size).failed())
+						error("failed to start tracing");
+				},
+				[&] (Trace::Connection::Alloc_policy_error) {
+					warning("skip tracing because of invalid policy");
+				});
 
 			_entries.setup(_trace.buffer(_id));
 		}
@@ -122,16 +134,15 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 			: Single_vfs_handle(ds, fs, alloc, 0), _entries(entries)
 			{ }
 
-			Read_result read(char *dst, file_size count,
-			                 file_size &out_count) override
+			Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 			{
 				out_count = 0;
 				_entries.for_each_new_entry([&](Trace::Buffer::Entry entry) {
-					file_size size = min(count - out_count, entry.length());
-					memcpy(dst + out_count, entry.data(), (size_t)size);
+					size_t const size = min(dst.num_bytes - out_count, entry.length());
+					memcpy(dst.start + out_count, entry.data(), size);
 					out_count += size;
 
-					if (out_count == count)
+					if (out_count == dst.num_bytes)
 						return false;
 
 					return true;
@@ -140,14 +151,14 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 				return READ_OK;
 			}
 
-			Write_result write(char const *, file_size,
-			                   file_size &out_count) override
+			Write_result write(Const_byte_range_ptr const &, size_t &out_count) override
 			{
 				out_count = 0;
 				return WRITE_ERR_INVALID;
 			}
 
-			bool read_ready() override { return true; }
+			bool read_ready()  const override { return true; }
+			bool write_ready() const override { return false; }
 		};
 
 		Trace_buffer_file_system(Vfs::Env &env,
@@ -198,9 +209,9 @@ class Vfs_trace::Trace_buffer_file_system : public Single_file_system
 		 ** FS event handlers **
 		 ***********************/
 
-		bool resize_buffer(size_t size)
+		bool resize_buffer(Trace::Buffer_size size)
 		{
-			if (size == 0) return false;
+			if (size.num_bytes == 0) return false;
 
 			_buffer_size = size;
 
@@ -279,14 +290,14 @@ class Vfs_trace::Subject : private Subject_factory,
 {
 	private:
 
-		typedef String<200> Config;
+		using Config = String<200>;
 
-		Watch_handler<Subject> _enable_handler {
+		Io::Watch_handler<Subject> _enable_handler {
 		  _enabled_fs, "/enable",
 		  Subject_factory::_env.alloc(),
 		  *this, &Subject::_enable_subject };
 
-		Watch_handler<Subject> _buffer_size_handler {
+		Io::Watch_handler<Subject> _buffer_size_handler {
 		  _buffer_size_fs, "/buffer_size",
 		  Subject_factory::_env.alloc(),
 		  *this, &Subject::_buffer_size };
@@ -319,7 +330,7 @@ class Vfs_trace::Subject : private Subject_factory,
 
 		void _buffer_size()
 		{
-			Number_of_bytes size = _buffer_size_fs.value();
+			Trace::Buffer_size const size { _buffer_size_fs.value() };
 
 			if (_trace_fs.resize_buffer(size) == false) {
 				/* restore old value */
@@ -334,7 +345,7 @@ class Vfs_trace::Subject : private Subject_factory,
 
 		Subject(Vfs::Env &env, Trace::Connection &trace,
 		        Trace::Policy_id policy, Xml_node node)
-		: Subject_factory(env, trace, policy, node.attribute_value("id", 0u)),
+		: Subject_factory(env, trace, policy, { node.attribute_value("id", 0u) }),
 		  Dir_file_system(env, Xml_node(_config(node).string()), *this)
 		{ }
 
@@ -346,11 +357,12 @@ class Vfs_trace::Subject : private Subject_factory,
 
 struct Vfs_trace::Local_factory : File_system_factory
 {
-	Vfs::Env          &_env;
+	using Policy_id = Trace::Connection::Alloc_policy_result;
 
-	Trace::Connection  _trace;
-	Trace::Policy_id   _policy_id { 0 };
-	Directory_tree     _tree { _env.alloc() };
+	Vfs::Env         &_env;
+	Trace::Connection _trace;
+	Policy_id         _policy_id = Trace::Connection::Alloc_policy_error::INVALID;
+	Trace_directory   _directory { _env.alloc() };
 
 	void _install_null_policy()
 	{
@@ -359,7 +371,7 @@ struct Vfs_trace::Local_factory : File_system_factory
 
 		try {
 			null_policy.construct(_env.env(), "null");
-			_policy_id = _trace.alloc_policy(null_policy->size());
+			_policy_id = _trace.alloc_policy(Trace::Policy_size { null_policy->size() });
 		}
 		catch (Out_of_caps) { throw; }
 		catch (Out_of_ram)  { throw; }
@@ -370,9 +382,16 @@ struct Vfs_trace::Local_factory : File_system_factory
 		}
 
 		/* copy policy into trace session */
-		void *dst = _env.env().rm().attach(_trace.policy(_policy_id));
-		memcpy(dst, null_policy->local_addr<void*>(), null_policy->size());
-		_env.env().rm().detach(dst);
+		_policy_id.with_result(
+			[&] (Trace::Policy_id const id) {
+				Dataspace_capability ds_cap = _trace.policy(id);
+				if (ds_cap.valid()) {
+					Attached_dataspace dst { _env.env().rm(), ds_cap };
+					memcpy(dst.local_addr<char>(), null_policy->local_addr<void*>(), null_policy->size());
+				}
+			},
+			[&] (Trace::Connection::Alloc_policy_error) { }
+		);
 	}
 
 	size_t _config_session_ram(Xml_node config)
@@ -385,7 +404,7 @@ struct Vfs_trace::Local_factory : File_system_factory
 	}
 
 	Local_factory(Vfs::Env &env, Xml_node config)
-	: _env(env), _trace(env.env(), _config_session_ram(config), 512*1024, 0)
+	: _env(env), _trace(env.env(), _config_session_ram(config), 512*1024)
 	{
 		_trace.for_each_subject_info([&] (Trace::Subject_id   const id,
 		                                  Trace::Subject_info const &info) {
@@ -393,7 +412,7 @@ struct Vfs_trace::Local_factory : File_system_factory
 			if (info.state() == Trace::Subject_info::DEAD)
 				return;
 
-			_tree.insert(info, id);
+			_directory.insert(info, id);
 		});
 
 		_install_null_policy();
@@ -401,10 +420,15 @@ struct Vfs_trace::Local_factory : File_system_factory
 
 	Vfs::File_system *create(Vfs::Env&, Xml_node node) override
 	{
-		if (node.has_type(Subject::type_name()))
-			return new (_env.alloc()) Subject(_env, _trace, _policy_id, node);
+		Vfs::File_system *result = nullptr;
 
-		return nullptr;
+		if (node.has_type(Subject::type_name()))
+			_policy_id.with_result(
+				[&] (Trace::Policy_id const id) {
+					result = new (_env.alloc()) Subject(_env, _trace, id, node); },
+				[&] (Trace::Connection::Alloc_policy_error) { });
+
+		return result;
 	}
 };
 
@@ -414,13 +438,13 @@ class Vfs_trace::File_system : private Local_factory,
 {
 	private:
 
-		typedef String<512*1024> Config;
+		using Config = String<512*1024>;
 
-		static char const *_config(Vfs::Env &vfs_env, Directory_tree &tree)
+		static char const *_config(Vfs::Env &vfs_env, Trace_directory &directory)
 		{
 			char *buf = (char *)vfs_env.alloc().alloc(Config::capacity());
 			Xml_generator xml(buf, Config::capacity(), "node", [&] () {
-				tree.xml(xml);
+				directory.xml(xml);
 			});
 
 			return buf;
@@ -430,7 +454,7 @@ class Vfs_trace::File_system : private Local_factory,
 
 		File_system(Vfs::Env &vfs_env, Genode::Xml_node node)
 		: Local_factory(vfs_env, node),
-			Vfs::Dir_file_system(vfs_env, Xml_node(_config(vfs_env, _tree)), *this)
+			Vfs::Dir_file_system(vfs_env, Xml_node(_config(vfs_env, _directory)), *this)
 		{ }
 
 		char const *type() override { return "trace"; }

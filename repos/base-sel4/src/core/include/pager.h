@@ -23,11 +23,11 @@
 #include <pager/capability.h>
 #include <ipc_pager.h>
 
-/* core-local includes */
+/* core includes */
 #include <rpc_cap_factory.h>
 #include <base/internal/capability_space_sel4.h>
 
-namespace Genode {
+namespace Core {
 
 	/**
 	 * Special server object for paging
@@ -43,11 +43,13 @@ namespace Genode {
 	 */
 	class Pager_entrypoint;
 
+	using Pager_capability = Capability<Pager_object>;
+
 	enum { PAGER_EP_STACK_SIZE = sizeof(addr_t) * 2048 };
 }
 
 
-class Genode::Pager_object : public Object_pool<Pager_object>::Entry
+class Core::Pager_object : public Object_pool<Pager_object>::Entry
 {
 	protected:
 
@@ -58,7 +60,7 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 
 		Cpu_session_capability _cpu_session_cap;
 		Thread_capability      _thread_cap;
-		Genode::Cap_sel        _reply_cap;
+		Cap_sel                _reply_cap;
 
 		/**
 		 * User-level signal handler registered for this pager object via
@@ -92,6 +94,8 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 
 		unsigned long reply_cap_sel() const { return _reply_cap.value(); }
 
+		enum class Pager_result { STOP, CONTINUE };
+
 		/**
 		 * Interface to be implemented by a derived class
 		 *
@@ -99,7 +103,7 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 		 *
 		 * Returns !0 on error and pagefault will not be answered.
 		 */
-		virtual int pager(Ipc_pager &ps) = 0;
+		virtual Pager_result pager(Ipc_pager &ps) = 0;
 
 		/**
 		 * Wake up the faulter
@@ -155,8 +159,7 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 };
 
 
-class Genode::Pager_entrypoint : public Object_pool<Pager_object>,
-                                 public Thread
+class Core::Pager_entrypoint : public Object_pool<Pager_object>, public Thread
 {
 	private:
 

@@ -14,9 +14,10 @@ the default value for each attribute except the policy.thread and
 policy.label:
 
 ! <config verbose="no"
+!         priority="no"
+!         sc_time="no"
 !         session_ram="10M"
 !         session_arg_buffer="4K"
-!         session_parent_levels="0"
 !         period_sec="5"
 !         default_policy="null"
 !         default_buffer="4K">
@@ -33,17 +34,23 @@ policy.label:
 This is a short description of the tags and attributes:
 
 :config.verbose:
-  Optional. Toggles wether the trace_logger shall log debugging information.
+  Optional. Toggles whether the trace_logger shall log debugging information.
   If enabled, even inactive trace subjects appear in the log.
+
+:config.priority:
+  Optionally log thread priority.
+
+:config.sc_time:
+  Optionally log scheduling-context execution time in addition to the
+  thread-context. This may be relevant on kernel platforms that do not
+  schedule threads on their own CPU share only but implement some kind of
+  donation scheme, for example, NOVA.
 
 :config.session_ram:
   Optional. Amount of RAM donated to the trace session.
 
 :config.session_arg_buffer:
   Optional. Size of the trace sessions argument buffer.
-
-:config.session_parent_levels:
-  Optional. Number of parent levels to trace.
 
 :config.period_sec:
   Optional. Length of processing/export interval in seconds.

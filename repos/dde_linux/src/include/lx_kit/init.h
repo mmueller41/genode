@@ -16,11 +16,12 @@
 
 #include <base/env.h>
 #include <base/heap.h>
+#include <base/signal.h>
 
 namespace Lx_kit {
 	using namespace Genode;
 
-	void initialize(Env & env);
+	void initialize(Env & env, Genode::Signal_context & sig_ctx);
 	class Initcalls;
 
 	class Pci_fixup_calls;
@@ -35,8 +36,10 @@ class Lx_kit::Initcalls
 		{
 			unsigned int prio;
 			int (* call) (void);
+			char const *name;
 
-			E(unsigned int p, int (*fn)(void)) : prio(p), call(fn) {}
+			E(unsigned int p, int (*fn)(void), char const *name)
+			: prio(p), call(fn), name(name) {}
 		};
 
 		Heap  & _heap;
@@ -44,8 +47,9 @@ class Lx_kit::Initcalls
 
 	public:
 
-		void add(int (*initcall)(void), unsigned int prio);
+		void add(int (*initcall)(void), unsigned int prio, char const *name);
 		void execute_in_order();
+		void execute(char const *name);
 
 		Initcalls(Heap & heap) : _heap(heap) {}
 };

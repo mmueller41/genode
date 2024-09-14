@@ -11,58 +11,32 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
+/* Genode includes */
+#include <base/attached_dataspace.h>
+
 /* local includes */
 #include <policy.h>
 
 using namespace Genode;
 
 
-/***********************
- ** Policy_avl_member **
- ***********************/
-
-Policy_avl_member::Policy_avl_member(Policy_name const &name,
-                                     ::Policy          &policy)
+Policy::Policy(Env &env, Trace::Connection &trace, Policy_dict &dict,
+               Policy_name const &name)
 :
-	Avl_string_base(name.string()), _policy(policy)
-{ }
-
-
-/************
- ** Policy **
- ************/
-
-Policy::Policy(Env &env, Trace::Connection &trace, Policy_name const &name)
-:
-	Policy_base(name), _avl_member(_name, *this), _env(env), _trace(trace)
+	Policy_dict::Element(dict, name), _env(env), _trace(trace)
 {
-		Dataspace_capability dst_ds = _trace.policy(_id);
-		void *dst = _env.rm().attach(dst_ds);
-		void *src = _env.rm().attach(_ds);
-		memcpy(dst, src, _size);
-		_env.rm().detach(dst);
-		_env.rm().detach(src);
-}
-
-
-/*****************
- ** Policy_tree **
- *****************/
-
-Policy &Policy_tree::policy(Avl_string_base const &node)
-{
-	return static_cast<Policy_avl_member const *>(&node)->policy();
-}
-
-
-Policy &Policy_tree::find_by_name(Policy_name name)
-{
-	if (name == Policy_name() || !first()) {
-		throw No_match(); }
-
-	Avl_string_base *node = first()->find_by_name(name.string());
-	if (!node) {
-		throw No_match(); }
-
-	return policy(*node);
+	id.with_result(
+		[&] (Trace::Policy_id id) {
+			Dataspace_capability const dst_ds = _trace.policy(id);
+			if (dst_ds.valid()) {
+				Attached_dataspace dst { _env.rm(), dst_ds },
+				                   src { _env.rm(), _ds };
+				memcpy(dst.local_addr<void>(), src.local_addr<void>(), _size);
+				return;
+			}
+			warning("failed to obtain policy buffer for '", name, "'");
+		},
+		[&] (Trace::Connection::Alloc_policy_error) {
+			warning("failed to allocate policy buffer for '", name, "'");
+		});
 }

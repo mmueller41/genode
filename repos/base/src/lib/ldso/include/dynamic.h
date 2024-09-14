@@ -72,9 +72,9 @@ class Linker::Dynamic
 
 		struct Needed : Fifo<Needed>::Element
 		{
-			off_t offset;
+			addr_t offset;
 
-			Needed(off_t offset) : offset(offset) { }
+			Needed(addr_t offset) : offset(offset) { }
 
 			char const *path(char const *strtab)
 			{
@@ -307,8 +307,7 @@ class Linker::Dynamic
 		/**
 		 * Call functor for each dependency, passing the path as argument
 		 */
-		template <typename FUNC>
-		void for_each_dependency(FUNC const &fn) const
+		void for_each_dependency(auto const &fn) const
 		{
 			_needed.for_each([&] (Needed &n) {
 				fn(n.path(_strtab)); });

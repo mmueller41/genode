@@ -32,7 +32,7 @@ if {[have_include "power_on/qemu"]} {
 	exit 0
 }
 
-if {[have_board imx53_qsb_tz]} {
+if {[have_board imx53_qsb_tz] || [have_board rpi]} {
 	puts "Run script is not supported on this platform."
 	exit 0
 }
@@ -59,34 +59,37 @@ proc unique_byte_per_platform { } {
 				if {[have_spec foc]}       { return 6; }
 				if {[have_spec sel4]}      { return 7; }
 			}
+			if {[have_board zynq_usrp_e31x]} {
+				if {[have_spec hw]}        { return 8; }
+			}
 		}
 		if {[have_spec arm_v8a]} {
 			if {[have_board imx8q_evk]} {
-				if {[have_spec hw]}        { return 8; }
+				if {[have_spec hw]}        { return 20; }
 			}
 		}
 		if {[have_spec x86_32]} {
 			if {[have_board linux]} {
-				if {[have_spec linux]}     { return 9; }
+				if {[have_spec linux]}     { return 40; }
 			}
 			if {[have_board pc]} {
-				if {[have_spec foc]}       { return 10; }
-				if {[have_spec sel4]}      { return 11; }
-				if {[have_spec nova]}      { return 12; }
-				if {[have_spec fiasco]}    { return 13; }
-				if {[have_spec okl4]}      { return 14; }
-				if {[have_spec pistachio]} { return 15; }
+				if {[have_spec foc]}       { return 41; }
+				if {[have_spec sel4]}      { return 42; }
+				if {[have_spec nova]}      { return 43; }
+				if {[have_spec fiasco]}    { return 44; }
+				if {[have_spec okl4]}      { return 45; }
+				if {[have_spec pistachio]} { return 46; }
 			}
 		}
 		if {[have_spec x86_64]} {
 			if {[have_board linux]} {
-				if {[have_spec linux]}     { return 16; }
+				if {[have_spec linux]}     { return 60; }
 			}
 			if {[have_board pc]} {
-				if {[have_spec hw]}        { return 17; }
-				if {[have_spec foc]}       { return 18; }
-				if {[have_spec sel4]}      { return 19; }
-				if {[have_spec nova]}      { return 20; }
+				if {[have_spec hw]}        { return 61; }
+				if {[have_spec foc]}       { return 62; }
+				if {[have_spec sel4]}      { return 63; }
+				if {[have_spec nova]}      { return 64; }
 			}
 		}
 	}
@@ -147,19 +150,19 @@ set packages "
 	[depot_user]/src/vfs
 	[depot_user]/src/nic_router
 "
-set use_nic_drv [expr !$use_usb_driver && !$use_wifi_driver]
-append_if $use_nic_drv      packages " [depot_user]/pkg/[drivers_nic_pkg]         "
-append_if [expr !$use_lxip] packages " [depot_user]/src/vfs_lwip                  "
-append_if $use_lxip         packages " [depot_user]/src/vfs_lxip                  "
-append_if $use_nic_bridge   packages " [depot_user]/src/nic_bridge                "
-append_if $use_usb_driver   packages " [depot_user]/pkg/test_usb_host_drv-[board] "
-append_if $use_usb_driver   packages " [depot_user]/src/usb_net_drv               "
-append_if $use_wifi_driver  packages " [depot_user]/src/fs_rom                    "
-append_if $use_wifi_driver  packages " [depot_user]/src/vfs_import                "
-append_if $use_wifi_driver  packages " [depot_user]/pkg/wifi                      "
-append_if $use_wifi_driver  packages " [depot_user]/src/acpi_drv                  "
-append_if $use_wifi_driver  packages " [depot_user]/src/pci_decode                "
-append_if $use_wifi_driver  packages " [depot_user]/src/platform_drv              "
+set use_nic_driver [expr !$use_usb_driver && !$use_wifi_driver]
+append_if $use_nic_driver   packages " [depot_user]/pkg/[drivers_nic_pkg]     "
+append_if [expr !$use_lxip] packages " [depot_user]/src/vfs_lwip              "
+append_if $use_lxip         packages " [depot_user]/src/vfs_lxip              "
+append_if $use_nic_bridge   packages " [depot_user]/src/nic_bridge            "
+append_if $use_usb_driver   packages " [depot_user]/pkg/test_usb_host-[board] "
+append_if $use_usb_driver   packages " [depot_user]/src/usb_net               "
+append_if $use_wifi_driver  packages " [depot_user]/src/fs_rom                "
+append_if $use_wifi_driver  packages " [depot_user]/src/vfs_import            "
+append_if $use_wifi_driver  packages " [depot_user]/pkg/pc_wifi               "
+append_if $use_wifi_driver  packages " [depot_user]/src/acpi                  "
+append_if $use_wifi_driver  packages " [depot_user]/src/pci_decode            "
+append_if $use_wifi_driver  packages " [depot_user]/src/platform              "
 
 import_from_depot $packages
 
@@ -172,7 +175,7 @@ build { app/netperf }
 set lx_ip_addr "10.0.2.55"
 
 set config {
-<config verbose="yes" prio_levels="2">
+<config verbose="yes" prio_levels="4">
 	<parent-provides>
 		<service name="ROM"/>
 		<service name="IRQ"/>
@@ -190,48 +193,49 @@ set config {
 
 	<start name="timer">
 		<resource name="RAM" quantum="1M"/>
+		<resource name="CPU" quantum="10"/>
 		<provides> <service name="Timer"/> </provides>
 	</start> }
 
 if { $use_wifi_driver } {
 	append config {
-	<start name="report_rom" caps="70">
-		<resource name="RAM" quantum="1M"/>
+	<start name="report_rom" caps="100" priority="-1">
+		<resource name="RAM" quantum="2M"/>
 		<provides>
 			<service name="ROM" />
 			<service name="Report" />
 		</provides>
 		<config>
-			<policy label="pci_decode -> system"    report="acpi_drv -> acpi"/>
-			<policy label="platform_drv -> devices" report="pci_decode -> devices"/>
+			<policy label="pci_decode -> system" report="acpi -> acpi"/>
+			<policy label="platform -> devices"  report="pci_decode -> devices"/>
 		</config>
 	</start>
 
-	<start name="acpi_drv" caps="250">
+	<start name="acpi" caps="250" priority="-1">
 		<resource name="RAM" quantum="4M"/>
 	</start>
 
-	<start name="pci_decode" caps="350">
-		<resource name="RAM" quantum="1M"/>
+	<start name="pci_decode" caps="350" priority="-1">
+		<resource name="RAM" quantum="2M"/>
 		<route>
 			<service name="ROM" label="system"> <child name="report_rom"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 	</start>
 
-	<start name="platform_drv" caps="100" managing_system="yes">
-		<resource name="RAM" quantum="1M"/>
+	<start name="platform" caps="100" managing_system="yes" priority="-1">
+		<resource name="RAM" quantum="2M"/>
 		<provides> <service name="Platform"/> </provides>
 		<route>
 			<service name="ROM" label="devices"> <child name="report_rom"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 		<config>
-			<policy label_prefix="nic_drv" info="yes"> <pci class="WIFI"/> </policy>
+			<policy label_prefix="nic" info="yes"> <pci class="WIFI"/> </policy>
 		</config>
 	</start>
 
-	<start name="config_fs">
+	<start name="config_fs" priority="-1">
 		<binary name="vfs"/>
 		<resource name="RAM" quantum="4M"/>
 		<provides> <service name="File_system"/> </provides>
@@ -250,7 +254,7 @@ append  config { </wifi_config>
 		</config>
 	</start>
 
-	<start name="config_rom">
+	<start name="config_rom" priority="-1">
 		<binary name="fs_rom"/>
 		<resource name="RAM" quantum="4M"/>
 		<provides><service name="ROM"/></provides>
@@ -260,17 +264,20 @@ append  config { </wifi_config>
 		</route>
 	</start>
 
-	<start name="nic_drv" caps="300">
-		<binary name="pc_wifi_drv"/>
+	<start name="nic" caps="340" priority="-1">
+		<binary name="wifi"/>
 		<resource name="RAM" quantum="32M"/>
 		<config>
 			<libc stdout="/dev/null" stderr="/dev/log" rtc="/dev/rtc"/>
 			<vfs>
 				<dir name="dev">
-					<log/> <null/> <wifi/>
+					<log/> <null/>
 					<jitterentropy name="random"/>
 					<jitterentropy name="urandom"/>
 					<inline name="rtc">2018-01-01 00:01</inline>
+				</dir>
+				<dir name="firmware">
+					<tar name="wifi_firmware.tar"/>
 				</dir>
 			</vfs>
 		</config>
@@ -278,6 +285,8 @@ append  config { </wifi_config>
 			<service name="Rtc"> <any-child/> </service>
 			<service name="File_system"> <child name="config_fs"/> </service>
 			<service name="ROM" label="wifi_config"> <child name="config_rom" /> </service>
+			<service name="ROM" label="wifi.lib.so"> <parent label="pc_wifi.lib.so"/> </service>
+			<service name="ROM" label="wifi_firmware.tar"> <parent label="pc_wifi_firmware.tar"/> </service>
 			<service name="Report"> <child name="report_rom"/> </service>
 			<service name="Uplink"> <child name="nic_router"/> </service>
 			<any-service> <parent/> <any-child /> </any-service>
@@ -288,7 +297,7 @@ append  config { </wifi_config>
 
 	append config {
 
-	<start name="usb_drv" caps="1500" managing_system="yes">
+	<start name="usb" caps="1500" managing_system="yes" priority="-1">
 		<binary name="init"/>
 		<resource name="RAM" quantum="32M"/>
 		<provides> <service name="Usb"/> </provides>
@@ -301,8 +310,8 @@ append  config { </wifi_config>
 		</route>
 	</start>
 
-	<start name="nic_drv" caps="200">
-		<binary name="usb_net_drv"/>
+	<start name="nic" caps="200" priority="-1">
+		<binary name="usb_net"/>
 		<resource name="RAM" quantum="20M"/>
 		<config mac="02:00:00:00:01:01" />
 		<route>
@@ -315,7 +324,7 @@ append  config { </wifi_config>
 
 	append config {
 
-	<start name="nic_drv" caps="1000" managing_system="yes">
+	<start name="nic" caps="1200" managing_system="yes" priority="-1">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -329,7 +338,7 @@ append  config { </wifi_config>
 
 append config {
 
-	<start name="nic_router" caps="120">
+	<start name="nic_router" caps="120" priority="-1">
 		<resource name="RAM" quantum="5M"/>
 		<provides>
 			<service name="Nic"/>
@@ -339,7 +348,7 @@ append config {
 
 if {$use_nic_bridge} { append config {
 
-			<policy label_prefix="nic_bridge"       domain="server"/> }
+			<policy label_prefix="nic_bridge" domain="server"/> }
 
 } else { append config {
 
@@ -347,7 +356,7 @@ if {$use_nic_bridge} { append config {
 }
 append config {
 
-			<policy label_prefix="nic_drv"          domain="uplink"/>
+			<policy label_prefix="nic" domain="uplink"/>
 
 			<domain name="uplink" }
 
@@ -374,7 +383,7 @@ append config {
 
 append_if $use_nic_bridge config {
 
-	<start name="nic_bridge">
+	<start name="nic_bridge" priority="-1">
 		<resource name="RAM" quantum="5M"/>
 		<provides><service name="Nic"/></provides>
 		<config mac="} $bridge_mac {">
@@ -388,9 +397,9 @@ append_if $use_nic_bridge config {
 
 append config {
 
-	<start name="netserver_genode" caps="320" priority="-1">
+	<start name="netserver_genode" caps="320" priority="-2">
 	<binary name="netserver"/>
-		<resource name="RAM" quantum="32M"/>
+		<resource name="RAM" quantum="14M"/>
 		<config>
 			<arg value="netserver"/>
 			<arg value="-D"/>
@@ -434,19 +443,22 @@ install_config $config
 # Define USB host controller config
 #
 if { $use_usb_driver } {
-	set fd [open [run_dir]/genode/usb_host_drv.config w]
+	set fd [open [run_dir]/genode/usb_host.config w]
 	append usb_config {<config bios_handoff="yes">}
 	append_if [have_board rpi] usb_config {
-		<policy label_prefix="nic_drv" vendor_id="0x0424" product_id="0xec00"/> }
+		<policy label_prefix="nic">
+			<device vendor_id="0x0424" product_id="0xec00"/>
+		</policy> }
 	append_if [have_spec x86] usb_config {
-		<policy label_prefix="nic_drv" vendor_id="0x0b95" product_id="0x1790"/> }
+		<policy label_prefix="nic">
+			<device vendor_id="0x0b95" product_id="0x1790"/>
+		</policy> }
 	append usb_config {</config>}
 	puts $fd $usb_config
 	close $fd
 }
 
-set boot_modules { netserver }
-build_boot_image $boot_modules
+build_boot_image [build_artifacts]
 
 #
 # Execute test case

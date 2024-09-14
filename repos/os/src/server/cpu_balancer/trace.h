@@ -57,16 +57,15 @@ class Cpu::Trace
 			_arg_quota += upgrade;
 
 			_trace.destruct();
-			_trace.construct(_env, _ram_quota, _arg_quota, 0 /* parent levels */);
+			_trace.construct(_env, _ram_quota, _arg_quota);
 
 			/*
 			 * Explicitly re-trigger import of subjects. Otherwise
 			 * stored trace ids are not valid if used with subject_info(id)
 			 * and we get exception thrown about unknown ids.
 			 */
-			_trace->_retry([&] () {
-				_trace->call<Genode::Trace::Session_client::Rpc_subjects>();
-			});
+			_trace->_retry<Genode::Trace::Session::Alloc_rpc_error>([&] {
+				return _trace->call<Genode::Trace::Session::Rpc_subjects>(); });
 
 			_subject_id_reread ++;
 		}

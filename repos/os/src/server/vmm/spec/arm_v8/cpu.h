@@ -1,11 +1,12 @@
 /*
  * \brief  VMM cpu object
  * \author Stefan Kalkowski
+ * \author Benjamin Lamowski
  * \date   2019-07-18
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2019-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -29,7 +30,7 @@ class Vmm::Cpu : public Vmm::Cpu_base
 		    Genode::Env             & env,
 		    Genode::Heap            & heap,
 		    Genode::Entrypoint      & ep,
-		    short                     cpu_id);
+		    unsigned                  cpu_id);
 
 		enum Exception_type {
 			AARCH64_SYNC   = 0x400,
@@ -40,13 +41,15 @@ class Vmm::Cpu : public Vmm::Cpu_base
 			AARCH32_IRQ    = 0x680,
 			AARCH32_FIQ    = 0x700,
 			AARCH32_SERROR = 0x780,
-			NO_EXCEPTION   = 0xffff
+			NO_EXCEPTION   = 0xffff,
 		};
+
+		void setup_state(Vcpu_state & state) override;
 
 	private:
 
-		class Id_aa64pfr0 : public System_register,
-		                    public Genode::Register<64>
+		class Id_aa64pfr0 : public    System_register,
+		                    protected Genode::Register<64>
 		{
 			private:
 
@@ -57,7 +60,9 @@ class Vmm::Cpu : public Vmm::Cpu_base
 				struct Ras : Bitfield<28, 4> { enum { NOT_IMPLEMENTED  }; };
 				struct Sve : Bitfield<32, 4> { enum { NOT_IMPLEMENTED  }; };
 
-				access_t _reset_value(access_t orig)
+			public:
+
+				access_t reset_value(access_t orig)
 				{
 					El0::set(orig, El0::AARCH64_ONLY);
 					El1::set(orig, El1::AARCH64_ONLY);
@@ -68,24 +73,22 @@ class Vmm::Cpu : public Vmm::Cpu_base
 					return orig;
 				}
 
-			public:
-
 				Id_aa64pfr0(Genode::uint64_t id_aa64pfr0,
 				            Genode::Avl_tree<System_register> & tree)
 				: System_register(3, 0, 0, 4, 0, "ID_AA64PFR0_EL1", false,
-				                  _reset_value(id_aa64pfr0), tree) {}
+				                  reset_value(id_aa64pfr0), tree) {}
 		};
 
 		struct Ccsidr : System_register
 		{
 			System_register & csselr;
-			State           & state;
+			Cpu             & cpu;
 
 			Ccsidr(System_register &csselr,
-			       State & state,
+			       Cpu & cpu,
 			       Genode::Avl_tree<System_register> & tree)
 			: System_register(3, 0, 1, 0, 0, "CCSIDR_EL1", false, 0x0, tree),
-			  csselr(csselr), state(state) {}
+			  csselr(csselr), cpu(cpu) {}
 
 			virtual Genode::addr_t read() const override;
 		};

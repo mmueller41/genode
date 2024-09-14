@@ -20,11 +20,16 @@ extern "C" {
 
 void lx_emul_initcalls(void);
 
+/* this function is generated into 'initcall_table.c' */
+void lx_emul_register_initcalls(void);
+
+void lx_emul_initcall(char const *name);
+
 void lx_emul_register_initcall(int (*initcall)(void), const char * name);
 
 void lx_emul_start_kernel(void * dtb);
 
-void lx_emul_execute_kernel_until(int (*condition)(void));
+void lx_emul_execute_kernel_until(int (*condition)(void*), void * args);
 
 void lx_emul_setup_arch(void * dtb);
 

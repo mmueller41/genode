@@ -12,48 +12,93 @@
  */
 
 #include <graph.h>
+#include <feature.h>
 #include <view/dialog.h>
 
 using namespace Sculpt;
 
 
-void Graph::_gen_selected_node_content(Xml_generator &xml, Start_name const &name,
-                                       Runtime_state::Info const &info) const
+namespace Dialog { struct Parent_node; }
+
+struct Dialog::Parent_node : Sub_scope
 {
-	if (_deploy_children.exists(name)) {
+	static void view_sub_scope(auto &s, auto const &text)
+	{
+		s.node("frame", [&] {
+			s.sub_node("label", [&] {
+				s.attribute("text", Sculpt::Start_name(" ", text, " ")); }); });
+	}
 
-		gen_named_node(xml, "frame", "operations", [&] () {
-			xml.node("hbox", [&] () {
-				gen_named_node(xml, "button", "remove", [&] () {
-					_action_item.gen_button_attr(xml, "remove");
-					xml.node("label", [&] () {
-						xml.attribute("text", "Remove"); }); });
+	static void with_narrowed_at(auto const &, auto const &) { }
+};
 
-				gen_named_node(xml, "button", "restart", [&] () {
-					_action_item.gen_button_attr(xml, "restart");
-					xml.node("label", [&] () {
-						xml.attribute("text", "Restart"); }); });
-			});
-		});
 
-	} else if (name == "nic_drv" ||
-	           name == "wifi_drv") {
+namespace Dialog { struct Selectable_node; }
 
-		gen_named_node(xml, "frame", "operations", [&] () {
-			xml.node("hbox", [&] () {
+struct Dialog::Selectable_node
+{
+	struct Attr
+	{
+		bool selected;
+		bool important;
+		Dialog::Id primary_dep;
+		Start_name pretty_name;
+	};
 
-				gen_named_node(xml, "button", "restart", [&] () {
-					_action_item.gen_button_attr(xml, "restart");
-					xml.node("label", [&] () {
-						xml.attribute("text", "Restart"); }); });
+	static void view(Scope<Depgraph> &s, Id const &id,
+	                 Attr const &attr, auto const &selected_fn)
+	{
+		s.sub_scope<Frame>(id, [&] (Scope<Depgraph, Frame> &s) {
+
+			if (!attr.important)
+				s.attribute("style", "unimportant");
+
+			if (attr.primary_dep.valid()) {
+				s.attribute("dep", attr.primary_dep.value);
+				if (!attr.important)
+					s.attribute("dep_visible", false);
+			}
+
+			s.sub_scope<Vbox>([&] (Scope<Depgraph, Frame, Vbox> &s) {
+
+				s.sub_scope<Button>(id, [&] (Scope<Depgraph, Frame, Vbox, Button> &s) {
+
+					if (!attr.important) s.attribute("style",    "unimportant");
+					if (s.hovered())     s.attribute("hovered",  "yes");
+					if (attr.selected)   s.attribute("selected", "yes");
+
+					s.sub_scope<Label>(attr.pretty_name);
+				});
+
+				if (attr.selected)
+					selected_fn(s);
 			});
 		});
 	}
+};
+
+
+void Graph::_view_selected_node_content(Scope<Depgraph, Frame, Vbox> &s,
+                                        Start_name const &name,
+                                        Runtime_state::Info const &info) const
+{
+	if (_deploy_children.exists(name)) {
+
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.sub_scope<Hbox>([&] (Scope<Depgraph, Frame, Vbox, Frame, Hbox> &s) {
+				s.widget(_remove);
+				s.widget(_restart); }); });
+
+	} else if (name == "nic" ||
+	           name == "wifi") {
+
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.sub_scope<Hbox>([&] (Scope<Depgraph, Frame, Vbox, Frame, Hbox> &s) {
+				s.widget(_restart); }); });
+	}
 
 	if (name == "ram_fs")
-		gen_named_node(xml, "frame", "ram_fs_operations", [&] () {
-			xml.node("vbox", [&] () {
-				_ram_fs_dialog.generate(xml, _ram_fs_state); }); });
+		s.widget(_ram_fs_widget, _selected_target, _ram_fs_state);
 
 	String<100> const
 		ram (Capacity{info.assigned_ram - info.avail_ram}, " / ",
@@ -61,336 +106,188 @@ void Graph::_gen_selected_node_content(Xml_generator &xml, Start_name const &nam
 		caps(info.assigned_caps - info.avail_caps, " / ",
 		     info.assigned_caps, " caps");
 
-	gen_named_node(xml, "label", "hspace", [&] () {
-		xml.attribute("min_ex", 25); });
+	s.sub_scope<Min_ex>(25);
+	s.sub_scope<Label>(ram);
+	s.sub_scope<Label>(caps);
 
-	gen_named_node(xml, "label", "ram", [&] () {
-		xml.attribute("text", ram); });
+	if ((name == "usb") && _storage_devices.num_usb_devices)
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.widget(_usb_devices_widget); });
 
-	gen_named_node(xml, "label", "caps", [&] () {
-		xml.attribute("text", caps); });
+	if (name == "ahci")
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.widget(_ahci_devices_widget); });
+
+	if (name == "nvme")
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.widget(_nvme_devices_widget); });
+
+	if (name == "mmc")
+		s.sub_scope<Frame>([&] (Scope<Depgraph, Frame, Vbox, Frame> &s) {
+			s.widget(_mmc_devices_widget); });
 }
 
 
-void Graph::_gen_parent_node(Xml_generator &xml, Start_name const &name,
-                             Label const &label) const
+void Graph::view(Scope<Depgraph> &s) const
 {
-	gen_named_node(xml, "frame", name, [&] () {
-		xml.node("label", [&] () {
-			xml.attribute("text", Start_name(" ", label, " ")); }); });
-}
+	if (Feature::PRESENT_PLUS_MENU && _selected_target.valid())
+		s.widget(_plus, _popup_state == Popup::VISIBLE);
 
+	/* parent roles */
+	s.sub_scope<Parent_node>(Id { "hardware" }, "Hardware");
+	s.sub_scope<Parent_node>(Id { "config" },   "Config");
+	s.sub_scope<Parent_node>(Id { "info" },     "Info");
+	s.sub_scope<Parent_node>(Id { "GUI" },      "GUI");
 
-void Graph::_gen_storage_node(Xml_generator &xml) const
-{
-	char const * const name = "storage";
+	using Component = Runtime_config::Component;
 
 	bool const any_selected = _runtime_state.selected().valid();
-	bool const unimportant  = any_selected && !_runtime_state.storage_in_tcb();
 
-	gen_named_node(xml, "frame", name, [&] () {
+	_runtime_config.for_each_component([&] (Component const &component) {
 
-		if (unimportant)
-			xml.attribute("style", "unimportant");
+		Start_name const name = component.name;
+		Start_name pretty_name { Pretty(name) };
 
-		xml.node("vbox", [&] () {
+		if (name == "mmc-mmcblk0.part")
+			pretty_name = "0.part";
 
-			gen_named_node(xml, "button", name, [&] () {
+		if (name == "mmc-mmcblk0.1.fs")
+			pretty_name = "1.fs";
 
-				_node_button_item.gen_button_attr(xml, name);
+		/* omit sculpt's helpers from the graph */
+		bool const hidden = (name == "runtime_view"
+		                  || name == "editor"
+		                  || name == "launcher_query"
+		                  || name == "update"
+		                  || name == "fs_tool"
+		                  || name == "depot_rw"
+		                  || name == "public_rw"
+		                  || name == "depot_rom"
+		                  || name == "dynamic_depot_rom"
+		                  || name == "depot_query"
+		                  || name == "manager_keyboard");
+		if (hidden)
+			return;
 
-				if (unimportant)
-					xml.attribute("style", "unimportant");
+		Runtime_state::Info const info = _runtime_state.info(name);
 
-				if (_storage_selected)
-					xml.attribute("selected", "yes");
+		bool const unimportant = any_selected && !info.tcb;
 
-				xml.node("label", [&] () { xml.attribute("text", "Storage"); });
-			});
+		/* basic categories, like GUI */
+		Dialog::Id primary_dep = Id { component.primary_dependency };
 
-			if (_storage_selected)
-				gen_named_node(xml, "frame", "storage_operations", [&] () {
-					xml.node("vbox", [&] () {
-						_storage_dialog->gen_block_devices(xml); }); });
-		});
-	});
-}
+		if (primary_dep.value == "default_fs_rw")
+			primary_dep = Dialog::Id { _selected_target.fs() };
 
+		/* primary dependency is another component */
+		_runtime_config.with_graph_id(primary_dep,
+			[&] (Dialog::Id const &id) { primary_dep = id; });
 
-void Graph::_gen_usb_node(Xml_generator &xml) const
-{
-	char const * const name = "usb";
-
-	bool const any_selected = _runtime_state.selected().valid();
-	bool const unimportant  = any_selected && !_runtime_state.usb_in_tcb();
-
-	gen_named_node(xml, "frame", name, [&] () {
-
-		if (unimportant)
-			xml.attribute("style", "unimportant");
-
-		xml.node("vbox", [&] () {
-
-			gen_named_node(xml, "button", name, [&] () {
-
-				_node_button_item.gen_button_attr(xml, name);
-
-				if (unimportant)
-					xml.attribute("style", "unimportant");
-
-				if (_usb_selected)
-					xml.attribute("selected", "yes");
-
-				xml.node("label", [&] () { xml.attribute("text", "USB"); });
-			});
-
-			if (_usb_selected)
-				gen_named_node(xml, "frame", "usb_operations", [&] () {
-					xml.node("vbox", [&] () {
-						_storage_dialog->gen_usb_storage_devices(xml); }); });
-		});
-	});
-}
-
-
-void Graph::generate(Xml_generator &xml) const
-{
-	xml.node("depgraph", [&] () {
-
-		if (_sculpt_partition.valid()) {
-			gen_named_node(xml, "button", "global+", [&] () {
-				_add_button_item.gen_button_attr(xml, "global+");
-
-				if (_popup_state == Popup::VISIBLE)
-					xml.attribute("selected", "yes");
-
-				xml.node("label", [&] () {
-					xml.attribute("text", "+"); }); });
-		}
-
-		_gen_storage_node(xml);
-
-		if (_storage_devices.usb_present)
-			_gen_usb_node(xml);
-		else
-			_gen_parent_node(xml, "usb", "USB");
-
-		/* parent roles */
-		_gen_parent_node(xml, "hardware", "Hardware");
-		_gen_parent_node(xml, "config",   "Config");
-		_gen_parent_node(xml, "info",     "Info");
-		_gen_parent_node(xml, "GUI",      "GUI");
-
-		typedef Runtime_config::Component Component;
-
-		bool const any_selected = _runtime_state.selected().valid();
-
-		_runtime_config.for_each_component([&] (Component const &component) {
-
-			Start_name const name = component.name;
-			Start_name const pretty_name { Pretty(name) };
-
-			/* omit sculpt's helpers from the graph */
-			bool const blacklisted = (name == "runtime_view"
-			                       || name == "popup_view"
-			                       || name == "menu_view"
-			                       || name == "panel_view"
-			                       || name == "settings_view"
-			                       || name == "network_view"
-			                       || name == "file_browser_view"
-			                       || name == "editor"
-			                       || name == "launcher_query"
-			                       || name == "update"
-			                       || name == "fs_tool"
-			                       || name == "depot_rw"
-			                       || name == "public_rw"
-			                       || name == "depot_rom"
-			                       || name == "dynamic_depot_rom"
-			                       || name == "depot_query");
-			if (blacklisted)
-				return;
-
-			Runtime_state::Info const info = _runtime_state.info(name);
-
-			bool const unimportant = any_selected && !info.tcb;
-
-			gen_named_node(xml, "frame", name, [&] () {
-
-				if (unimportant)
-					xml.attribute("style", "unimportant");
-
-				Start_name primary_dep = component.primary_dependency;
-
-				if (primary_dep == "default_fs_rw")
-					primary_dep = _sculpt_partition.fs();
-
-				if (primary_dep.valid()) {
-					xml.attribute("dep", primary_dep);
-					if (unimportant)
-						xml.attribute("dep_visible", false);
-				}
-
-				xml.node("vbox", [&] () {
-
-					gen_named_node(xml, "button", name, [&] () {
-
-						if (unimportant)
-							xml.attribute("style", "unimportant");
-
-						_node_button_item.gen_button_attr(xml, name);
-
-						if (info.selected)
-							xml.attribute("selected", "yes");
-
-						xml.node("label", [&] () {
-							xml.attribute("text", pretty_name);
-						});
-					});
-
-					if (info.selected)
-						_gen_selected_node_content(xml, name, info);
-				});
-			});
-		});
-
-		_runtime_config.for_each_component([&] (Component const &component) {
-
-			Start_name const name = component.name;
-
-			if (name == "ram_fs")
-				return;
-
-			Runtime_state::Info const info = _runtime_state.info(name);
-
-			bool const show_details = info.tcb;
-
-			if (show_details) {
-				component.for_each_secondary_dep([&] (Start_name dep) {
-
-					if (Runtime_state::blacklisted_from_graph(dep))
-						return;
-
-					if (dep == "default_fs_rw")
-						dep = _sculpt_partition.fs();
-
-					xml.node("dep", [&] () {
-						xml.attribute("node", name);
-						xml.attribute("on",   dep);
-					});
-				});
+		Selectable_node::view(s, component.graph_id,
+			{
+				.selected    = info.selected,
+				.important   = !unimportant,
+				.primary_dep = primary_dep,
+				.pretty_name = pretty_name
+			},
+			[&] (Scope<Depgraph, Frame, Vbox> &s) {
+				_view_selected_node_content(s, name, info);
 			}
-		});
+		);
+	});
+
+	_runtime_config.for_each_component([&] (Component const &component) {
+
+		Start_name const name = component.name;
+
+		if (name == "ram_fs")
+			return;
+
+		Runtime_state::Info const info = _runtime_state.info(name);
+
+		bool const show_details = info.tcb;
+
+		if (show_details) {
+			component.for_each_secondary_dep([&] (Start_name dep_name) {
+
+				if (Runtime_state::blacklisted_from_graph(dep_name))
+					return;
+
+				if (dep_name == "default_fs_rw")
+					dep_name = _selected_target.fs();
+
+				Dialog::Id dep_id { dep_name };
+
+				_runtime_config.with_graph_id(dep_name, [&] (Dialog::Id const &id) {
+					dep_id = id; });
+
+				s.node("dep", [&] {
+					s.attribute("node", component.graph_id.value);
+					s.attribute("on",   dep_id.value);
+				});
+			});
+		}
 	});
 }
 
 
-Dialog::Hover_result Graph::hover(Xml_node hover)
+void Graph::click(Clicked_at const &at, Action &action)
 {
-	Hover_result const storage_dialog_hover_result =
-		_storage_dialog->match_sub_dialog(hover, "depgraph", "frame", "vbox", "frame", "vbox");
+	/* select node */
+	Id const id = at.matching_id<Depgraph, Frame, Vbox, Button>();
+	if (id.valid())
+		_runtime_config.with_start_name(id, [&] (Start_name const &name) {
+			_runtime_state.toggle_selection(name, _runtime_config); });
 
-	Dialog::Hover_result const hover_result = Dialog::any_hover_changed(
-		storage_dialog_hover_result,
-		_ram_fs_dialog.match_sub_dialog(hover, "depgraph", "frame", "vbox", "frame", "vbox"),
-		_node_button_item.match(hover, "depgraph", "frame", "vbox", "button", "name"),
-		_add_button_item .match(hover, "depgraph", "button", "name"),
-		_action_item     .match(hover, "depgraph", "frame", "vbox",
-		                               "frame", "hbox", "button", "name"));
+	_plus.propagate(at, [&] {
 
-	if (_add_button_item.hovered("global+")) {
-
-		/* update anchor geometry of popup menu */
-		auto hovered_rect = [] (Xml_node const dialog)
+		auto popup_anchor = [] (Xml_node const dialog)
 		{
-			if (!dialog.has_type("dialog"))
-				return Rect();
-
-			if (!dialog.has_sub_node("depgraph"))
-				return Rect();
-
-			Xml_node const depgraph = dialog.sub_node("depgraph");
-
-			if (!depgraph.has_sub_node("button"))
-				return Rect();
-
-			Xml_node const button = depgraph.sub_node("button");
-
-			return Rect(Point::from_xml(dialog) + Point::from_xml(depgraph) +
-			            Point::from_xml(button),
-			            Area::from_xml(button));
+			Rect result { };
+			dialog.with_optional_sub_node("depgraph", [&] (Xml_node const &depgraph) {
+				depgraph.with_optional_sub_node("button", [&] (Xml_node const &button) {
+					result = Rect(Point::from_xml(dialog) + Point::from_xml(depgraph) +
+					              Point::from_xml(button),
+					              Area::from_xml(button)); });
+			});
+			return result;
 		};
 
-		_popup_anchor = hovered_rect(hover);
-	}
+		action.open_popup_dialog(popup_anchor(at._location));
+	});
 
-	return hover_result;
+	_ram_fs_widget      .propagate(at, _selected_target, action);
+	_ahci_devices_widget.propagate(at, action);
+	_nvme_devices_widget.propagate(at, action);
+	_mmc_devices_widget .propagate(at, action);
+	_usb_devices_widget .propagate(at, action);
+
+	_remove .propagate(at);
+	_restart.propagate(at);
 }
 
 
-void Graph::click(Action &action)
+void Graph::clack(Clacked_at const &at, Action &action, Ram_fs_widget::Action &ram_fs_action)
 {
-	if (_ram_fs_dialog.click(action) == Click_result::CONSUMED)
-		return;
+	_ram_fs_widget      .propagate(at, ram_fs_action);
+	_ahci_devices_widget.propagate(at, action);
+	_nvme_devices_widget.propagate(at, action);
+	_mmc_devices_widget .propagate(at, action);
+	_usb_devices_widget .propagate(at, action);
 
-	if (_storage_dialog_visible())
-		if (_storage_dialog->click(action) == Click_result::CONSUMED)
-			return;
+	_remove.propagate(at, [&] {
+		action.remove_deployed_component(_runtime_state.selected());
 
-	if (_add_button_item._hovered.valid())
-		action.toggle_launcher_selector(_popup_anchor);
-
-	if (_node_button_item._hovered.valid()) {
-
-		_storage_selected = !_storage_selected && _node_button_item.hovered("storage");
-		_usb_selected     = !_usb_selected     && _node_button_item.hovered("usb");
-
-		/* reset storage dialog */
-		if (_usb_selected || _storage_selected)
-			_storage_dialog.construct(_storage_devices, _sculpt_partition);
-
-		_runtime_state.toggle_selection(_node_button_item._hovered,
+		/*
+		 * Unselect the removed component to bring graph into
+		 * default state.
+		 */
+		_runtime_state.toggle_selection(_runtime_state.selected(),
 		                                _runtime_config);
-		_action_item.reset();
-	}
+	});
 
-	if (_action_item.hovered("remove") || _action_item.hovered("restart"))
-		_action_item.propose_activation_on_click();
-}
-
-
-void Graph::clack(Action &action, Ram_fs_dialog::Action &ram_fs_action)
-{
-	if (_ram_fs_dialog.clack(ram_fs_action) == Clack_result::CONSUMED)
-		return;
-
-	if (_storage_dialog_visible())
-		if (_storage_dialog->clack(action) == Clack_result::CONSUMED)
-			return;
-
-	if (_action_item.hovered("remove")) {
-
-		_action_item.confirm_activation_on_clack();
-
-		if (_action_item.activated("remove")) {
-			action.remove_deployed_component(_runtime_state.selected());
-
-			/*
-			 * Unselect the removed component to bring graph into
-			 * default state.
-			 */
-			_runtime_state.toggle_selection(_runtime_state.selected(),
-			                                _runtime_config);
-		}
-	}
-
-	if (_action_item.hovered("restart")) {
-
-		_action_item.confirm_activation_on_clack();
-
-		if (_action_item.activated("restart"))
-			action.restart_deployed_component(_runtime_state.selected());
-	}
-
-	_action_item.reset();
+	_restart.propagate(at, [&] {
+		action.restart_deployed_component(_runtime_state.selected());
+	});
 }
 

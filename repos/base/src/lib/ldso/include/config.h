@@ -58,15 +58,14 @@ class Linker::Config : Noncopyable
 		bool verbose()     const { return _verbose; }
 		bool check_ctors() const { return _check_ctors; }
 
-		typedef String<100> Rom_name;
+		using Rom_name = String<100>;
 
 		/**
 		 * Call fn for each library specified in the configuration
 		 *
 		 * The functor 'fn' is called with 'Rom_name', 'Keep' as arguments.
 		 */
-		template <typename FN>
-		void for_each_library(FN const &fn) const
+		void for_each_library(auto const &fn) const
 		{
 			_config.with_optional_sub_node("ld", [&] (Xml_node ld) {
 

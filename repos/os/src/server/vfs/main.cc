@@ -37,8 +37,8 @@ namespace Vfs_server {
 	class Vfs_env;
 	class Root;
 
-	typedef Genode::Fifo<Session_component>         Session_queue;
-	typedef Genode::Entrypoint::Io_progress_handler Io_progress_handler;
+	using Session_queue       = Genode::Fifo<Session_component>;
+	using Io_progress_handler = Genode::Entrypoint::Io_progress_handler;
 
 	/**
 	 * Convenience utities for parsing quotas
@@ -89,6 +89,7 @@ class Vfs_server::Session_component : private Session_resources,
 	private:
 
 		Vfs::File_system &_vfs;
+		Vfs::Env::Io     &_io;
 
 		Genode::Entrypoint &_ep;
 
@@ -151,7 +152,7 @@ class Vfs_server::Session_component : private Session_resources,
 			Node_space::Id id { handle.value };
 
 			try { return _node_space.apply<Node>(id, [&] (Node &node) {
-				typedef typename Node_type<HANDLE_TYPE>::Type Typed_node;
+				using Typed_node = typename Node_type<HANDLE_TYPE>::Type;
 				Typed_node *n = dynamic_cast<Typed_node *>(&node);
 				if (!n)
 					throw Invalid_handle();
@@ -183,7 +184,7 @@ class Vfs_server::Session_component : private Session_resources,
 
 				auto drop_packet_from_submit_queue = [&] ()
 				{
-					_stream.get_packet();
+					_stream.try_get_packet();
 
 					overall_progress      = true;
 					progress_in_iteration = true;
@@ -273,7 +274,7 @@ class Vfs_server::Session_component : private Session_resources,
 				}
 
 				if (node.acknowledgement_pending()) {
-					_stream.acknowledge_packet(node.dequeue_acknowledgement());
+					_stream.try_ack_packet(node.dequeue_acknowledgement());
 					progress = true;
 				}
 
@@ -378,6 +379,8 @@ class Vfs_server::Session_component : private Session_resources,
 			 */
 			if (progress == Process_packets_result::PROGRESS)
 				_io_progress_handler.handle_io_progress();
+
+			_io.commit();
 		}
 
 		/**
@@ -442,6 +445,7 @@ class Vfs_server::Session_component : private Session_resources,
 		                  Genode::Cap_quota    cap_quota,
 		                  size_t               tx_buf_size,
 		                  Vfs::File_system    &vfs,
+		                  Vfs::Env::Io        &io,
 		                  Session_queue       &active_sessions,
 		                  Io_progress_handler &io_progress_handler,
 		                  char          const *root_path,
@@ -450,6 +454,7 @@ class Vfs_server::Session_component : private Session_resources,
 			Session_resources(env.pd(), env.rm(), ram_quota, cap_quota, tx_buf_size),
 			Session_rpc_object(_packet_ds.cap(), env.rm(), env.ep().rpc_ep()),
 			_vfs(vfs),
+			_io(io),
 			_ep(env.ep()),
 			_io_progress_handler(io_progress_handler),
 			_active_sessions(active_sessions),
@@ -506,7 +511,7 @@ class Vfs_server::Session_component : private Session_resources,
 			if (!create && !_vfs.directory(path_str))
 				throw Lookup_failed();
 
-			typedef Directory::Session_writeable Writeable;
+			using Writeable = Directory::Session_writeable;
 
 			Directory &dir = *new (_alloc)
 				Directory(_node_space, _vfs, _alloc, path_str, create,
@@ -577,7 +582,7 @@ class Vfs_server::Session_component : private Session_resources,
 			path_str = sub_path.base();
 
 			Vfs::Vfs_watch_handle *vfs_handle = nullptr;
-			typedef Directory_service::Watch_result Result;
+			using Result = Directory_service::Watch_result;
 			switch (_vfs.watch(path_str, &vfs_handle, _alloc)) {
 			case Result::WATCH_OK: break;
 			case Result::WATCH_ERR_UNACCESSIBLE:
@@ -820,7 +825,7 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>,
 
 				_active_sessions.dequeue_all([&] (Session_component &session) {
 
-					typedef Session_component::Process_packets_result Result;
+					using Result = Session_component::Process_packets_result;
 
 					switch (session.process_packets()) {
 
@@ -852,6 +857,8 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>,
 			 */
 			if (yield)
 				Genode::Signal_transmitter(_reactivate_handler).submit();
+
+			_vfs_env.io().commit();
 		}
 
 	protected:
@@ -894,7 +901,7 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>,
 			/* pull in policy changes */
 			_config_rom.update();
 
-			typedef String<MAX_PATH_LEN> Root_path;
+			using Root_path = String<MAX_PATH_LEN>;
 
 			Session_policy policy(label, _config_rom.xml());
 
@@ -936,6 +943,7 @@ class Vfs_server::Root : public Genode::Root_component<Session_component>,
 				                  Genode::Ram_quota{ram_quota},
 				                  Genode::Cap_quota{cap_quota},
 				                  tx_buf_size, _vfs_env.root_dir(),
+				                  _vfs_env.io(),
 				                  _active_sessions, *this,
 				                  session_root.base(), writeable);
 

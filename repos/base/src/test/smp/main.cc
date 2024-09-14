@@ -19,7 +19,9 @@
 #include <base/log.h>
 #include <base/rpc_server.h>
 #include <base/rpc_client.h>
+#include <util/formatted_output.h>
 #include <trace/timestamp.h>
+#include <cpu/memory_barrier.h>
 
 
 namespace Genode {
@@ -71,7 +73,7 @@ namespace Mp_server_test {
 		Genode::Native_capability test_cap_reply(Genode::Native_capability);
 	};
 
-	typedef Genode::Capability<Session> Capability;
+	using Capability = Genode::Capability<Session>;
 
 	struct Cpu_compound
 	{
@@ -112,7 +114,8 @@ namespace Mp_server_test {
 
 		log("RPC: --- test started ---");
 
-		Cpu_compound ** compounds = new (heap) Cpu_compound*[cpus.total()];
+		Cpu_compound * compounds[cpus.total()] { };
+
 		for (unsigned i = 0; i < cpus.total(); i++)
 			compounds[i] = new (heap) Cpu_compound(cpus.location_of_index(i), env);
 
@@ -140,7 +143,6 @@ namespace Mp_server_test {
 		/* clean up */
 		for (unsigned i = 0; i < cpus.total(); i++)
 			destroy(heap, compounds[i]);
-		destroy(heap, compounds);
 
 		log("RPC: --- test finished ---");
 	}
@@ -165,7 +167,7 @@ namespace Affinity_test {
 			Genode::log("Affinity: thread started on CPU ",
 			            location, " spinning...");
 
-			for (;;) cnt++;
+			for (;;) cnt = cnt + 1;
 		}
 
 		Spinning_thread(Genode::Env &env, Location location)
@@ -182,9 +184,8 @@ namespace Affinity_test {
 
 		log("Affinity: --- test started ---");
 
-		/* get some memory for the thread objects */
-		Spinning_thread ** threads = new (heap) Spinning_thread*[cpus.total()];
-		uint64_t * thread_cnt = new (heap) uint64_t[cpus.total()];
+		Spinning_thread * threads[cpus.total()] { };
+		uint64_t thread_cnt[cpus.total()] { };
 
 		/* construct the thread objects */
 		for (unsigned i = 0; i < cpus.total(); i++)
@@ -203,46 +204,62 @@ namespace Affinity_test {
 		volatile uint64_t cnt = 0;
 		unsigned round = 0;
 
-		char const   text_cpu[] = "Affinity:      CPU: ";
-		char const text_round[] = "Affinity: Round %2u: ";
-		char * output_buffer = new (heap) char [sizeof(text_cpu) + 3 * cpus.total()];
+		static char const text_cpu[] = "Affinity:      CPU: ";
 
 		for (; round < 11;) {
-			cnt++;
+			cnt = cnt + 1;
 
 			/* try to get a life sign by the main thread from the remote threads */
 			if (cnt % COUNT_VALUE == 0) {
-				char * output = output_buffer;
-				snprintf(output, sizeof(text_cpu), text_cpu);
-				output += sizeof(text_cpu) - 1;
-				for (unsigned i = 0; i < cpus.total(); i++) {
-					snprintf(output, 4, "%2u ", i);
-					output += 3;
-				}
-				log(Cstring(output_buffer));
 
-				output = output_buffer;
-				snprintf(output, sizeof(text_round), text_round, round);
-				output += sizeof(text_round) - 2;
+				struct Table_header
+				{
+					unsigned num_cpus;
 
-				for (unsigned i = 0; i < cpus.total(); i++) {
-					snprintf(output, 4, "%s ",
-							 thread_cnt[i] == threads[i]->cnt ? " D" : " A");
-					output += 3;
+					void print(Output &out) const
+					{
+						using Genode::print;
+
+						print(out, text_cpu);
+						for (unsigned i = 0; i < num_cpus; i++)
+							print(out, Right_aligned(2, i), " ");
+					}
+				};
+
+				struct Table_entries
+				{
+					unsigned          num_cpus;
+					unsigned          round;
+					Spinning_thread **threads;
+					uint64_t         *thread_cnt;
+
+					void print(Output &out) const
+					{
+						using Genode::print;
+
+						print(out, "Affinity: Round ", Right_aligned(2, round), ": ");
+
+						for (unsigned i = 0; i < num_cpus; i++)
+							print(out, thread_cnt[i] == threads[i]->cnt ? " D " : " A ");
+					}
+				};
+
+				log(Table_header  { .num_cpus = cpus.total() });
+				log(Table_entries { .num_cpus   = cpus.total(),
+				                    .round      = round,
+				                    .threads    = threads,
+				                    .thread_cnt = thread_cnt });
+
+				for (unsigned i = 0; i < cpus.total(); i++)
 					thread_cnt[i] = threads[i]->cnt;
-				}
-				log(Cstring(output_buffer));
 
 				round ++;
 			}
 		}
 
-		destroy(heap, output_buffer);
-
 		for (unsigned i = 0; i < cpus.total(); i++)
 			destroy(heap, threads[i]);
-		destroy(heap, threads);
-		destroy(heap, thread_cnt);
+
 		log("Affinity: --- test finished ---");
 	}
 }
@@ -294,8 +311,7 @@ namespace Tlb_shootdown_test {
 			new (heap) Genode::Attached_ram_dataspace(env.ram(), env.rm(),
 			                                          DS_SIZE);
 
-		/* get some memory for the thread objects */
-		Thread ** threads = new (heap) Thread*[cpus.total()];
+		Thread * threads[cpus.total()] { };
 
 		/* construct the thread objects */
 		for (unsigned i = 1; i < cpus.total(); i++)
@@ -316,10 +332,10 @@ namespace Tlb_shootdown_test {
 		 * We have to wait here, for some time so that all fault
 		 * messages are received before the test finishes.
 		 */
-		for (volatile unsigned i = 0; i < (0x2000000 * cpus.total()); i++) ;
+		for (unsigned i = 0; i < (0x2000000 * cpus.total()); ++i)
+			memory_barrier();
 
 		for (unsigned i = 1; i < cpus.total(); i++) destroy(heap, threads[i]);
-		destroy(heap, threads);
 
 		log("TLB: --- test finished ---");
 	}
@@ -349,7 +365,7 @@ namespace Tsc_test {
 			barrier.wakeup();
 
 			while (loop) {
-				while (spin && loop) cnt++;
+				while (spin && loop) cnt = cnt + 1;
 
 				measure();
 				spin = true;
@@ -405,7 +421,7 @@ namespace Tsc_test {
 		log("TSC: --- test started ---");
 
 		/* get some memory for the thread objects */
-		Tsc_thread ** threads = new (heap) Tsc_thread*[cpus.total()];
+		Tsc_thread * threads[cpus.total()] { };
 
 		/* construct the thread objects */
 		for (unsigned i = 0; i < cpus.total(); i++) {
@@ -500,7 +516,6 @@ namespace Tsc_test {
 
 		/* cleanup */
 		for (unsigned i = 0; i < cpus.total(); i++) destroy(heap, threads[i]);
-		destroy(heap, threads);
 
 		log("TSC: --- test finished ---");
 	}

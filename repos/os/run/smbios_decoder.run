@@ -5,7 +5,8 @@ if {![have_board pc] || [expr ![have_spec nova] && ![have_spec hw]] } {
 	exit 0
 }
 
-build { app/smbios_decoder core init timer drivers/acpi server/report_rom }
+build { core init timer lib/ld driver/acpi server/report_rom app/smbios_decoder }
+
 create_boot_directory
 
 install_config {
@@ -40,11 +41,11 @@ install_config {
 			<service name="ROM"/>
 		</provides>
 		<config>
-			<policy label="smbios_decoder -> smbios_table" report="acpi_drv -> smbios_table"/>
+			<policy label="smbios_decoder -> smbios_table" report="acpi -> smbios_table"/>
 		</config>
 	</start>
 
-	<start name="acpi_drv" caps="350">
+	<start name="acpi" caps="350">
 		<resource name="RAM" quantum="4M"/>
 		<route>
 			<service name="Report"> <child name="acpi_report_rom"/> </service>
@@ -72,11 +73,7 @@ install_config {
 </config>
 }
 
-build_boot_image {
-	report_rom acpi_drv
-	core init timer ld.lib.so
-	smbios_decoder
-}
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic"
 

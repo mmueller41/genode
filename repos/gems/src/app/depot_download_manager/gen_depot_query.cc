@@ -24,7 +24,7 @@ void Depot_download_manager::gen_depot_query_start_content(Xml_generator &xml,
 
 	xml.node("config", [&] () {
 		xml.attribute("version", version.value);
-		typedef String<32> Arch;
+		using Arch = String<32>;
 		xml.attribute("arch", installation.attribute_value("arch", Arch()));
 		xml.node("vfs", [&] () {
 			xml.node("dir", [&] () {
@@ -51,31 +51,63 @@ void Depot_download_manager::gen_depot_query_start_content(Xml_generator &xml,
 			return failed;
 		};
 
-		installation.for_each_sub_node("archive", [&] (Xml_node archive) {
+		auto for_each_install_sub_node = [&] (auto node_type, auto const &fn)
+		{
+			installation.for_each_sub_node(node_type, [&] (Xml_node node) {
+				if (!job_failed(node))
+					fn(node); });
+		};
 
-			if (job_failed(archive))
-				return;
+		auto propagate_verify_attr = [&] (Xml_generator &xml, Xml_node const &node)
+		{
+			if (node.attribute_value("verify", true) == false)
+				xml.attribute("require_verify", "no");
+		};
 
+		for_each_install_sub_node("archive", [&] (Xml_node const &archive) {
 			xml.node("dependencies", [&] () {
 				xml.attribute("path", archive.attribute_value("path", Archive::Path()));
 				xml.attribute("source", archive.attribute_value("source", true));
 				xml.attribute("binary", archive.attribute_value("binary", true));
+				propagate_verify_attr(xml, archive);
 			});
 		});
 
-		installation.for_each_sub_node("index", [&] (Xml_node index) {
-
-			if (job_failed(index))
+		for_each_install_sub_node("index", [&] (Xml_node const &index) {
+			Archive::Path const path = index.attribute_value("path", Archive::Path());
+			if (!Archive::index(path)) {
+				warning("malformed index path '", path, "'");
 				return;
-
+			}
 			xml.node("index", [&] () {
-				Archive::Path const path = index.attribute_value("path", Archive::Path());
-				if (!Archive::index(path)) {
-					warning("malformed index path '", path, "'");
-					return;
-				}
 				xml.attribute("user",    Archive::user(path));
 				xml.attribute("version", Archive::_path_element<Archive::Version>(path, 2));
+				propagate_verify_attr(xml, index);
+			});
+		});
+
+		for_each_install_sub_node("image", [&] (Xml_node const &image) {
+			Archive::Path const path = image.attribute_value("path", Archive::Path());
+			if (!Archive::image(path)) {
+				warning("malformed image path '", path, "'");
+				return;
+			}
+			xml.node("image", [&] () {
+				xml.attribute("user", Archive::user(path));
+				xml.attribute("name", Archive::name(path));
+				propagate_verify_attr(xml, image);
+			});
+		});
+
+		for_each_install_sub_node("image_index", [&] (Xml_node const &image_index) {
+			Archive::Path const path = image_index.attribute_value("path", Archive::Path());
+			if (!Archive::index(path) && Archive::name(path) != "index") {
+				warning("malformed image-index path '", path, "'");
+				return;
+			}
+			xml.node("image_index", [&] () {
+				xml.attribute("user", Archive::user(path));
+				propagate_verify_attr(xml, image_index);
 			});
 		});
 

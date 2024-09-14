@@ -40,12 +40,10 @@ struct Sequence::Child : Genode::Child_policy
 
 	Binary_name _start_binary()
 	{
-		Binary_name name;
-		try {
-			_start_node.sub_node("binary").attribute("name").value(name);
-			return name != "" ? name : _name;
-		}
-		catch (...) { return _name; }
+		Binary_name name = _name;
+		_start_node.with_optional_sub_node("binary", [&] (Xml_node const &binary) {
+			name = binary.attribute_value("name", _name); });
+		return name;
 	}
 
 	Binary_name const _binary_name = _start_binary();
@@ -69,6 +67,8 @@ struct Sequence::Child : Genode::Child_policy
 	};
 
 	Registry<Parent_service> _parent_services { };
+
+	Id_space<Parent::Server> _server_ids { };
 
 	/* queue a child reload from the async Parent interface */
 	Signal_transmitter _exit_transmitter;
@@ -205,6 +205,8 @@ struct Sequence::Child : Genode::Child_policy
 		ref_pd().transfer_quota(pd_cap, Cap_quota{_env.pd().avail_caps().value >> 1});
 		ref_pd().transfer_quota(pd_cap, Ram_quota{_env.pd().avail_ram().value >> 1});
 	}
+
+	Id_space<Parent::Server> &server_id_space() override { return _server_ids; }
 };
 
 

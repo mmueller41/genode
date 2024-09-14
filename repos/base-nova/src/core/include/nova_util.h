@@ -16,14 +16,13 @@
 #ifndef _CORE__INCLUDE__NOVA_UTIL_H_
 #define _CORE__INCLUDE__NOVA_UTIL_H_
 
-/* Genode includes */
-#include <base/log.h>
-
 /* NOVA includes */
 #include <nova/syscalls.h>
 
-/* local includes */
+/* core includes */
+#include <types.h>
 #include <util.h>
+
 
 /**
  * Return boot CPU number. It is required if threads in core should be placed
@@ -71,7 +70,7 @@ static int map_local(Genode::addr_t const pd, Nova::Utcb &utcb,
 	Nova::uint8_t res = Nova::delegate(pd, pd, dst_crd);
 	if (res != Nova::NOVA_OK) {
 
-		typedef Genode::Hex Hex;
+		using Hex = Genode::Hex;
 		error("map_local failed ",
 		      Hex(src_crd.addr()), ":", Hex(src_crd.order()), ":", Hex(src_crd.type()), "->",
 		      Hex(dst_crd.addr()), ":", Hex(dst_crd.order()), ":", Hex(dst_crd.type()), " - ",
@@ -220,18 +219,17 @@ inline void unmap_local(Nova::Utcb &, Genode::addr_t start,
 }
 
 
-template <typename FUNC>
-inline Nova::uint8_t syscall_retry(Genode::Pager_object &pager, FUNC func)
+inline Nova::uint8_t syscall_retry(Core::Pager_object &pager, auto const &fn)
 {
 	Nova::uint8_t res;
 	do {
-		res = func();
+		res = fn();
 	} while (res == Nova::NOVA_PD_OOM && Nova::NOVA_OK == pager.handle_oom());
 
 	return res;
 }
 
-inline Nova::uint8_t async_map(Genode::Pager_object &pager,
+inline Nova::uint8_t async_map(Core::Pager_object &pager,
                                Genode::addr_t const source_pd,
                                Genode::addr_t const target_pd,
                                Nova::Obj_crd const &source_initial_caps,
@@ -246,12 +244,12 @@ inline Nova::uint8_t async_map(Genode::Pager_object &pager,
 	(void)ok;
 
 	return syscall_retry(pager,
-		[&]() {
+		[&] {
 			return Nova::delegate(source_pd, target_pd, target_initial_caps);
 		});
 }
 
-inline Nova::uint8_t map_vcpu_portals(Genode::Pager_object &pager,
+inline Nova::uint8_t map_vcpu_portals(Core::Pager_object &pager,
                                       Genode::addr_t const source_exc_base,
                                       Genode::addr_t const target_exc_base,
                                       Nova::Utcb &utcb,
@@ -267,7 +265,7 @@ inline Nova::uint8_t map_vcpu_portals(Genode::Pager_object &pager,
 	                 source_initial_caps, target_initial_caps, utcb);
 }
 
-inline Nova::uint8_t map_pagefault_portal(Genode::Pager_object &pager,
+inline Nova::uint8_t map_pagefault_portal(Core::Pager_object &pager,
                                           Genode::addr_t const source_exc_base,
                                           Genode::addr_t const target_exc_base,
                                           Genode::addr_t const target_pd,
@@ -276,13 +274,23 @@ inline Nova::uint8_t map_pagefault_portal(Genode::Pager_object &pager,
 	using Nova::Obj_crd;
 	using Nova::PT_SEL_PAGE_FAULT;
 
-	Genode::addr_t const source_pd = Genode::platform_specific().core_pd_sel();
+	Genode::addr_t const source_pd = Core::platform_specific().core_pd_sel();
 
 	Obj_crd const source_initial_caps(source_exc_base + PT_SEL_PAGE_FAULT, 0);
 	Obj_crd const target_initial_caps(target_exc_base + PT_SEL_PAGE_FAULT, 0);
 
 	return async_map(pager, source_pd, target_pd,
 	                 source_initial_caps, target_initial_caps, utcb);
+}
+
+inline Nova::Hip const &kernel_hip()
+{
+	/**
+	 * Initial value of esp register, saved by the crt0 startup code.
+	 * This value contains the address of the hypervisor information page.
+	 */
+	extern Genode::addr_t __initial_sp;
+	return *reinterpret_cast<Nova::Hip const *>(__initial_sp);
 }
 
 #endif /* _CORE__INCLUDE__NOVA_UTIL_H_ */

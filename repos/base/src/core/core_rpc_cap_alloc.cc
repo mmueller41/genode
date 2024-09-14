@@ -14,16 +14,22 @@
 /* Genode includes */
 #include <base/rpc_server.h>
 
-/* core-local includes */
+/* core includes */
 #include <platform_generic.h>
 #include <rpc_cap_factory.h>
+
+/* base-internal includes */
+#include <base/internal/globals.h>
 
 using namespace Genode;
 
 
-static Rpc_cap_factory &rpc_cap_factory()
+void Genode::init_rpc_cap_alloc(Parent &) { }
+
+
+static Core::Rpc_cap_factory &rpc_cap_factory()
 {
-	static Rpc_cap_factory inst(platform().core_mem_alloc());
+	static Core::Rpc_cap_factory inst(Core::platform().core_mem_alloc());
 	return inst;
 }
 

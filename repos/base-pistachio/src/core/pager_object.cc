@@ -18,7 +18,7 @@
 #include <base/internal/capability_space_tpl.h>
 #include <base/internal/pistachio.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Pager_object::wake_up()
@@ -44,5 +44,5 @@ void Pager_object::wake_up()
 
 void Pager_object::unresolved_page_fault_occurred()
 {
-	state.unresolved_page_fault = true;
+	state.state = Thread_state::State::PAGE_FAULT;
 }

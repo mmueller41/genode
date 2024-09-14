@@ -1,6 +1,6 @@
 PWD = $(shell pwd)
 
-PKG_DIR = $(call select_from_ports,gcc)/src/noux-pkg/gcc
+PKG_DIR := $(call select_from_ports,gcc)/src/noux-pkg/gcc
 
 CONFIGURE_ARGS = --program-prefix=$(PROGRAM_PREFIX) \
                  --target=$(GCC_TARGET) \
@@ -17,6 +17,7 @@ CONFIGURE_ARGS = --program-prefix=$(PROGRAM_PREFIX) \
                  --disable-tls \
                  --disable-threads \
                  --disable-hosted-libstdcxx \
+                 --disable-c++-tools \
                  --enable-shared \
                  --enable-multiarch \
                  --disable-sjlj-exceptions \
@@ -46,14 +47,6 @@ CXXFLAGS += -fpermissive
 #
 
 LDFLAGS += -L$(PWD)
-
-.SECONDARY: dummy_libs
-dummy_libs: libc.a
-
-libc.a:
-	$(VERBOSE)$(AR) -rc $@
-
-Makefile: dummy_libs
 
 LIBS  += libc libm posix stdcxx
 

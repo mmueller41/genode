@@ -16,9 +16,25 @@
 #include <util/retry.h>
 #include <base/rpc_server.h>
 #include <pd_session/client.h>
-#include <deprecated/env.h>
+
+/* base-internal includes */
+#include <base/internal/globals.h>
 
 using namespace Genode;
+
+
+static Parent *_parent_ptr;
+static Parent &_parent()
+{
+	if (_parent_ptr)
+		return *_parent_ptr;
+
+	error("missing call of init_rpc_cap_alloc");
+	for (;;);
+}
+
+
+void Genode::init_rpc_cap_alloc(Parent &parent) { _parent_ptr = &parent; }
 
 
 Native_capability Rpc_entrypoint::_alloc_rpc_cap(Pd_session &pd,
@@ -29,13 +45,25 @@ Native_capability Rpc_entrypoint::_alloc_rpc_cap(Pd_session &pd,
 		Ram_quota ram_upgrade { 0 };
 		Cap_quota cap_upgrade { 0 };
 
-		try { return pd.alloc_rpc_cap(_cap); }
-		catch (Out_of_ram)  { ram_upgrade = Ram_quota { 2*1024*sizeof(long) }; }
-		catch (Out_of_caps) { cap_upgrade = Cap_quota { 4 }; }
+		using Error = Pd_session::Alloc_rpc_cap_error;
 
-		env_deprecated()->parent()->upgrade(Parent::Env::pd(),
-		                                    String<100>("ram_quota=", ram_upgrade, ", "
-		                                                "cap_quota=", cap_upgrade).string());
+		Native_capability result { };
+
+		pd.alloc_rpc_cap(_cap).with_result(
+			[&] (Native_capability cap) { result = cap; },
+			[&] (Error e) {
+				switch (e) {
+				case Error::OUT_OF_RAM:  ram_upgrade = { 2*1024*sizeof(long) }; break;
+				case Error::OUT_OF_CAPS: cap_upgrade = { 4 };                   break;
+				}
+			});
+
+		if (result.valid())
+			return result;
+
+		_parent().upgrade(Parent::Env::pd(),
+		                  String<100>("ram_quota=", ram_upgrade, ", "
+		                              "cap_quota=", cap_upgrade).string());
 	}
 }
 

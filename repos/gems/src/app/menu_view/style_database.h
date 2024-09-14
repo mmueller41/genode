@@ -56,20 +56,22 @@ class Menu_view::Style_database
 		 */
 		bool mutable _out_of_date = false;
 
-		typedef String<PATH_MAX_LEN> Path;
+		using Path = String<PATH_MAX_LEN>;
 
-		typedef ::File::Reading_failed Reading_failed;
+		using Reading_failed = ::File::Reading_failed;
 
 		struct Label_style_entry : List<Label_style_entry>::Element, Noncopyable
 		{
 			Path        const path;  /* needed for lookup */
 			Label_style const style;
 
+			bool const out_of_date = false;
+
 			static Label_style _init_style(Allocator &alloc,
 			                               Directory const &styles_dir,
 			                               Path const &path)
 			{
-				Label_style result { .color = Color(0, 0, 0) };
+				Label_style result { .color = Color::black() };
 
 				try {
 					File_content const content(alloc, styles_dir, path,
@@ -95,6 +97,8 @@ class Menu_view::Style_database
 			File_content           png_file;
 			Png_image              png_image;
 			Texture<Pixel_rgb888> &texture;
+
+			bool const out_of_date = false;
 
 			void const *_png_data()
 			{
@@ -148,19 +152,21 @@ class Menu_view::Style_database
 			 *
 			 * \throw Reading_failed
 			 */
-			Font_entry(Directory const &fonts_dir, Path const &path, Allocator &alloc,
+			Font_entry(Entrypoint &ep, Directory const &fonts_dir,
+			           Path const &path, Allocator &alloc,
 			           Style_database const &style_database)
 			try :
 				path(path),
 				_style_database(style_database),
 				_vfs_font(alloc, fonts_dir, path),
 				_cached_font(alloc, _vfs_font, _font_cache_limit),
-				_glyphs_changed_handler(fonts_dir, Path(path, "/glyphs"),
+				_glyphs_changed_handler(ep, fonts_dir, Path(path, "/glyphs"),
 				                        *this, &Font_entry::_handle_glyphs_changed)
 			{ }
 			catch (...) { throw Reading_failed(); }
 		};
 
+		Entrypoint      &_ep;
 		Ram_allocator   &_ram;
 		Region_map      &_rm;
 		Allocator       &_alloc;
@@ -181,10 +187,10 @@ class Menu_view::Style_database
 		T const *_lookup(List<T> &list, char const *path) const
 		{
 			for (T const *e = list.first(); e; e = e->next())
-				if (Genode::strcmp(e->path.string(), path) == 0)
+				if ((Genode::strcmp(e->path.string(), path) == 0) && !e->out_of_date)
 					return e;
 
-			return 0;
+			return nullptr;
 		}
 
 		/*
@@ -192,7 +198,7 @@ class Menu_view::Style_database
 		 */
 		static Path _construct_png_path(Xml_node node, char const *name)
 		{
-			typedef String<64> Style;
+			using Style = String<64>;
 			Style const style = node.attribute_value("style", Style("default"));
 
 			return Path(node.type(), "/", style, "/", name, ".png");
@@ -203,7 +209,7 @@ class Menu_view::Style_database
 		 */
 		static Path _widget_style_path(Xml_node const &node)
 		{
-			typedef String<64> Style;
+			using Style = String<64>;
 			Style const style = node.attribute_value("style", Style("default"));
 
 			return Path(node.type(), "/", style, "/", "style");
@@ -228,11 +234,12 @@ class Menu_view::Style_database
 
 	public:
 
-		Style_database(Ram_allocator &ram, Region_map &rm, Allocator &alloc,
+		Style_database(Entrypoint &ep, Ram_allocator &ram, Region_map &rm,
+		               Allocator &alloc,
 		               Directory const &fonts_dir, Directory const &styles_dir,
 		               Signal_context_capability style_changed_sigh)
 		:
-			_ram(ram), _rm(rm), _alloc(alloc),
+			_ep(ep), _ram(ram), _rm(rm), _alloc(alloc),
 			_fonts_dir(fonts_dir), _styles_dir(styles_dir),
 			_style_changed_sigh(style_changed_sigh)
 		{ }
@@ -273,7 +280,7 @@ class Menu_view::Style_database
 			 */
 			try {
 				Font_entry *e = new (_alloc)
-					Font_entry(_fonts_dir, path, _alloc, *this);
+					Font_entry(_ep, _fonts_dir, path, _alloc, *this);
 
 				_fonts.insert(e);
 				return &e->font();
@@ -310,6 +317,8 @@ class Menu_view::Style_database
 			}
 			_out_of_date = false;
 		}
+
+		bool up_to_date() const { return !_out_of_date; }
 };
 
 #endif /* _STYLE_DATABASE_H_ */

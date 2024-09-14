@@ -27,17 +27,17 @@
 #include <platform_thread.h>
 #include <platform_pd.h>
 
-namespace Genode { class Platform; }
+namespace Core { class Platform; }
 
 
-class Genode::Platform : public Platform_generic
+class Core::Platform : public Platform_generic
 {
 	private:
 
 		/*
 		 * Shortcut for the type of allocator instances for physical resources
 		 */
-		typedef Synced_range_allocator<Allocator_avl> Phys_allocator;
+		using Phys_allocator = Synced_range_allocator<Allocator_avl>;
 
 		Phys_allocator _ram_alloc;      /* RAM allocator */
 		Phys_allocator _io_mem_alloc;   /* MMIO allocator */
@@ -101,7 +101,8 @@ class Genode::Platform : public Platform_generic
 			 */
 			Sigma0();
 
-			int pager(Ipc_pager &) override { /* never called */ return -1; }
+			/* never called */
+			Pager_result pager(Ipc_pager &) override { return Pager_result::STOP; }
 		};
 
 		/**
@@ -119,7 +120,8 @@ class Genode::Platform : public Platform_generic
 			 */
 			Core_pager(Platform_pd &core_pd);
 
-			int pager(Ipc_pager &) override { /* never called */ return -1; }
+			/* never called */
+			Pager_result pager(Ipc_pager &) override { return Pager_result::STOP; }
 		};
 
 		/**

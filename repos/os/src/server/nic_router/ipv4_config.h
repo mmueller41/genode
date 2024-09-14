@@ -59,6 +59,8 @@ class Net::Ipv4_config
 		Ipv4_config(Ipv4_config const &ip_config,
 		            Genode::Allocator &alloc);
 
+		Ipv4_config(Ipv4_config const &ip_config);
+
 		Ipv4_config(Genode::Allocator &alloc);
 
 		~Ipv4_config();
@@ -71,8 +73,12 @@ class Net::Ipv4_config
 			       !_dns_domain_name.equal_to(other._dns_domain_name);
 		}
 
-		template <typename FUNC>
-		void for_each_dns_server(FUNC && func) const
+		bool operator == (Ipv4_config const &other) const
+		{
+			return !(*this != other);
+		}
+
+		void for_each_dns_server(auto const &func) const
 		{
 			_dns_servers.for_each([&] (Dns_server const &dns_server) {
 				func(dns_server);

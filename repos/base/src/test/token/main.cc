@@ -38,10 +38,20 @@ static void test_out_of_bounds_access(Env &env)
 	Attached_ram_dataspace buf_ds(env.ram(), env.rm(), BUF_SIZE);
 
 	/* attach buffer at start of managed dataspace, leave 2nd page as guard */
-	sub_rm.attach_at(buf_ds.cap(), 0);
+	sub_rm.attach(buf_ds.cap(), {
+		.size       = { },   .offset    = { },
+		.use_at     = true,  .at        = 0,
+		.executable = { },   .writeable = true });
 
 	/* locally attach managed dataspace */
-	char * const buf_ptr = env.rm().attach(sub_rm.dataspace());
+	char * const buf_ptr = env.rm().attach(sub_rm.dataspace(), {
+		.size       = { },   .offset    = { },
+		.use_at     = { },   .at        = { },
+		.executable = { },   .writeable = true }
+	).convert<char *>(
+		[&] (Region_map::Range range)  { return (char *)range.start; },
+		[&] (Region_map::Attach_error) { return nullptr; }
+	);
 
 	auto tokenize_two_tokens_at_end_of_buffer = [&] (char const * const input)
 	{
@@ -51,7 +61,7 @@ static void test_out_of_bounds_access(Env &env)
 		char * const token_ptr = buf_ptr + BUF_SIZE - input_len;
 		memcpy(token_ptr, input, input_len);
 
-		typedef ::Genode::Token<Scanner_policy_identifier_with_underline> Token;
+		using Token = ::Genode::Token<Scanner_policy_identifier_with_underline>;
 
 		Token t(token_ptr, input_len);
 

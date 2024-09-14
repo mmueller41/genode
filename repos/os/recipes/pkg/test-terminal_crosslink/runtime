@@ -2,10 +2,8 @@
 
 	<requires> <timer/> </requires>
 
-	<events>
-		<timeout meaning="failed" sec="10" />
-		<log     meaning="succeeded">Test succeeded</log>
-	</events>
+	<fail after_seconds="10"/>
+	<succeed>Test succeeded</succeed>
 
 	<content>
 		<rom label="ld.lib.so"/>
@@ -30,8 +28,9 @@
 		</default-route>
 		<default caps="200"/>
 		<start name="terminal_crosslink">
-			<resource name="RAM" quantum="1M"/>
+			<resource name="RAM" quantum="2M"/>
 			<provides> <service name="Terminal"/> </provides>
+			<config buffer="4K"/>
 		</start>
 		<start name="test-terminal_crosslink">
 			<resource name="RAM" quantum="1M"/>

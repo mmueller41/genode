@@ -21,8 +21,20 @@
 
 namespace Fs_tool {
 	using namespace Genode;
+	struct Byte_buffer;
 	struct Main;
 }
+
+
+struct Fs_tool::Byte_buffer : Byte_range_ptr
+{
+	Allocator &_alloc;
+
+	Byte_buffer(Allocator &alloc, size_t size)
+	: Byte_range_ptr((char *)alloc.alloc(size), size), _alloc(alloc) { }
+
+	~Byte_buffer() { _alloc.free(start, num_bytes); }
+};
 
 
 struct Fs_tool::Main
@@ -35,20 +47,7 @@ struct Fs_tool::Main
 
 	Vfs::Global_file_system_factory _fs_factory { _heap };
 
-	struct Vfs_env : Vfs::Env
-	{
-		Main &_main;
-
-		Vfs_env(Main &main) : _main(main) { }
-
-		Genode::Env                 &env()           override { return _main._env; }
-		Allocator                   &alloc()         override { return _main._heap; }
-		Vfs::File_system            &root_dir()      override { return _main._root_dir_fs; }
-
-	} _vfs_env { *this };
-
-	Vfs::Dir_file_system _root_dir_fs {
-		_vfs_env, _config.xml().sub_node("vfs"), _fs_factory };
+	Vfs::Simple_env _vfs_env { _env, _heap, _config.xml().sub_node("vfs") };
 
 	Directory _root_dir { _vfs_env };
 
@@ -57,11 +56,13 @@ struct Fs_tool::Main
 
 	bool _verbose = false;
 
-	typedef Directory::Path Path;
+	using Path = Directory::Path;
 
-	void _remove_file(Xml_node);
+	void _copy_file(Path const &from, Path const &to, Byte_range_ptr const &);
 
-	void _new_file(Xml_node);
+	void _remove_file    (Xml_node const &);
+	void _new_file       (Xml_node const &);
+	void _copy_all_files (Xml_node const &);
 
 	void _handle_config()
 	{
@@ -71,7 +72,7 @@ struct Fs_tool::Main
 
 		_verbose = config.attribute_value("verbose", false);
 
-		_root_dir_fs.apply_config(config.sub_node("vfs"));
+		_vfs_env.root_dir().apply_config(config.sub_node("vfs"));
 
 		config.for_each_sub_node([&] (Xml_node operation) {
 
@@ -80,6 +81,9 @@ struct Fs_tool::Main
 
 			if (operation.has_type("new-file"))
 				_new_file(operation);
+
+			if (operation.has_type("copy-all-files"))
+				_copy_all_files(operation);
 		});
 
 		if (config.attribute_value("exit", false)) {
@@ -96,7 +100,7 @@ struct Fs_tool::Main
 };
 
 
-void Fs_tool::Main::_remove_file(Xml_node operation)
+void Fs_tool::Main::_remove_file(Xml_node const &operation)
 {
 	Path const path = operation.attribute_value("path", Path());
 
@@ -104,9 +108,9 @@ void Fs_tool::Main::_remove_file(Xml_node operation)
 
 		if (_verbose) {
 			if (_root_dir.directory_exists(path))
-				warning("file", path, " cannot be removed because it is a directory");
+				warning("file ", path, " cannot be removed because it is a directory");
 			else
-				warning("file", path, " cannot be removed because there is no such file");
+				warning("file ", path, " cannot be removed because there is no such file");
 		}
 		return;
 	}
@@ -121,7 +125,7 @@ void Fs_tool::Main::_remove_file(Xml_node operation)
 }
 
 
-void Fs_tool::Main::_new_file(Xml_node operation)
+void Fs_tool::Main::_new_file(Xml_node const &operation)
 {
 	Path const path { operation.attribute_value("path", Path()) };
 
@@ -150,6 +154,56 @@ void Fs_tool::Main::_new_file(Xml_node operation)
 	if (write_error && _verbose)
 		warning("operation <new-file path=\"", path, "\"> "
 		        "failed because writing to the file failed");
+}
+
+
+void Fs_tool::Main::_copy_file(Path const &from, Path const &to,
+                               Byte_range_ptr const &buffer)
+{
+	try {
+		Readonly_file const src { _root_dir, from };
+		New_file            dst { _root_dir, to };
+
+		Readonly_file::At at { 0 };
+
+		for (;;) {
+
+			size_t const read_bytes = src.read(at, buffer);
+
+			dst.append(buffer.start, read_bytes);
+
+			at.value += read_bytes;
+
+			if (read_bytes < buffer.num_bytes)
+				break;
+		}
+	}
+	catch (...) {
+		error("failed to copy ", from, " to ", to); }
+}
+
+
+void Fs_tool::Main::_copy_all_files(Xml_node const &operation)
+{
+	Number_of_bytes const default_buffer { 1024*1024 };
+	Byte_buffer buffer(_heap, operation.attribute_value("buffer", default_buffer));
+
+	Path const from = operation.attribute_value("from", Path());
+	Path const to   = operation.attribute_value("to",   Path());
+
+	if (!_root_dir.directory_exists(from))
+		return;
+
+	Directory(_root_dir, from).for_each_entry([&] (Directory::Entry const &entry) {
+
+		bool const continous_file =
+			(entry.type() == Vfs::Directory_service::Dirent_type::CONTINUOUS_FILE);
+
+		if (continous_file)
+			_copy_file(Path(from, "/", entry.name()),
+			           Path(to,   "/", entry.name()),
+			           buffer);
+	});
 }
 
 

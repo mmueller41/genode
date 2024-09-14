@@ -17,7 +17,6 @@
 /* local includes */
 #include <direct_rule.h>
 #include <permit_rule.h>
-#include <pointer.h>
 
 namespace Genode { class Allocator; }
 
@@ -33,36 +32,33 @@ class Net::Transport_rule : public Direct_rule<Transport_rule>
 {
 	private:
 
-		Genode::Allocator              &_alloc;
-		Pointer<Permit_any_rule> const  _permit_any_rule;
-		Permit_single_rule_tree         _permit_single_rules { };
+		Genode::Allocator       &_alloc;
+		Permit_any_rule         *_permit_any_rule_ptr { };
+		Permit_single_rule_tree  _permit_single_rules { };
 
-		static Pointer<Permit_any_rule>
+		static Permit_any_rule *
 		_read_permit_any_rule(Domain_dict            &domains,
 		                      Genode::Xml_node const  node,
 		                      Genode::Allocator      &alloc);
 
+		/*
+		 * Noncopyable
+		 */
+		Transport_rule(Transport_rule const &);
+		Transport_rule &operator = (Transport_rule const &);
+
 	public:
 
-		Transport_rule(Domain_dict            &domains,
-		               Genode::Xml_node const  node,
-		               Genode::Allocator      &alloc,
-		               Genode::Cstring  const &protocol,
-		               Configuration          &config,
-		               Domain           const &domain);
+		Transport_rule(Ipv4_address_prefix const &dst,
+		               Genode::Allocator         &alloc);
 
 		~Transport_rule();
 
-		template <typename HANDLE_MATCH_FN,
-		          typename HANDLE_NO_MATCH_FN>
-		void
-		find_permit_rule_by_port(Port            const port,
-		                         HANDLE_MATCH_FN    && handle_match,
-		                         HANDLE_NO_MATCH_FN && handle_no_match) const
+		void find_permit_rule_by_port(Port port, auto const &handle_match, auto const &handle_no_match) const
 		{
-			if (_permit_any_rule.valid()) {
+			if (_permit_any_rule_ptr) {
 
-				handle_match(_permit_any_rule());
+				handle_match(*_permit_any_rule_ptr);
 
 			} else {
 
@@ -70,6 +66,12 @@ class Net::Transport_rule : public Direct_rule<Transport_rule>
 					port, handle_match, handle_no_match);
 			}
 		}
+
+		[[nodiscard]] bool finish_construction(Domain_dict            &domains,
+		                                       Genode::Xml_node const  node,
+		                                       Genode::Cstring  const &protocol,
+		                                       Configuration          &config,
+		                                       Domain           const &domain);
 };
 
 
@@ -77,13 +79,10 @@ class Net::Transport_rule_list : public Direct_rule_list<Transport_rule>
 {
 	public:
 
-		template <typename HANDLE_MATCH_FN,
-		          typename HANDLE_NO_MATCH_FN>
-
-		void find_best_match(Ipv4_address    const &ip,
-		                     Port            const port,
-		                     HANDLE_MATCH_FN    && handle_match,
-		                     HANDLE_NO_MATCH_FN && handle_no_match) const
+		void find_best_match(Ipv4_address const &ip,
+		                     Port         const  port,
+		                     auto         const &handle_match,
+		                     auto         const &handle_no_match) const
 		{
 			find_longest_prefix_match(
 				ip,

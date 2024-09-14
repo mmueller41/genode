@@ -13,7 +13,6 @@
 
 /* Genode includes */
 #include <base/thread.h>
-#include <base/log.h>
 #include <base/sleep.h>
 
 /* base-internal includes */
@@ -28,12 +27,12 @@
 /* seL4 includes */
 #include <sel4/benchmark_utilisation_types.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Thread::_init_platform_thread(size_t, Type type)
 {
-	addr_t const utcb_virt_addr = (addr_t)&_stack->utcb();
+	Utcb_virt const utcb_virt { (addr_t)&_stack->utcb() };
 
 	if (type == MAIN) {
 		native_thread().tcb_sel = seL4_CapInitThreadTCB;
@@ -42,12 +41,12 @@ void Thread::_init_platform_thread(size_t, Type type)
 	}
 
 	Thread_info thread_info;
-	thread_info.init(utcb_virt_addr, CONFIG_NUM_PRIORITIES - 1);
+	thread_info.init(utcb_virt, CONFIG_NUM_PRIORITIES - 1);
 
-	if (!map_local(thread_info.ipc_buffer_phys, utcb_virt_addr, 1)) {
+	if (!map_local(thread_info.ipc_buffer_phys.addr, utcb_virt.addr, 1)) {
 		error(__func__, ": could not map IPC buffer "
-		      "phys=",   Hex(thread_info.ipc_buffer_phys), " "
-		      "local=%", Hex(utcb_virt_addr));
+		      "phys=",   Hex(thread_info.ipc_buffer_phys.addr), " "
+		      "local=%", Hex(utcb_virt.addr));
 	}
 
 	native_thread().tcb_sel  = thread_info.tcb_sel.value();
@@ -100,14 +99,17 @@ void Thread::_thread_start()
 }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
-	start_sel4_thread(Cap_sel(native_thread().tcb_sel), (addr_t)&_thread_start,
-	                  (addr_t)stack_top(), _affinity.xpos());
+	/* write ipcbuffer address to utcb*/
+	utcb()->ipcbuffer(Native_utcb::Virt { addr_t(utcb()) });
 
-	struct Core_trace_source : public  Trace::Source::Info_accessor,
-	                           private Trace::Control,
-	                           private Trace::Source
+	start_sel4_thread(Cap_sel(native_thread().tcb_sel), (addr_t)&_thread_start,
+	                  (addr_t)stack_top(), _affinity.xpos(), addr_t(utcb()));
+
+	struct Core_trace_source : public  Core::Trace::Source::Info_accessor,
+	                           private Core::Trace::Control,
+	                           private Core::Trace::Source
 	{
 		Thread &_thread;
 
@@ -129,17 +131,19 @@ void Thread::start()
 		}
 
 
-		Core_trace_source(Trace::Source_registry &registry, Thread &t)
+		Core_trace_source(Core::Trace::Source_registry &registry, Thread &t)
 		:
-			Trace::Control(),
-			Trace::Source(*this, *this), _thread(t)
+			Core::Trace::Control(),
+			Core::Trace::Source(*this, *this), _thread(t)
 		{
 			registry.insert(this);
 		}
 	};
 
 	new (platform().core_mem_alloc())
-		Core_trace_source(Trace::sources(), *this);
+		Core_trace_source(Core::Trace::sources(), *this);
+
+	return Start_result::OK;
 }
 
 

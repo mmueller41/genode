@@ -25,6 +25,9 @@
 #include <cpu_thread/client.h>
 #include <cpu/memory_barrier.h>
 
+/* compiler includes */
+#include <stdarg.h>
+
 using namespace Genode;
 
 
@@ -194,7 +197,7 @@ struct Cpu_helper : Thread
 {
 	Env &_env;
 
-	Cpu_helper(Env &env, const char * name, Cpu_session &cpu)
+	Cpu_helper(Env &env, Name const &name, Cpu_session &cpu)
 	:
 		Thread(env, name, STACK_SIZE, Thread::Location(), Thread::Weight(), cpu),
 		_env(env)
@@ -245,11 +248,11 @@ struct Pause_helper : Thread
 			 * other threads of this task trying to print log messages will
 			 * block - looks like a deadlock.
 			 */
-			loop ++;
+			loop = loop + 1;
 			if (beep) {
 				log("beep");
 				beep = false;
-				loop ++;
+				loop = loop + 1;
 				return;
 			}
 		}
@@ -266,7 +269,7 @@ static void test_pause_resume(Env &env)
 
 	while (thread.loop < 1) { }
 
-	Thread_state state;
+	Thread_state state { };
 	Cpu_thread_client thread_client(thread.cap());
 
 	log("--- pausing ---");
@@ -275,11 +278,10 @@ static void test_pause_resume(Env &env)
 	log("--- paused ---");
 
 	log("--- reading thread state ---");
-	try {
-		state = thread_client.state();
-	} catch (Cpu_thread::State_access_failed) {
+	state = thread_client.state();
+	if (state.state == Thread_state::State::UNAVAILABLE)
 		throw -10;
-	}
+
 	if (loop_paused != thread.loop)
 		throw -11;
 
@@ -306,32 +308,37 @@ static void test_create_as_many_threads(Env &env)
 	                   Thread::stack_virtual_size();
 
 	Cpu_helper * threads[max];
-	static char thread_name[8];
 
 	Heap heap(env.ram(), env.rm());
 
 	unsigned i = 0;
-	try {
-		for (; i < max; i++) {
-			try {
-				snprintf(thread_name, sizeof(thread_name), "%u", i + 1);
-				threads[i] = new (heap) Cpu_helper(env, thread_name, env.cpu());
-				threads[i]->start();
-				threads[i]->join();
-			} catch (Cpu_session::Thread_creation_failed) {
-				throw "Thread_creation_failed";
-			} catch (Thread::Out_of_stack_space) {
-				throw "Out_of_stack_space";
-			} catch (Genode::Native_capability::Reference_count_overflow) {
-				throw "Native_capability::Reference_count_overflow";
+	bool denied = false;
+	bool out_of_stack_space = false;
+	for (; i < max; i++) {
+		try {
+			threads[i] = new (heap) Cpu_helper(env, Thread::Name(i + 1), env.cpu());
+			if (threads[i]->start() == Thread::Start_result::DENIED) {
+				denied = true;
+				break;
 			}
+			threads[i]->join();
+		} catch (Thread::Out_of_stack_space) {
+			out_of_stack_space = true;
+			break;
+		} catch (Genode::Native_capability::Reference_count_overflow) {
+			warning("Native_capability::Reference_count_overflow");
+			denied = true;
+			break;
 		}
-	} catch (const char * ex) {
-		log("created ", i, " threads before I got '", ex, "'");
-		for (unsigned j = i; j > 0; j--) {
-			destroy(heap, threads[j - 1]);
-			threads[j - 1] = nullptr;
-		}
+	}
+
+	for (unsigned j = i; j > 0; j--) {
+		destroy(heap, threads[j - 1]);
+		threads[j - 1] = nullptr;
+	}
+
+	if (denied) {
+		log("created ", i, " threads before thread creation got denied");
 		return;
 	}
 
@@ -339,7 +346,8 @@ static void test_create_as_many_threads(Env &env)
 	 * We have to get a Out_of_stack_space message, because we can't create
 	 * up to max threads, because already the main thread is running ...
 	 */
-	throw -21;
+	if (!out_of_stack_space)
+		throw -21;
 }
 
 
@@ -416,9 +424,9 @@ static void test_locks(Genode::Env &env)
 	l5.start();
 
 	log(" spin for some time");
-	for (unsigned volatile i = 0; i < 8000000; ++i) memory_barrier();
+	for (unsigned i = 0; i < 8000000; ++i) memory_barrier();
 	log(" still spinning");
-	for (unsigned volatile i = 0; i < 8000000; ++i) memory_barrier();
+	for (unsigned i = 0; i < 8000000; ++i) memory_barrier();
 	log(" spinning done");
 
 	lock.block();

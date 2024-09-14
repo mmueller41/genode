@@ -16,7 +16,7 @@
 #define _CORE__KERNEL__CPU_CONTEXT_H_
 
 /* core includes */
-#include <kernel/cpu_scheduler.h>
+#include <kernel/scheduler.h>
 #include <kernel/timer.h>
 
 namespace Kernel {
@@ -30,11 +30,11 @@ namespace Kernel {
 }
 
 
-class Kernel::Cpu_job : private Cpu_share
+class Kernel::Cpu_job : private Scheduler::Context
 {
 	private:
 
-		friend class Cpu; /* static_cast from 'Cpu_share' to 'Cpu_job' */
+		friend class Cpu; /* static_cast from 'Scheduler::Context' to 'Cpu_job' */
 
 		time_t _execution_time { 0 };
 
@@ -75,6 +75,9 @@ class Kernel::Cpu_job : private Cpu_share
 
 	public:
 
+		using Context  = Scheduler::Context;
+		using Priority = Scheduler::Priority;
+
 		/**
 		 * Handle exception that occured during execution on CPU 'id'
 		 */
@@ -88,12 +91,12 @@ class Kernel::Cpu_job : private Cpu_share
 		/**
 		 * Return which job currently uses our CPU-share
 		 */
-		virtual Cpu_job * helping_sink() = 0;
+		virtual Cpu_job * helping_destination() = 0;
 
 		/**
 		 * Construct a job with scheduling priority 'p' and time quota 'q'
 		 */
-		Cpu_job(Cpu_priority const p, unsigned const q);
+		Cpu_job(Priority const p, unsigned const q);
 
 		/**
 		 * Destructor
@@ -113,7 +116,7 @@ class Kernel::Cpu_job : private Cpu_share
 		/**
 		 * Return wether our CPU-share is currently active
 		 */
-		bool own_share_active() { return Cpu_share::ready(); }
+		bool own_share_active() { return Context::ready(); }
 
 		/**
 		 * Update total execution time
@@ -132,7 +135,7 @@ class Kernel::Cpu_job : private Cpu_share
 
 		void cpu(Cpu &cpu) { _cpu = &cpu; }
 
-		Cpu_share &share() { return *this; }
+		Context &context() { return *this; }
 };
 
 #endif /* _CORE__KERNEL__CPU_CONTEXT_H_ */

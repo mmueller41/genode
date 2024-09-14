@@ -7,7 +7,7 @@
  */
 
 /*
- * Copyright (C) 2016-2020 Genode Labs GmbH
+ * Copyright (C) 2016-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -15,6 +15,7 @@
 
 /* libc-internal includes */
 #include <internal/kernel.h>
+#include <internal/file_operations.h>
 
 Libc::Kernel * Libc::Kernel::_kernel_ptr;
 
@@ -70,9 +71,22 @@ void Libc::Kernel::reset_malloc_heap()
 
 void Libc::Kernel::_init_file_descriptors()
 {
-	typedef Genode::Token<Vfs::Scanner_policy_path_element> Path_element_token;
+	using Path_element_token = Genode::Token<Vfs::Scanner_policy_path_element>;
 
-	auto resolve_symlinks = [&] (Absolute_path next_iteration_working_path, Absolute_path &resolved_path)
+	/* guard used to print an offending libc config when leaving the scope */
+	struct Diag_guard
+	{
+		Kernel &kernel;
+		bool show = false;
+
+		Diag_guard(Kernel &kernel) : kernel(kernel) { }
+
+		~Diag_guard() { if (show) log(kernel._libc_env.libc_config()); }
+
+	} diag_guard { *this };
+
+	auto resolve_symlinks = [&] (Absolute_path next_iteration_working_path,
+	                             Absolute_path &resolved_path) -> Symlink_resolve_result
 	{
 		char path_element[PATH_MAX];
 		char symlink_target[PATH_MAX];
@@ -85,7 +99,7 @@ void Libc::Kernel::_init_file_descriptors()
 		do {
 			if (follow_count++ == FOLLOW_LIMIT) {
 				errno = ELOOP;
-				throw Symlink_resolve_error();
+				return Symlink_resolve_error();
 			}
 
 			current_iteration_working_path = next_iteration_working_path;
@@ -107,7 +121,7 @@ void Libc::Kernel::_init_file_descriptors()
 					next_iteration_working_path.append_element(path_element);
 				} catch (Path_base::Path_too_long) {
 					errno = ENAMETOOLONG;
-					throw Symlink_resolve_error();
+					return Symlink_resolve_error();
 				}
 
 				/*
@@ -118,13 +132,13 @@ void Libc::Kernel::_init_file_descriptors()
 					struct stat stat_buf;
 					int res = _vfs.stat_from_kernel(next_iteration_working_path.base(), &stat_buf);
 					if (res == -1) {
-						throw Symlink_resolve_error();
+						return Symlink_resolve_error();
 					}
 					if (S_ISLNK(stat_buf.st_mode)) {
 						res = readlink(next_iteration_working_path.base(),
 						               symlink_target, sizeof(symlink_target) - 1);
 						if (res < 1)
-							throw Symlink_resolve_error();
+							return Symlink_resolve_error();
 
 						/* zero terminate target */
 						symlink_target[res] = 0;
@@ -139,7 +153,7 @@ void Libc::Kernel::_init_file_descriptors()
 								next_iteration_working_path.append_element(symlink_target);
 							} catch (Path_base::Path_too_long) {
 								errno = ENAMETOOLONG;
-								throw Symlink_resolve_error();
+								return Symlink_resolve_error();
 							}
 						}
 						symlink_resolved_in_this_iteration = true;
@@ -153,21 +167,28 @@ void Libc::Kernel::_init_file_descriptors()
 
 		resolved_path = next_iteration_working_path;
 		resolved_path.remove_trailing('/');
+
+		return Symlinks_resolved_ok();
 	};
 
-	typedef String<Vfs::MAX_PATH_LEN> Path;
+	using Path = String<Vfs::MAX_PATH_LEN>;
 
-	auto resolve_absolute_path = [&] (Path const &path)
+	struct Absolute_path_resolved_ok { };
+	struct Absolute_path_resolve_error { };
+	using Absolute_path_resolve_result = Attempt<Absolute_path_resolved_ok,
+	                                             Absolute_path_resolve_error>;
+
+	auto resolve_absolute_path = [&] (Path const &path, Absolute_path &abs_path) -> Absolute_path_resolve_result
 	{
-		Absolute_path abs_path { };
 		Absolute_path abs_dir(path.string(), _cwd.base());   abs_dir.strip_last_element();
 		Absolute_path dir_entry(path.string(), _cwd.base()); dir_entry.keep_only_last_element();
 
 		try {
-			resolve_symlinks(abs_dir, abs_path);
+			if (resolve_symlinks(abs_dir, abs_path).failed())
+				return Absolute_path_resolve_error();
 			abs_path.append_element(dir_entry.string());
-			return abs_path;
-		} catch (Path_base::Path_too_long) { return Absolute_path(); }
+			return Absolute_path_resolved_ok();
+		} catch (Path_base::Path_too_long) { return Absolute_path_resolve_error(); }
 	};
 
 	auto init_fd = [&] (Xml_node const &node, char const *attr,
@@ -177,59 +198,62 @@ void Libc::Kernel::_init_file_descriptors()
 			return;
 
 		Path const attr_value { node.attribute_value(attr, Path()) };
-		try {
-			Absolute_path const path { resolve_absolute_path(attr_value) };
 
-			struct stat out_stat { };
-			if (_vfs.stat_from_kernel(path.string(), &out_stat) != 0) {
-				warning("failed to call 'stat' on ", path);
-				return;
-			}
+		Absolute_path path { };
 
-			File_descriptor *fd =
-				_vfs.open_from_kernel(path.string(), flags, libc_fd);
-
-			if (!fd)
-				return;
-
-			if (fd->libc_fd != libc_fd) {
-				error("could not allocate fd ",libc_fd," for ",path,", "
-					  "got fd ",fd->libc_fd);
-				_vfs.close_from_kernel(fd);
-				return;
-			}
-
-			fd->cloexec = node.attribute_value("cloexec", false);
-
-			/*
-			 * We need to manually register the path. Normally this is done
-			 * by '_open'. But we call the local 'open' function directly
-			 * because we want to explicitly specify the libc fd ID.
-			 */
-			if (fd->fd_path)
-				warning("may leak former FD path memory");
-
-			{
-				char *dst = (char *)_heap.alloc(path.max_len());
-				copy_cstring(dst, path.string(), path.max_len());
-				fd->fd_path = dst;
-			}
-
-			::off_t const seek = node.attribute_value("seek", 0ULL);
-			if (seek)
-				_vfs.lseek_from_kernel(fd, seek);
-
-		} catch (Symlink_resolve_error) {
-			warning("failed to resolve path for ", attr_value);
+		if (resolve_absolute_path(attr_value, path).failed()) {
+			warning("failed to resolve path for ", path);
+			diag_guard.show = true;
 			return;
 		}
+
+		struct stat out_stat { };
+		if (_vfs.stat_from_kernel(path.string(), &out_stat) != 0) {
+			warning("failed to call 'stat' on ", path);
+			diag_guard.show = true;
+			return;
+		}
+
+		File_descriptor *fd =
+			_vfs.open_from_kernel(path.string(), flags, libc_fd);
+
+		if (!fd)
+			return;
+
+		if (fd->libc_fd != libc_fd) {
+			error("could not allocate fd ",libc_fd," for ",path,", "
+			      "got fd ",fd->libc_fd);
+			_vfs.close_from_kernel(fd);
+			diag_guard.show = true;
+			return;
+		}
+
+		fd->cloexec = node.attribute_value("cloexec", false);
+
+		/*
+		 * We need to manually register the path. Normally this is done
+		 * by '_open'. But we call the local 'open' function directly
+		 * because we want to explicitly specify the libc fd ID.
+		 */
+		if (fd->fd_path)
+			warning("may leak former FD path memory");
+
+		{
+			char *dst = (char *)_heap.alloc(path.max_len());
+			copy_cstring(dst, path.string(), path.max_len());
+			fd->fd_path = dst;
+		}
+
+		::off_t const seek = node.attribute_value("seek", 0ULL);
+		if (seek)
+			_vfs.lseek_from_kernel(fd, seek);
 	};
 
 	if (_vfs.root_dir_has_dirents()) {
 
 		Xml_node const node = _libc_env.libc_config();
 
-		typedef String<Vfs::MAX_PATH_LEN> Path;
+		using Path = String<Vfs::MAX_PATH_LEN>;
 
 		if (node.has_attribute("cwd"))
 			_cwd.import(node.attribute_value("cwd", Path()).string(), _cwd.base());
@@ -248,8 +272,10 @@ void Libc::Kernel::_init_file_descriptors()
 			unsigned const flags = rd ? (wr ? O_RDWR : O_RDONLY)
 			                          : (wr ? O_WRONLY : 0);
 
-			if (!fd.has_attribute("path"))
-				warning("Invalid <fd> node, 'path' attribute is missing");
+			if (!fd.has_attribute("path")) {
+				warning("unknown path for file descriptor ", id);
+				diag_guard.show = true;
+			}
 
 			init_fd(fd, "path", id, flags);
 		});
@@ -316,13 +342,13 @@ void Libc::Kernel::_handle_user_interrupt()
 
 void Libc::Kernel::_clone_state_from_parent()
 {
-	struct Range { void *at; size_t size; };
+	using Range = Region_map::Range;
 
-	auto range_attr = [&] (Xml_node node)
+	auto range_attr = [&] (Xml_node const &node)
 	{
 		return Range {
-			.at   = (void *)node.attribute_value("at",   0UL),
-			.size =         node.attribute_value("size", 0UL)
+			.start     = node.attribute_value("at",   0UL),
+			.num_bytes = node.attribute_value("size", 0UL)
 		};
 	};
 
@@ -339,7 +365,7 @@ void Libc::Kernel::_clone_state_from_parent()
 		new (_heap)
 			Registered<Cloned_malloc_heap_range>(_cloned_heap_ranges,
 			                                     _env.ram(), _env.rm(),
-			                                     range.at, range.size); });
+			                                     range); });
 
 	_clone_connection.construct(_env);
 
@@ -359,7 +385,7 @@ void Libc::Kernel::_clone_state_from_parent()
 
 		auto copy_from_parent = [&] (Range range)
 		{
-			_clone_connection->memory_content(range.at, range.size);
+			_clone_connection->memory_content((void *)range.start, range.num_bytes);
 		};
 
 		/* clone application stack */
@@ -368,7 +394,7 @@ void Libc::Kernel::_clone_state_from_parent()
 
 		/* clone RW segment of a shared library or the binary */
 		if (node.type() == "rw") {
-			typedef String<64> Name;
+			using Name = String<64>;
 			Name const name = node.attribute_value("name", Name());
 
 			/*
@@ -391,9 +417,6 @@ void Libc::Kernel::_clone_state_from_parent()
 }
 
 
-extern void (*libc_select_notify_from_kernel)();
-
-
 void Libc::Kernel::handle_io_progress()
 {
 	if (_io_progressed) {
@@ -404,6 +427,8 @@ void Libc::Kernel::handle_io_progress()
 		if (_execute_monitors_pending == Monitor::Pool::State::JOBS_PENDING)
 			_execute_monitors_pending = _monitors.execute_monitors();
 	}
+
+	wakeup_remote_peers();
 }
 
 
@@ -417,6 +442,7 @@ void Libc::execute_in_application_context(Application_code &app_code)
 	 */
 	if (!Kernel::kernel().main_context()) {
 		app_code.execute();
+		Kernel::kernel().wakeup_remote_peers();
 		return;
 	}
 
@@ -435,6 +461,8 @@ void Libc::execute_in_application_context(Application_code &app_code)
 	nested = true;
 	Kernel::kernel().run(app_code);
 	nested = false;
+
+	Kernel::kernel().wakeup_remote_peers();
 }
 
 
@@ -480,7 +508,8 @@ Libc::Kernel::Kernel(Genode::Env &env, Genode::Allocator &heap)
 	init_vfs_plugin(*this, _env.rm());
 	init_file_operations(*this, _libc_env);
 	init_time(*this, *this);
-	init_select(*this, _signal, *this);
+	init_poll(_signal, *this);
+	init_select(*this);
 	init_socket_fs(*this, *this);
 	init_passwd(_passwd_config());
 	init_signal(_signal);

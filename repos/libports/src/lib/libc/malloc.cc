@@ -79,8 +79,8 @@ class Libc::Malloc
 {
 	private:
 
-		typedef Genode::size_t size_t;
-		typedef Genode::addr_t addr_t;
+		using size_t = Genode::size_t;
+		using addr_t = Genode::addr_t;
 
 		enum {
 			SLAB_START    = 5,  /* 32 bytes (log2) */
@@ -220,6 +220,10 @@ class Libc::Malloc
 			unsigned const  msb        = _slab_log2(real_size);
 
 			void *alloc_addr = (void *)((addr_t)ptr - md->offset);
+
+			if (md->offset == 0)
+				error("libc free: meta-data offset is 0 for address: ", ptr,
+				      " - corrupted allocation");
 
 			if (msb > SLAB_STOP) {
 				_backing_store.free(alloc_addr, real_size);

@@ -16,6 +16,7 @@
 
 /* Genode includes */
 #include <base/registry.h>
+#include <util/formatted_output.h>
 #include <rtc_session/connection.h>
 #include <vfs/file_system.h>
 
@@ -51,8 +52,7 @@ class Vfs::Rtc_file_system : public Single_file_system
 				 * On each read the current time is queried and afterwards formated
 				 * as '%Y-%m-%d %H:%M:%S\n' resp. '%F %T\n'.
 				 */
-				Read_result read(char *dst, file_size count,
-				                 file_size &out_count) override
+				Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 				{
 					if (seek() >= TIMESTAMP_LEN) {
 						out_count = 0;
@@ -61,31 +61,53 @@ class Vfs::Rtc_file_system : public Single_file_system
 
 					Rtc::Timestamp ts = _rtc.current_time();
 
-					char buf[TIMESTAMP_LEN+1];
-					char *b = buf;
-					Genode::size_t n = Genode::snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02u:%02u:%02u\n",
-					                                    ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second);
-					n -= (size_t)seek();
+					struct Padded
+					{
+						unsigned pad, value;
+
+						void print(Genode::Output &out) const
+						{
+							using namespace Genode;
+
+							unsigned const len = printed_length(value);
+							if (len < pad)
+								Genode::print(out, Repeated(pad - len, Char('0')));
+
+							Genode::print(out, value);
+						}
+					};
+
+					String<TIMESTAMP_LEN+1> string { Padded { 4, ts.year   }, "-",
+					                                 Padded { 2, ts.month  }, "-",
+					                                 Padded { 2, ts.day    }, " ",
+					                                 Padded { 2, ts.hour   }, ":",
+					                                 Padded { 2, ts.minute }, ":",
+					                                 Padded { 2, ts.second }, "\n" };
+					char const *b = string.string();
+					size_t      n = string.length();
+
+					n -= size_t(seek());
 					b += seek();
 
-					file_size len = count > n ? n : count;
-					Genode::memcpy(dst, b, (size_t)len);
+					size_t const len = min(n, dst.num_bytes);
+					memcpy(dst.start, b, len);
 					out_count = len;
 
 					return READ_OK;
 
 				}
 
-				Write_result write(char const *, file_size, file_size &) override
+				Write_result write(Const_byte_range_ptr const &, size_t &) override
 				{
 					return WRITE_ERR_IO;
 				}
 
-				bool read_ready() override { return true; }
+				bool read_ready()  const override { return true; }
+				bool write_ready() const override { return false; }
 		};
 
-		typedef Genode::Registered<Vfs_watch_handle>      Registered_watch_handle;
-		typedef Genode::Registry<Registered_watch_handle> Watch_handle_registry;
+		using Registered_watch_handle = Genode::Registered<Vfs_watch_handle>;
+		using Watch_handle_registry   = Genode::Registry<Registered_watch_handle>;
 
 		Rtc::Connection _rtc;
 

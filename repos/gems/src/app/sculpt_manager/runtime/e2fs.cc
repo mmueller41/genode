@@ -15,23 +15,20 @@
 
 namespace Sculpt {
 
-	template <typename GEN_ARGS_FN>
 	void gen_e2fs_start_content(Xml_generator &, Storage_target const &,
-	                            Rom_name const &, GEN_ARGS_FN const &);
+	                            Rom_name const &, auto const &);
 
-	template <typename ARG>
-	void gen_arg(Xml_generator &xml, ARG const &arg)
+	void gen_arg(Xml_generator &xml, auto const &arg)
 	{
-		xml.node("arg", [&] () { xml.attribute("value", arg); });
+		xml.node("arg", [&] { xml.attribute("value", arg); });
 	}
 }
 
 
-template <typename GEN_ARGS_FN>
 void Sculpt::gen_e2fs_start_content(Xml_generator        &xml,
                                     Storage_target const &target,
                                     Rom_name       const &tool,
-                                    GEN_ARGS_FN    const &gen_args_fn)
+                                    auto           const &gen_args_fn)
 {
 	gen_common_start_content(xml, String<64>(target.label(), ".", tool),
 	                         Cap_quota{500}, Ram_quota{100*1024*1024},
@@ -39,30 +36,30 @@ void Sculpt::gen_e2fs_start_content(Xml_generator        &xml,
 
 	gen_named_node(xml, "binary", tool);
 
-	xml.node("config", [&] () {
-		xml.node("libc", [&] () {
+	xml.node("config", [&] {
+		xml.node("libc", [&] {
 			xml.attribute("stdout", "/dev/log");
 			xml.attribute("stderr", "/dev/log");
 			xml.attribute("stdin",  "/dev/null");
 			xml.attribute("rtc",    "/dev/rtc");
 		});
-		xml.node("vfs", [&] () {
-			gen_named_node(xml, "dir", "dev", [&] () {
-				gen_named_node(xml, "block", "block", [&] () {
+		xml.node("vfs", [&] {
+			gen_named_node(xml, "dir", "dev", [&] {
+				gen_named_node(xml, "block", "block", [&] {
 					xml.attribute("label", "default");
 					xml.attribute("block_buffer_count", 128);
 				});
-				gen_named_node(xml, "inline", "rtc", [&] () {
+				gen_named_node(xml, "inline", "rtc", [&] {
 					xml.append("2018-01-01 00:01");
 				});
-				xml.node("null", [&] () {});
-				xml.node("log",  [&] () {});
+				xml.node("null", [&] {});
+				xml.node("log",  [&] {});
 			});
 		});
 		gen_args_fn(xml);
 	});
 
-	xml.node("route", [&] () {
+	xml.node("route", [&] {
 		target.gen_block_session_route(xml);
 		gen_parent_route<Cpu_session>    (xml);
 		gen_parent_route<Pd_session>     (xml);

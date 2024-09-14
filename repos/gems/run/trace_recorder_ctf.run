@@ -26,7 +26,7 @@ import_from_depot \
 	[depot_user]/src/rom_logger \
 	[depot_user]/src/report_rom \
 	[depot_user]/src/vfs \
-	[depot_user]/src/dummy_rtc_drv \
+	[depot_user]/src/dummy_rtc \
 	[depot_user]/src/trace_recorder \
 	[depot_user]/raw/trace_recorder \
 	[depot_user]/src/trace_recorder_policy \
@@ -113,7 +113,7 @@ install_config {
 			</route>
 		</start>
 
-		<start name="dummy_rtc_drv">
+		<start name="dummy_rtc">
 			<resource name="RAM" quantum="1M"/>
 			<provides> <service name="Rtc"/> </provides>
 		</start>
@@ -149,6 +149,7 @@ install_config {
 			</config>
 			<route>
 				<service name="File_system"> <child name="lx_fs"/> </service>
+				<service name="TRACE"> <parent label=""/> </service>
 				<any-service> <parent/> <any-child/> </any-service>
 			</route>
 		</start>
@@ -159,8 +160,7 @@ install_config {
 exec rm -rf bin/fs
 exec mkdir -p bin/fs
 
-build_boot_image { lx_fs
-                   fs }
+build_boot_image [list {*}[build_artifacts] fs]
 
 append qemu_args " -nographic "
 

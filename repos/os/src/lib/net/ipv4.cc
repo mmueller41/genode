@@ -26,7 +26,7 @@ using namespace Net;
 
 void Net::Ipv4_packet::print(Genode::Output &output) const
 {
-	Genode::print(output, "\033[32mIPV4\033[0m ", src(), " > ", dst(), " ");
+	Genode::print(output, "IPV4 ", src(), " > ", dst(), " ");
 	switch (protocol()) {
 	case Protocol::TCP:
 		Genode::print(output, *reinterpret_cast<Tcp_packet const *>(_data));
@@ -68,10 +68,10 @@ uint32_t Ipv4_address::to_uint32_big_endian() const
 Ipv4_address Ipv4_address::from_uint32_big_endian(uint32_t ip_raw)
 {
 	Ipv4_address ip;
-	ip.addr[0] = ip_raw;
-	ip.addr[1] = ip_raw >> 8;
-	ip.addr[2] = ip_raw >> 16;
-	ip.addr[3] = ip_raw >> 24;
+	ip.addr[0] = (uint8_t)(ip_raw);
+	ip.addr[1] = (uint8_t)(ip_raw >> 8);
+	ip.addr[2] = (uint8_t)(ip_raw >> 16);
+	ip.addr[3] = (uint8_t)(ip_raw >> 24);
 	return ip;
 }
 
@@ -88,10 +88,10 @@ uint32_t Ipv4_address::to_uint32_little_endian() const
 Ipv4_address Ipv4_address::from_uint32_little_endian(uint32_t ip_raw)
 {
 	Ipv4_address ip;
-	ip.addr[3] = ip_raw;
-	ip.addr[2] = ip_raw >> 8;
-	ip.addr[1] = ip_raw >> 16;
-	ip.addr[0] = ip_raw >> 24;
+	ip.addr[3] = (uint8_t)(ip_raw);
+	ip.addr[2] = (uint8_t)(ip_raw >> 8);
+	ip.addr[1] = (uint8_t)(ip_raw >> 16);
+	ip.addr[0] = (uint8_t)(ip_raw >> 24);
 	return ip;
 }
 

@@ -17,9 +17,11 @@
 #include <base/env.h>
 #include <base/heap.h>
 #include <os/reporter.h>
+#include <base/attached_io_mem_dataspace.h>
 
 #include <irq.h>
 #include <rmrr.h>
+#include <drhd.h>
 #include <pci/config.h>
 
 using namespace Genode;
@@ -31,30 +33,36 @@ struct Main
 	Env                  & env;
 	Heap                   heap            { env.ram(), env.rm()       };
 	Attached_rom_dataspace platform_info   { env, "platform_info"      };
-	Attached_rom_dataspace sys_rom         { env, "system"             };
-	Signal_handler<Main>   sys_rom_handler { env.ep(), *this,
-	                                         &Main::sys_rom_update     };
-	Expanding_reporter     pci_reporter    { env, "devices", "devices" };
+	Expanding_reporter     pci_reporter    { env, "devices", "devices", { 32*1024 } };
 	Registry<Bridge>       bridge_registry {}; /* contains host bridges */
 
 	bool apic_capable { false };
 	bool msi_capable  { false };
 
+	/*
+	 * We count beginning from 1 not 0, because some clients (Linux drivers)
+	 * do not ignore the pseudo MSI number announced, but interpret zero as
+	 * invalid.
+	 */
+	unsigned msi_start { 1 };
+
 	List_model<Irq_routing>  irq_routing_list  {};
 	List_model<Irq_override> irq_override_list {};
 	List_model<Rmrr>         reserved_memory_list {};
+	List_model<Drhd>         drhd_list {};
 
 	Constructible<Attached_io_mem_dataspace> pci_config_ds {};
 
-	void parse_pci_function(Bdf bdf, Config & cfg,
-	                        addr_t cfg_phys_base,
-	                        Xml_generator & generator, unsigned & msi);
-	void parse_pci_bus(bus_t bus, bus_t offset, addr_t base, addr_t phys_base,
-	                   Xml_generator & generator, unsigned & msi);
+	bus_t parse_pci_function(Bdf bdf, Config & cfg,
+	                         addr_t cfg_phys_base,
+	                         Xml_generator & generator, unsigned & msi);
+	bus_t parse_pci_bus(bus_t bus, Byte_range_ptr const & range, addr_t phys_base,
+	                    Xml_generator & generator, unsigned & msi);
 
 	void parse_irq_override_rules(Xml_node & xml);
-	void parse_pci_config_spaces(Xml_node & xml);
-	void sys_rom_update();
+	void parse_pci_config_spaces(Xml_node & xml, Xml_generator & generator);
+	void parse_acpi_device_info(Xml_node const &xml, Xml_generator & generator);
+	void parse_tpm2_table(Xml_node const &xml, Xml_generator & gen);
 
 	template <typename FN>
 	void for_bridge(Pci::bus_t bus, FN const & fn)
@@ -67,21 +75,57 @@ struct Main
 };
 
 
-void Main::parse_pci_function(Bdf             bdf,
-                              Config        & cfg,
-                              addr_t          cfg_phys_base,
-                              Xml_generator & gen,
-                              unsigned      & msi_number)
+/*
+ * If PCI devices happen to miss complete configuration after boot, i.e., have
+ * a zero base address, we report a fixed address for known devices.
+ * platform in turn, will setup the address from the report when enabling
+ * the device.
+ *
+ * The issue was discovered with Intel LPSS devices in Fujitsu notebooks.
+ *
+ * XXX static fixup list should be replaced by dynamic mapping of BAR
+ */
+static uint64_t fixup_bar_base_address(Bdf bdf, unsigned bar, uint64_t addr, uint64_t size)
+{
+	auto base_address = addr;
+
+	/* Intel LPSS (I2C) devices - values taken from Linux boot */
+	if (bdf == Bdf { 0, 0x15, 0 } && bar == 0) base_address = 0x4017000000;
+	if (bdf == Bdf { 0, 0x15, 1 } && bar == 0) base_address = 0x4017001000;
+	if (bdf == Bdf { 0, 0x15, 2 } && bar == 0) base_address = 0x4017001000;
+	if (bdf == Bdf { 0, 0x15, 3 } && bar == 0) base_address = 0x4017002000;
+
+	if (addr != base_address)
+		log(bdf, " remap MEM BAR", bar, " ", Hex_range(addr, (size_t)size), " to ", Hex(base_address));
+
+	return base_address;
+}
+
+/*
+ * The bus and function parsers return either the current bus number or the
+ * subordinate bus number (highest bus number of all of the busses that can be
+ * reached downstream of a bridge).
+ */
+
+bus_t Main::parse_pci_function(Bdf             bdf,
+                               Config        & cfg,
+                               addr_t          cfg_phys_base,
+                               Xml_generator & gen,
+                               unsigned      & msi_number)
 {
 	cfg.scan();
+
+	bus_t subordinate_bus = bdf.bus;
 
 	/* check for bridges */
 	if (cfg.read<Config::Header_type::Type>()) {
 		for_bridge(bdf.bus, [&] (Bridge & parent) {
-			Config_type1 bcfg(cfg.base());
+			Config_type1 bcfg(cfg.range());
 			new (heap) Bridge(parent.sub_bridges, bdf,
 			                  bcfg.secondary_bus_number(),
 			                  bcfg.subordinate_bus_number());
+
+			subordinate_bus = bcfg.subordinate_bus_number();
 
 			/* enable I/O spaces and DMA in bridges if not done already */
 			using Command = Pci::Config::Command;
@@ -101,6 +145,10 @@ void Main::parse_pci_function(Bdf             bdf,
 	bool      msi_x   = cfg.msi_x_cap.constructed();
 	irq_pin_t irq_pin = cfg.read<Config::Irq_pin>();
 
+	/* disable MSI/MSI-X by default */
+	if (msi) cfg.msi_cap->write<Pci::Config::Msi_capability::Control::Enable>(0);
+	if (msi_x) cfg.msi_x_cap->write<Pci::Config::Msi_x_capability::Control::Enable>(0);
+
 	gen.node("device", [&]
 	{
 		auto string = [&] (uint64_t v) { return String<16>(Hex(v)); };
@@ -112,6 +160,7 @@ void Main::parse_pci_function(Bdf             bdf,
 		{
 			using C  = Config;
 			using C0 = Config_type0;
+			using C1 = Config_type1;
 			using Cc = Config::Class_code_rev_id;
 
 			gen.attribute("address",       string(cfg_phys_base));
@@ -123,8 +172,29 @@ void Main::parse_pci_function(Bdf             bdf,
 			gen.attribute("class",         string(cfg.read<Cc::Class_code>()));
 			gen.attribute("revision",      string(cfg.read<Cc::Revision>()));
 			gen.attribute("bridge",        cfg.bridge() ? "yes" : "no");
-			if (!cfg.bridge()) {
-				C0 cfg0(cfg.base());
+
+			if (cfg.bridge()) {
+				C1 cfg1(cfg.range());
+				gen.attribute("io_base_limit",
+				              string(cfg1.read<C1::Io_base_limit>()));
+				gen.attribute("memory_base",
+				              string(cfg1.read<C1::Memory_base>()));
+				gen.attribute("memory_limit",
+				              string(cfg1.read<C1::Memory_limit>()));
+				gen.attribute("prefetch_memory_base",
+				              string(cfg1.read<C1::Prefetchable_memory_base>()));
+				gen.attribute("prefetch_memory_base_upper",
+				              string(cfg1.read<C1::Prefetchable_memory_base_upper>()));
+				gen.attribute("prefetch_memory_limit_upper",
+				              string(cfg1.read<C1::Prefetchable_memory_limit_upper>()));
+				gen.attribute("io_base_limit_upper",
+				              string(cfg1.read<C1::Io_base_limit_upper>()));
+				gen.attribute("expansion_rom_base",
+				              string(cfg1.read<C1::Expansion_rom_base_addr>()));
+				gen.attribute("bridge_control",
+				              string(cfg1.read<C1::Bridge_control>()));
+			} else {
+				C0 cfg0(cfg.range());
 				gen.attribute("sub_vendor_id",
 				              string(cfg0.read<C0::Subsystem_vendor>()));
 				gen.attribute("sub_device_id",
@@ -132,9 +202,13 @@ void Main::parse_pci_function(Bdf             bdf,
 			}
 		});
 
-		cfg.for_each_bar([&] (uint64_t addr, size_t size,
+		cfg.for_each_bar([&] (uint64_t addr, uint64_t size,
 		                      unsigned bar, bool pf)
 		{
+			addr = fixup_bar_base_address(bdf, bar, addr, size);
+			if (!addr)
+				warning(bdf, " MEM BAR", bar, " ", Hex_range(addr, (size_t)size),
+				        " has invalid base address - consider pci-fixup in parse_pci_function()");
 			gen.node("io_mem", [&]
 			{
 				gen.attribute("pci_bar", bar);
@@ -142,7 +216,7 @@ void Main::parse_pci_function(Bdf             bdf,
 				gen.attribute("size",    string(size));
 				if (pf) gen.attribute("prefetchable", true);
 			});
-		}, [&] (uint64_t addr, size_t size, unsigned bar) {
+		}, [&] (uint64_t addr, uint64_t size, unsigned bar) {
 			gen.node("io_port_range", [&]
 			{
 				gen.attribute("pci_bar", bar);
@@ -173,6 +247,13 @@ void Main::parse_pci_function(Bdf             bdf,
 				    device_id == 0x780d)
 					msi = msi_x = false;
 			}
+
+			/*
+			 * Force use of GSI on given ath9k device as using MSI
+			 * does not work.
+			 */
+			if (vendor_id == 0x168c || device_id == 0x0034)
+				msi = msi_x = false;
 		}
 
 		/*
@@ -226,126 +307,456 @@ void Main::parse_pci_function(Bdf             bdf,
 					gen.attribute("size",    rmrr.size);
 				});
 		});
+
+		/* XXX We currently only support unsegmented platforms with a single
+		 *     pci config space. Yet as soon as we do support those, we
+		 *     must assign the DMA-remapping hardware unit to the different pci
+		 *     segments resp. their devices.
+		 */
+
+		bool drhd_device_found = false;
+		drhd_list.for_each([&] (Drhd const & drhd) {
+			if (drhd_device_found) return;
+
+			bool device_match = false;
+			drhd.devices.for_each([&] (Drhd::Device const & device) {
+				if (device.bdf == bdf)
+					device_match = true;
+			});
+
+			if (device_match) {
+				drhd_device_found = true;
+				gen.node("io_mmu", [&] { gen.attribute("name", drhd.name()); });
+			}
+		});
+
+		if (!drhd_device_found) {
+			drhd_list.for_each([&] (Drhd const & drhd) {
+				if (drhd.scope == Drhd::Scope::INCLUDE_PCI_ALL)
+					gen.node("io_mmu", [&] { gen.attribute("name", drhd.name()); });
+			});
+		}
 	});
+
+	return subordinate_bus;
 }
 
 
-void Main::parse_pci_bus(bus_t           bus,
-                         bus_t           offset,
-                         addr_t          base,
-                         addr_t          phys_base,
-                         Xml_generator & generator,
-                         unsigned      & msi_number)
+bus_t Main::parse_pci_bus(bus_t                  bus,
+                          Byte_range_ptr const & range,
+                          addr_t                 phys_base,
+                          Xml_generator        & generator,
+                          unsigned             & msi_number)
 {
-	auto per_function = [&] (addr_t config_base, addr_t config_phys_base,
+	bus_t max_subordinate_bus = bus;
+
+	auto per_function = [&] (Byte_range_ptr const & config_range, addr_t config_phys_base,
 	                         dev_t dev, func_t fn) {
-		Config cfg(config_base);
+		Config cfg(config_range);
 		if (!cfg.valid())
 			return true;
 
-		parse_pci_function({(bus_t)(bus+offset), dev, fn}, cfg,
-		                   config_phys_base, generator, msi_number);
+		bus_t const subordinate_bus =
+			parse_pci_function({(bus_t)bus, dev, fn}, cfg,
+			                   config_phys_base, generator, msi_number);
+
+		max_subordinate_bus = max(max_subordinate_bus, subordinate_bus);
 
 		return !(fn == 0 && !cfg.read<Config::Header_type::Multi_function>());
 	};
 
 	for (dev_t dev = 0; dev < DEVICES_PER_BUS_MAX; dev++) {
 		for (func_t fn = 0; fn < FUNCTION_PER_DEVICE_MAX; fn++) {
-			unsigned factor = (bus * DEVICES_PER_BUS_MAX + dev) *
-			                  FUNCTION_PER_DEVICE_MAX + fn;
-			addr_t config_base = base + factor * FUNCTION_CONFIG_SPACE_SIZE;
-			addr_t config_phys_base =
-				phys_base + factor * FUNCTION_CONFIG_SPACE_SIZE;
-			if (!per_function(config_base, config_phys_base, dev, fn))
+			unsigned factor = dev * FUNCTION_PER_DEVICE_MAX + fn;
+			off_t config_offset = factor * FUNCTION_CONFIG_SPACE_SIZE;
+			Byte_range_ptr config_range { range.start + config_offset, range.num_bytes - config_offset };
+			addr_t config_phys_base = phys_base + config_offset;
+			if (!per_function(config_range, config_phys_base, dev, fn))
 				break;
 		}
 	}
+
+	return max_subordinate_bus;
 }
 
 
-void Main::parse_pci_config_spaces(Xml_node & xml)
+static void parse_acpica_info(Xml_node const &xml, Xml_generator &gen)
 {
-	pci_reporter.generate([&] (Xml_generator & generator)
+	gen.node("device", [&] {
+		gen.attribute("name", "acpi");
+		gen.attribute("type", "acpi");
+
+		xml.with_optional_sub_node("sci_int", [&] (Xml_node xml) {
+			gen.node("irq", [&] {
+				gen.attribute("number", xml.attribute_value("irq", 0xff));
+			});
+		});
+	});
+}
+
+/*
+ * Parse the TPM2 ACPI table and report the device if available.
+ * Only CRB devices are supported at this time.
+ *
+ * See the following document for further information:
+ * https://trustedcomputinggroup.org/wp-content/uploads/TCG_ACPIGeneralSpec_v1p3_r8_pub.pdf
+ */
+void Main::parse_tpm2_table(Xml_node const &xml, Xml_generator & gen)
+{
+	enum {
+		TPM2_TABLE_CRB_ADDRESS_OFFSET = 40,
+		TPM2_TABLE_CRB_ADDRESS_MASK = (~0xfff),
+		TPM2_TABLE_START_METHOD_OFFSET = 48,
+		TPM2_TABLE_START_METHOD_CRB = 7,
+		TPM2_TABLE_MIN_SIZE = 52UL,
+		TPM2_DEVICE_IO_MEM_SIZE = 0x1000U,
+	};
+
+	addr_t const addr = xml.attribute_value("addr",   0UL);
+	size_t const size = xml.attribute_value("size",  0UL);
+
+	if ((addr < 1UL) || (size < TPM2_TABLE_MIN_SIZE)) {
+		error("TPM2 table info invalid");
+		return;
+	}
+
+	Attached_io_mem_dataspace io_mem { env, addr, size };
+	char* ptr = io_mem.local_addr<char>();
+
+	if (memcmp(ptr, "TPM2", 4) != 0) {
+		error("TPM2 table parse error");
+		return;
+	}
+
+	uint32_t start_method =
+		*(reinterpret_cast<uint32_t*>(ptr + TPM2_TABLE_START_METHOD_OFFSET));
+	if (start_method != TPM2_TABLE_START_METHOD_CRB) {
+		warning("Unsupported TPM2 device found");
+		return;
+	}
+
+	addr_t crb_address =
+		*(reinterpret_cast<addr_t*>(ptr + TPM2_TABLE_CRB_ADDRESS_OFFSET)) &
+		TPM2_TABLE_CRB_ADDRESS_MASK;
+
+	gen.node("device", [&]
 	{
-		/*
-		 * We count beginning from 1 not 0, because some clients (Linux drivers)
-		 * do not ignore the pseudo MSI number announced, but interpret zero as
-		 * invalid.
-		 */
-		unsigned msi_number      = 1;
-		unsigned host_bridge_num = 0;
+		gen.attribute("name", "tpm2");
+		gen.node("io_mem", [&] {
+			gen.attribute("address", crb_address);
+			gen.attribute("size", TPM2_DEVICE_IO_MEM_SIZE);
+		});
+	});
+}
 
-		xml.for_each_sub_node("bdf", [&] (Xml_node & xml)
+/*
+ * By now, we do not have the necessary information about non-PCI devices
+ * available from the ACPI tables, therefore we hard-code typical devices
+ * we assume to be found in this function. In the future, this function
+ * shall interpret ACPI tables information.
+ */
+void Main::parse_acpi_device_info(Xml_node const &xml, Xml_generator & gen)
+{
+	using Table_name = String<5>;
+
+	xml.for_each_sub_node("table", [&] (Xml_node &table) {
+		Table_name name = table.attribute_value("name", Table_name());
+		/* only the TPM2 table is supported at this time */
+		if (name == "TPM2") {
+			parse_tpm2_table(table, gen);
+		}
+	});
+
+	/*
+	 * PS/2 device
+	 */
+	gen.node("device", [&]
+	{
+		gen.attribute("name", "ps2");
+		gen.node("irq", [&] { gen.attribute("number", 1U); });
+		gen.node("irq", [&] { gen.attribute("number", 12U); });
+		gen.node("io_port_range", [&]
 		{
-			addr_t const start = xml.attribute_value("start",  0UL);
-			addr_t const base  = xml.attribute_value("base",   0UL);
-			size_t const count = xml.attribute_value("count",  0UL);
+			gen.attribute("address", "0x60");
+			gen.attribute("size", 1U);
+		});
+		gen.node("io_port_range", [&]
+		{
+			gen.attribute("address", "0x64");
+			gen.attribute("size", 1U);
+		});
+	});
 
-			bus_t const bus_off  = (bus_t) (start / FUNCTION_PER_BUS_MAX);
-			bus_t const last_bus = (bus_t)
-				(max(1UL, (count / FUNCTION_PER_BUS_MAX)) - 1);
+	/*
+	 * PIT device
+	 */
+	gen.node("device", [&]
+	{
+		gen.attribute("name", "pit");
+		gen.node("irq", [&] { gen.attribute("number", 0U); });
+		gen.node("io_port_range", [&]
+		{
+			gen.attribute("address", "0x40");
+			gen.attribute("size", 4U);
+		});
+	});
 
-			if (host_bridge_num++) {
-				error("We do not support multiple host bridges by now!");
-				return;
-			}
+	/*
+	 * ACPI device (if applicable)
+	 */
+	if (xml.has_sub_node("sci_int"))
+		parse_acpica_info(xml, gen);
 
-			new (heap) Bridge(bridge_registry, { bus_off, 0, 0 },
-			                  bus_off, last_bus);
+	/* Intel DMA-remapping hardware units */
+	drhd_list.for_each([&] (Drhd const & drhd) {
+		gen.node("device", [&]
+		{
+			gen.attribute("name", drhd.name());
+			gen.attribute("type", "intel_iommu");
+			gen.node("io_mem", [&]
+			{
+				gen.attribute("address", String<20>(Hex(drhd.addr)));
+				gen.attribute("size",    String<20>(Hex(drhd.size)));
+			});
+			gen.node("irq", [&]
+			{
+				gen.attribute("type", "msi");
+				gen.attribute("number", msi_start++);
+			});
+		});
+	});
 
-			pci_config_ds.construct(env, base, count * FUNCTION_CONFIG_SPACE_SIZE);
-
-			bus_t bus = 0;
-			do
-				parse_pci_bus((bus_t)bus, bus_off,
-				              (addr_t)pci_config_ds->local_addr<void>(),
-				              base, generator, msi_number);
-			while (bus++ < last_bus);
-
-			pci_config_ds.destruct();
+	/*
+	 * Intel Tigerlake/Alderlake PCH Pinctrl/GPIO
+	 */
+	gen.node("device", [&]
+	{
+		gen.attribute("name", "INT34C5");
+		gen.attribute("type", "acpi");
+		gen.node("irq", [&]
+		{
+			gen.attribute("number", 14U);
+			gen.attribute("mode", "level");
+			gen.attribute("polarity", "low");
+		});
+		gen.node("io_mem", [&]
+		{
+			gen.attribute("address", "0xfd690000");
+			gen.attribute("size",    "0x1000");
+		});
+		gen.node("io_mem", [&]
+		{
+			gen.attribute("address", "0xfd6a0000");
+			gen.attribute("size",    "0x1000");
+		});
+		gen.node("io_mem", [&]
+		{
+			gen.attribute("address", "0xfd6d0000");
+			gen.attribute("size",    "0x1000");
+		});
+		gen.node("io_mem", [&]
+		{
+			gen.attribute("address", "0xfd6e0000");
+			gen.attribute("size",    "0x1000");
 		});
 	});
 }
 
 
-void Main::sys_rom_update()
+void Main::parse_pci_config_spaces(Xml_node & xml, Xml_generator & generator)
 {
-	sys_rom.update();
+	unsigned msi_number      = msi_start;
+	unsigned host_bridge_num = 0;
 
-	if (!sys_rom.valid())
-		return;
-
-	Xml_node xml = sys_rom.xml();
-
-	if (apic_capable) {
-		Irq_override_policy policy(heap);
-		irq_override_list.update_from_xml(policy, xml);
-	}
-
-	if (apic_capable) {
-		Irq_routing_policy policy(heap);
-		irq_routing_list.update_from_xml(policy, xml);
-	}
-
+	xml.for_each_sub_node("bdf", [&] (Xml_node & xml)
 	{
-		Rmrr_policy policy(heap);
-		reserved_memory_list.update_from_xml(policy, xml);
-	}
+		addr_t const start = xml.attribute_value("start",  0UL);
+		addr_t const base  = xml.attribute_value("base",   0UL);
+		size_t const count = xml.attribute_value("count",  0UL);
 
-	parse_pci_config_spaces(xml);
+		bus_t const bus_off  = (bus_t) (start / FUNCTION_PER_BUS_MAX);
+		bus_t const last_bus = (bus_t)
+			(max(1UL, (count / FUNCTION_PER_BUS_MAX)) - 1);
+
+		if (host_bridge_num++) {
+			error("We do not support multiple host bridges by now!");
+			return;
+		}
+
+		new (heap) Bridge(bridge_registry, { bus_off, 0, 0 },
+		                  bus_off, last_bus);
+
+		bus_t bus = 0;
+		bus_t max_subordinate_bus = bus;
+		do {
+			enum { BUS_SIZE = DEVICES_PER_BUS_MAX * FUNCTION_PER_DEVICE_MAX
+			                  * FUNCTION_CONFIG_SPACE_SIZE };
+			addr_t offset = base + bus * BUS_SIZE;
+			pci_config_ds.construct(env, offset, BUS_SIZE);
+			bus_t const subordinate_bus =
+				parse_pci_bus((bus_t)bus + bus_off,
+				              {pci_config_ds->local_addr<char>(), BUS_SIZE},
+				              offset, generator, msi_number);
+
+			max_subordinate_bus = max(max_subordinate_bus, subordinate_bus);
+		} while (bus++ < max_subordinate_bus);
+
+		pci_config_ds.destruct();
+	});
 }
 
 
 Main::Main(Env & env) : env(env)
 {
-	sys_rom.sigh(sys_rom_handler);
 	platform_info.xml().with_optional_sub_node("kernel", [&] (Xml_node xml)
 	{
 		apic_capable = xml.attribute_value("acpi", false);
 		msi_capable  = xml.attribute_value("msi",  false);
 	});
 
-	sys_rom_update();
+	Attached_rom_dataspace sys_rom(env, "system");
+	sys_rom.update();
+
+	/*
+	 * Wait until the system ROM is available
+	 */
+	if (!sys_rom.valid()) {
+		struct Io_dummy { void fn() {}; } io_dummy;
+		Io_signal_handler<Io_dummy> handler(env.ep(), io_dummy, &Io_dummy::fn);
+		sys_rom.sigh(handler);
+		while (!sys_rom.valid()) {
+			env.ep().wait_and_dispatch_one_io_signal();
+			sys_rom.update();
+		}
+	}
+
+	Xml_node xml = sys_rom.xml();
+
+	if (apic_capable) {
+
+		irq_override_list.update_from_xml(xml,
+
+			/* create */
+			[&] (Xml_node const &node) -> Irq_override &
+			{
+				return *new (heap)
+					Irq_override(node.attribute_value<uint8_t>("irq",   0xff),
+					             node.attribute_value<uint8_t>("gsi",   0xff),
+					             node.attribute_value<uint8_t>("flags", 0));
+			},
+
+			/* destroy */
+			[&] (Irq_override &irq_override) { destroy(heap, &irq_override); },
+
+			/* update */
+			[&] (Irq_override &, Xml_node const &) { }
+		);
+
+		irq_routing_list.update_from_xml(xml,
+
+			/* create */
+			[&] (Xml_node const &node) -> Irq_routing &
+			{
+				rid_t bridge_bdf = node.attribute_value<rid_t>("bridge_bdf", 0xff);
+				return *new (heap)
+					Irq_routing(Bdf::bdf(bridge_bdf),
+					            node.attribute_value<uint8_t>("device",     0xff),
+					            node.attribute_value<uint8_t>("device_pin", 0xff),
+					            node.attribute_value<uint8_t>("gsi",        0xff));
+			},
+
+			/* destroy */
+			[&] (Irq_routing &irq_routing) { destroy(heap, &irq_routing); },
+
+			/* update */
+			[&] (Irq_routing &, Xml_node const &) { }
+		);
+	}
+
+	reserved_memory_list.update_from_xml(xml,
+
+		/* create */
+		[&] (Xml_node const &node) -> Rmrr &
+		{
+			bus_t  bus = 0;
+			dev_t  dev = 0;
+			func_t fn  = 0;
+			addr_t start = node.attribute_value("start", 0UL);
+			addr_t end   = node.attribute_value("end", 0UL);
+
+			node.with_optional_sub_node("scope", [&] (Xml_node node) {
+				bus = node.attribute_value<uint8_t>("bus_start", 0U);
+				node.with_optional_sub_node("path", [&] (Xml_node node) {
+					dev = node.attribute_value<uint8_t>("dev", 0);
+					fn  = node.attribute_value<uint8_t>("func", 0);
+				});
+			});
+
+			return *new (heap) Rmrr({bus, dev, fn}, start, (end-start+1));
+		},
+
+		/* destroy */
+		[&] (Rmrr &rmrr) { destroy(heap, &rmrr); },
+
+		/* update */
+		[&] (Rmrr &, Xml_node const &) { }
+	);
+
+	unsigned nbr { 0 };
+	drhd_list.update_from_xml(xml,
+
+		/* create */
+		[&] (Xml_node const &node) -> Drhd &
+		{
+			addr_t   addr  = node.attribute_value("phys", 0UL);
+			size_t   size  = node.attribute_value("size", 0UL);
+			unsigned seg   = node.attribute_value("segment", 0U);
+			unsigned flags = node.attribute_value("flags", 0U);
+
+			Drhd * drhd;
+			if (flags & 0x1)
+				drhd = new (heap) Drhd(addr, size, seg,
+				                       Drhd::Scope::INCLUDE_PCI_ALL, nbr++);
+			else
+				drhd = new (heap) Drhd(addr, size, seg,
+				                       Drhd::Scope::EXPLICIT, nbr++);
+
+			/* parse device scopes which define the explicitly assigned devices */
+			bus_t bus = 0;
+			dev_t dev = 0;
+			func_t fn = 0;
+
+			node.for_each_sub_node("scope", [&] (Xml_node node) {
+				bus = node.attribute_value<uint8_t>("bus_start", 0U);
+				node.with_optional_sub_node("path", [&] (Xml_node node) {
+					dev = node.attribute_value<uint8_t>("dev", 0);
+					fn  = node.attribute_value<uint8_t>("func", 0);
+				});
+
+				new (heap) Drhd::Device(drhd->devices, {bus, dev, fn});
+			});
+
+			return *drhd;
+		},
+
+		/* destroy */
+		[&] (Drhd &drhd)
+		{
+			drhd.devices.for_each([&] (Drhd::Device & device) {
+				destroy(heap, &device); });
+			destroy(heap, &drhd);
+		},
+
+		/* update */
+		[&] (Drhd &, Xml_node const &) { }
+
+	);
+
+	pci_reporter.generate([&] (Xml_generator & generator)
+	{
+		parse_acpi_device_info(xml, generator);
+		parse_pci_config_spaces(xml, generator);
+	});
 }
 
 

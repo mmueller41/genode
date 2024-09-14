@@ -14,6 +14,7 @@
 #ifndef _MODEL__ROUTE_H_
 #define _MODEL__ROUTE_H_
 
+#include <xml.h>
 #include <types.h>
 #include <model/service.h>
 
@@ -22,8 +23,9 @@ namespace Sculpt { struct Route; }
 
 struct Sculpt::Route : List_model<Route>::Element
 {
-	typedef String<32> Id;
-	typedef String<80> Info;
+	using Id    = String<32>;
+	using Info  = String<80>;
+	using Label = Service::Label;
 
 	static char const *xml_type(Service::Type type)
 	{
@@ -39,6 +41,7 @@ struct Sculpt::Route : List_model<Route>::Element
 		case Service::Type::GUI:         return "gui";
 		case Service::Type::GPU:         return "gpu";
 		case Service::Type::RM:          return "rm";
+		case Service::Type::I2C:         return "i2c";
 		case Service::Type::IO_MEM:      return "io_mem";
 		case Service::Type::IO_PORT:     return "io_port";
 		case Service::Type::IRQ:         return "irq";
@@ -49,8 +52,12 @@ struct Sculpt::Route : List_model<Route>::Element
 		case Service::Type::USB:         return "usb";
 		case Service::Type::RTC:         return "rtc";
 		case Service::Type::PLATFORM:    return "platform";
+		case Service::Type::PIN_STATE:   return "pin_state";
+		case Service::Type::PIN_CONTROL: return "pin_control";
 		case Service::Type::VM:          return "vm";
 		case Service::Type::PD:          return "pd";
+		case Service::Type::PLAY:        return "play";
+		case Service::Type::RECORD:      return "record";
 		case Service::Type::UNDEFINED:   break;
 		}
 		return "undefined";
@@ -70,6 +77,7 @@ struct Sculpt::Route : List_model<Route>::Element
 		case Service::Type::GUI:         return "GUI";
 		case Service::Type::GPU:         return "GPU";
 		case Service::Type::RM:          return "Region maps";
+		case Service::Type::I2C:         return "I2C";
 		case Service::Type::IO_MEM:      return "Direct memory-mapped I/O";
 		case Service::Type::IO_PORT:     return "Direct port I/O";
 		case Service::Type::IRQ:         return "Direct device interrupts";
@@ -80,8 +88,12 @@ struct Sculpt::Route : List_model<Route>::Element
 		case Service::Type::USB:         return "USB";
 		case Service::Type::RTC:         return "Real-time clock";
 		case Service::Type::PLATFORM:    return "Device access";
+		case Service::Type::PIN_STATE:   return "GPIO pin state";
+		case Service::Type::PIN_CONTROL: return "GPIO pin control";
 		case Service::Type::VM:          return "Hardware-based virtualization";
 		case Service::Type::PD:          return "Protection domain";
+		case Service::Type::PLAY:        return "Play";
+		case Service::Type::RECORD:      return "Record";
 		case Service::Type::UNDEFINED:   break;
 		}
 		return "<undefined>";
@@ -130,7 +142,7 @@ struct Sculpt::Route : List_model<Route>::Element
 			return;
 		}
 
-		gen_named_node(xml, "service", Service::name_attr(required), [&] () {
+		gen_named_node(xml, "service", Service::name_attr(required), [&] {
 
 			if (required_label.valid()) {
 
@@ -144,34 +156,16 @@ struct Sculpt::Route : List_model<Route>::Element
 		});
 	}
 
-	struct Update_policy
+	bool matches(Xml_node node) const
 	{
-		typedef Route Element;
+		return required == _required(node)
+		    && required_label == node.attribute_value("label", Label());
+	}
 
-		Allocator &_alloc;
-
-		Update_policy(Allocator &alloc) : _alloc(alloc) { }
-
-		void destroy_element(Route &elem) { destroy(_alloc, &elem); }
-
-		Route &create_element(Xml_node node)
-		{
-			return *new (_alloc) Route(node);
-		}
-
-		void update_element(Route &, Xml_node) { }
-
-		static bool element_matches_xml_node(Route const &elem, Xml_node node)
-		{
-			return elem.required == _required(node)
-			    && elem.required_label == node.attribute_value("label", Label());
-		}
-
-		static bool node_is_element(Xml_node node)
-		{
-			return _required(node) != Service::Type::UNDEFINED;
-		}
-	};
+	static bool type_matches(Xml_node node)
+	{
+		return _required(node) != Service::Type::UNDEFINED;
+	}
 };
 
 #endif /* _MODEL__ROUTE_H_ */

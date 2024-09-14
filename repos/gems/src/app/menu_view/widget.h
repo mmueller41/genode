@@ -27,7 +27,7 @@ namespace Menu_view {
 	struct Margin;
 	struct Widget;
 
-	typedef Margin Padding;
+	using Padding = Margin;
 }
 
 
@@ -56,11 +56,9 @@ class Menu_view::Widget : List_model<Widget>::Element
 
 		using List_model<Widget>::Element::next;
 
-		enum { NAME_MAX_LEN = 32 };
-		typedef String<NAME_MAX_LEN> Name;
-
-		typedef Name       Type_name;
-		typedef String<10> Version;
+		using Name      = String<32>;
+		using Version   = String<10>;
+		using Type_name = Name;
 
 		struct Unique_id
 		{
@@ -102,9 +100,14 @@ class Menu_view::Widget : List_model<Widget>::Element
 			}
 		};
 
-		static Name node_name(Xml_node node)
+		static Name node_name(Xml_node const &node)
 		{
 			return node.attribute_value("name", Name(node.type()));
+		}
+
+		static Version node_version(Xml_node const &node)
+		{
+			return node.attribute_value("version", Version());
 		}
 
 		static Animated_rect::Steps motion_steps() { return { 60 }; };
@@ -113,7 +116,7 @@ class Menu_view::Widget : List_model<Widget>::Element
 
 		Type_name const _type_name;
 		Name      const _name;
-		Version   const _version { };
+		Version   const _version;
 
 		Unique_id const _unique_id;
 
@@ -121,36 +124,22 @@ class Menu_view::Widget : List_model<Widget>::Element
 
 		List_model<Widget> _children { };
 
-		struct Model_update_policy : List_model<Widget>::Update_policy
-		{
-			Widget_factory &_factory;
-
-			Model_update_policy(Widget_factory &factory) : _factory(factory) { }
-
-			void destroy_element(Widget &w) { _factory.destroy(&w); }
-
-			Widget &create_element(Xml_node elem_node)
-			{
-				if (Widget *w = _factory.create(elem_node))
-					return *w;
-
-				throw Unknown_element_type();
-			}
-
-			void update_element(Widget &w, Xml_node node) { w.update(node); }
-
-			static bool element_matches_xml_node(Widget const &w, Xml_node node)
-			{
-				return node.has_type(w._type_name.string())
-				    && Widget::node_name(node) == w._name
-				    && node.attribute_value("version", Version()) == w._version;
-			}
-
-		} _model_update_policy { _factory };
-
 		inline void _update_children(Xml_node node)
 		{
-			_children.update_from_xml(_model_update_policy, node);
+			_children.update_from_xml(node,
+
+				/* create */
+				[&] (Xml_node const &node) -> Widget & {
+					return _factory.create(node); },
+
+				/* destroy */
+				[&] (Widget &w) {
+					_factory.destroy(&w); },
+
+				/* update */
+				[&] (Widget &w, Xml_node const &node) {
+					w.update(node); }
+			);
 		}
 
 		void _draw_children(Surface<Pixel_rgb888> &pixel_surface,
@@ -210,21 +199,25 @@ class Menu_view::Widget : List_model<Widget>::Element
 		Rect edges() const
 		{
 			Rect const r = _animated_geometry.rect();
-			return Rect(Point(r.x1() + margin.left,  r.y1() + margin.top),
-		                Point(r.x2() - margin.right, r.y2() - margin.bottom));
+			return Rect::compound(Point(r.x1() + margin.left,  r.y1() + margin.top),
+			                      Point(r.x2() - margin.right, r.y2() - margin.bottom));
 		}
 
-		Widget(Widget_factory &factory, Xml_node node, Unique_id unique_id)
+		Widget(Name const &name, Unique_id const id,
+		       Widget_factory &factory, Xml_node const &node)
 		:
-			_type_name(node.type()),
-			_name(node_name(node)),
-			_unique_id(unique_id),
-			_factory(factory)
+			_type_name(node.type()), _name(name), _version(node_version(node)),
+			_unique_id(id), _factory(factory)
+		{ }
+
+		Widget(Widget_factory &factory, Xml_node const &node, Unique_id const id)
+		:
+			Widget(node_name(node), id, factory, node)
 		{ }
 
 		virtual ~Widget()
 		{
-			_children.destroy_all_elements(_model_update_policy);
+			_update_children(Xml_node("<empty/>"));
 		}
 
 		bool has_name(Name const &name) const { return name == _name; }
@@ -251,7 +244,7 @@ class Menu_view::Widget : List_model<Widget>::Element
 
 		void position(Point position)
 		{
-			_geometry = Rect(position, _geometry.area());
+			_geometry = Rect(position, _geometry.area);
 		}
 
 		static Point _at_child(Point at, Widget const &w)
@@ -313,6 +306,24 @@ class Menu_view::Widget : List_model<Widget>::Element
 		void print(Output &out) const
 		{
 			Genode::print(out, _name);
+		}
+
+		/**
+		 * List_model::Element
+		 */
+		bool matches(Xml_node const &node) const
+		{
+			return node.has_type(_type_name.string())
+			    && Widget::node_name(node) == _name
+			    && node_version(node) == _version;
+		}
+
+		/**
+		 * List_model::Element
+		 */
+		static bool type_matches(Xml_node const &node)
+		{
+			return Widget_factory::node_type_known(node);
 		}
 };
 

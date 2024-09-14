@@ -16,10 +16,10 @@
 #include <io_mem_session_component.h>
 
 
-using namespace Genode;
+using namespace Core;
 
 
-void Io_mem_session_component::_unmap_local(addr_t, size_t) { }
+void Io_mem_session_component::_unmap_local(addr_t, size_t, addr_t) { }
 
 
 addr_t Io_mem_session_component::_map_local(addr_t, size_t) { return 0; }

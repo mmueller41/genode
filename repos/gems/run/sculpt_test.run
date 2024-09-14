@@ -2,7 +2,7 @@ set use_nvme 0
 
 source ${genode_dir}/repos/gems/run/sculpt.run
 
-# enable Qemu networking, usable via the nic_drv
+# enable Qemu networking, usable via the nic driver
 append_qemu_nic_args
 append qemu_args " -m 1024 "
 
@@ -14,6 +14,8 @@ if {![file exists bin/sculpt-ahci.raw]} {
 }
 append qemu_args " -device ahci,id=ahci "
 append qemu_args " -drive id=hdd,file=$disk_image,format=raw,if=none -device ide-hd,drive=hdd,bus=ahci.1 "
+
+append_if [have_include image/iso] qemu_args " -boot d "
 
 # attach small NVMe disk to Qemu to experiment with file-system access
 if {$use_nvme} {

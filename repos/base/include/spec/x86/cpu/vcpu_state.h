@@ -2,11 +2,12 @@
  * \brief   Virtual CPU context for x86
  * \author  Alexander Boettcher
  * \author  Christian Helmuth
+ * \author  Benjamin Lamowski
  * \date    2018-10-09
  */
 
 /*
- * Copyright (C) 2018-2021 Genode Labs GmbH
+ * Copyright (C) 2018-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -47,6 +48,8 @@ class Genode::Vcpu_state
 
 	public:
 
+		Vcpu_state() = default;
+
 		template <typename T>
 		class Register : Noncopyable
 		{
@@ -79,6 +82,26 @@ class Genode::Vcpu_state
 					_charged = true;
 					_value   = value;
 				}
+
+				/*
+				 * Charge without changing value
+				 *
+				 * \noapi
+				 */
+				void set_charged() { _charged = true; }
+
+				/*
+				 * Update value if not yet charged
+				 *
+				 * \noapi
+				 */
+				void update(T const &value)
+				{
+					if (!_charged) {
+						_value   = value;
+						_charged = true;
+					}
+				}
 		};
 
 		struct Range
@@ -94,85 +117,88 @@ class Genode::Vcpu_state
 			addr_t   base;
 		};
 
-		Register<addr_t> ax;
-		Register<addr_t> cx;
-		Register<addr_t> dx;
-		Register<addr_t> bx;
+		Register<addr_t> ax { };
+		Register<addr_t> cx { };
+		Register<addr_t> dx { };
+		Register<addr_t> bx { };
 
-		Register<addr_t> bp;
-		Register<addr_t> si;
-		Register<addr_t> di;
+		Register<addr_t> bp { };
+		Register<addr_t> si { };
+		Register<addr_t> di { };
 
-		Register<addr_t> sp;
-		Register<addr_t> ip;
-		Register<addr_t> ip_len;
-		Register<addr_t> flags;
+		Register<addr_t> sp { };
+		Register<addr_t> ip { };
+		Register<addr_t> ip_len { };
+		Register<addr_t> flags { };
 
-		Register<Segment> es;
-		Register<Segment> ds;
-		Register<Segment> fs;
-		Register<Segment> gs;
-		Register<Segment> cs;
-		Register<Segment> ss;
-		Register<Segment> tr;
-		Register<Segment> ldtr;
+		Register<Segment> es { };
+		Register<Segment> ds { };
+		Register<Segment> fs { };
+		Register<Segment> gs { };
+		Register<Segment> cs { };
+		Register<Segment> ss { };
+		Register<Segment> tr { };
+		Register<Segment> ldtr { };
 
-		Register<Range> gdtr;
-		Register<Range> idtr;
+		Register<Range> gdtr { };
+		Register<Range> idtr { };
 
-		Register<addr_t> cr0;
-		Register<addr_t> cr2;
-		Register<addr_t> cr3;
-		Register<addr_t> cr4;
+		Register<addr_t> cr0 { };
+		Register<addr_t> cr2 { };
+		Register<addr_t> cr3 { };
+		Register<addr_t> cr4 { };
 
-		Register<addr_t> dr7;
+		Register<addr_t> dr7 { };
 
-		Register<addr_t> sysenter_ip;
-		Register<addr_t> sysenter_sp;
-		Register<addr_t> sysenter_cs;
+		Register<addr_t> sysenter_ip { };
+		Register<addr_t> sysenter_sp { };
+		Register<addr_t> sysenter_cs { };
 
-		Register<uint64_t> qual_primary;
-		Register<uint64_t> qual_secondary;
+		Register<uint64_t> qual_primary { };
+		Register<uint64_t> qual_secondary { };
 
-		Register<uint32_t> ctrl_primary;
-		Register<uint32_t> ctrl_secondary;
+		Register<uint32_t> ctrl_primary { };
+		Register<uint32_t> ctrl_secondary { };
 
-		Register<uint32_t> inj_info;
-		Register<uint32_t> inj_error;
+		Register<uint32_t> inj_info { };
+		Register<uint32_t> inj_error { };
 
-		Register<uint32_t> intr_state;
-		Register<uint32_t> actv_state;
+		Register<uint32_t> intr_state { };
+		Register<uint32_t> actv_state { };
 
-		Register<uint64_t> tsc;
-		Register<uint64_t> tsc_offset;
-		Register<uint64_t> tsc_aux;
+		Register<uint64_t> tsc { };
+		Register<uint64_t> tsc_offset { };
+		Register<uint64_t> tsc_aux { };
 
-		Register<addr_t>   efer;
+		Register<addr_t>   efer { };
 
-		Register<uint64_t> pdpte_0;
-		Register<uint64_t> pdpte_1;
-		Register<uint64_t> pdpte_2;
-		Register<uint64_t> pdpte_3;
+		Register<uint64_t> pdpte_0 { };
+		Register<uint64_t> pdpte_1 { };
+		Register<uint64_t> pdpte_2 { };
+		Register<uint64_t> pdpte_3 { };
 
-		Register<uint64_t> r8;
-		Register<uint64_t> r9;
-		Register<uint64_t> r10;
-		Register<uint64_t> r11;
-		Register<uint64_t> r12;
-		Register<uint64_t> r13;
-		Register<uint64_t> r14;
-		Register<uint64_t> r15;
+		Register<uint64_t> r8  { };
+		Register<uint64_t> r9  { };
+		Register<uint64_t> r10 { };
+		Register<uint64_t> r11 { };
+		Register<uint64_t> r12 { };
+		Register<uint64_t> r13 { };
+		Register<uint64_t> r14 { };
+		Register<uint64_t> r15 { };
 
-		Register<uint64_t> star;
-		Register<uint64_t> lstar;
-		Register<uint64_t> cstar;
-		Register<uint64_t> fmask;
-		Register<uint64_t> kernel_gs_base;
+		Register<uint64_t> star  { };
+		Register<uint64_t> lstar { };
+		Register<uint64_t> cstar { };
+		Register<uint64_t> fmask { };
+		Register<uint64_t> kernel_gs_base { };
 
-		Register<uint32_t> tpr;
-		Register<uint32_t> tpr_threshold;
+		Register<uint32_t> tpr { };
+		Register<uint32_t> tpr_threshold { };
 
-		unsigned exit_reason;
+		Register<uint64_t> xcr0 { };
+		Register<uint64_t> xss  { };
+
+		unsigned exit_reason { };
 
 		class Fpu : Noncopyable
 		{
@@ -202,21 +228,16 @@ class Genode::Vcpu_state
 
 				bool charged() const { return _charged; }
 
-				template <typename FN>
-				void with_state(FN const &fn) const
-				{
-					fn(_state);
-				}
+				void with_state(auto const &fn) const { fn(_state); }
 
-				template <typename FN>
-				void charge(FN const &fn)
+				void charge(auto const &fn)
 				{
 					_charged = true;
 					fn(_state);
 				}
 		};
 
-		Fpu fpu __attribute__((aligned(16)));
+		Fpu fpu __attribute__((aligned(16))) { };
 
 		/*
 		 * Registers transfered by hypervisor from guest on VM exit are charged.

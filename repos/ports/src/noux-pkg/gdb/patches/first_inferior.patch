@@ -1,0 +1,71 @@
+first_inferior.patch
+
+Detect the creation of the first inferior if it doesn't exist yet
+when GDB connects to the debug monitor and make sure that its pid
+is sent in 'Hg' commands even if no thread is selected, to get
+the memory map of the correct inferior with the 'info mem'
+command.
+
+Also, prevent failed assertions on other commands without a selected thread.
+
+diff --git a/gdb/exec.c b/gdb/exec.c
+index ad543c9..9243b22 100644
+--- a/gdb/exec.c
++++ b/gdb/exec.c
+@@ -515,6 +515,10 @@ exec_file_attach (const char *filename, int from_tty)
+ static void
+ exec_file_command (const char *args, int from_tty)
+ {
++  /* prevent a failed assertion in 'find_inferior_pid()' */
++  if (inferior_ptid == null_ptid)
++    error(_("Cannot execute this command without a live selected thread."));
++
+   if (from_tty && target_has_execution ()
+       && !query (_("A program is being debugged already.\n"
+ 		   "Are you sure you want to change the file? ")))
+diff --git a/gdb/infcmd.c b/gdb/infcmd.c
+index 0ddc541..021e29f 100644
+--- a/gdb/infcmd.c
++++ b/gdb/infcmd.c
+@@ -2924,6 +2924,8 @@ interrupt_command (const char *args, int from_tty)
+       if (args != nullptr
+ 	  && startswith (args, "-a"))
+ 	all_threads = 1;
++      else
++        ensure_valid_thread();
+ 
+       interrupt_target_1 (all_threads);
+     }
+diff --git a/gdb/remote.c b/gdb/remote.c
+index 5fccf69..f12d504 100644
+--- a/gdb/remote.c
++++ b/gdb/remote.c
+@@ -2908,6 +2908,9 @@ remote_target::set_thread (ptid_t ptid, int gen)
+     xsnprintf (buf, endbuf - buf, "0");
+   else if (ptid == minus_one_ptid)
+     xsnprintf (buf, endbuf - buf, "-1");
++  else if (ptid == null_ptid)
++    write_ptid (buf, endbuf, ptid_t (current_inferior()->pid,
++                                     ptid.lwp(), ptid.tid()));
+   else
+     write_ptid (buf, endbuf, ptid);
+   putpkt (rs->buf);
+@@ -5007,9 +5010,16 @@ remote_target::start_remote_1 (int from_tty, int extended_p)
+ 
+       if (thread_count (this) == 0)
+ 	{
+-	  if (!extended_p)
++	  if (!extended_p) {
+ 	    error (_("The target is not running (try extended-remote?)"));
+-	  return false;
++	    return false;
++	  }
++
++	  /* Accept remote events to be able to detect the first thread. */
++	  if (target_can_async_p ())
++	    target_async (true);
++
++	  return true;
+ 	}
+ 
+       /* Report all signals during attach/startup.  */

@@ -18,6 +18,7 @@
 #include <util/meta.h>
 #include <base/mutex.h>
 #include <base/log.h>
+#include <base/exception.h>
 #include <util/avl_tree.h>
 
 namespace Genode { template <typename T> class Id_space; }
@@ -62,8 +63,8 @@ class Genode::Id_space : public Noncopyable
 					return e ? e->_lookup(id) : 0;
 				}
 
-				template <typename ARG, typename FUNC>
-				void _for_each(FUNC const &fn) const
+				template <typename ARG>
+				void _for_each(auto const &fn) const
 				{
 					if (Avl_node<Element>::child(Avl_node_base::LEFT))
 						Avl_node<Element>::child(Avl_node_base::LEFT)->template _for_each<ARG>(fn);
@@ -172,13 +173,38 @@ class Genode::Id_space : public Noncopyable
 		 * This function is called with the ID space locked. Hence, it is not
 		 * possible to modify the ID space from within 'fn'.
 		 */
-		template <typename ARG, typename FUNC>
-		void for_each(FUNC const &fn) const
+		template <typename ARG>
+		void for_each(auto const &fn) const
 		{
 			Mutex::Guard guard(_mutex);
 
 			if (_elements.first())
 				_elements.first()->template _for_each<ARG>(fn);
+		}
+
+		/**
+		 * Apply functor 'fn' to object with given ID, or call 'missing_fn'
+		 *
+		 * See 'for_each' for a description of the 'ARG' argument.
+		 * If the ID is not known, 'missing_fn' is called instead of 'fn'.
+		 * Both 'fn' and 'missing_fn' must have the same return type.
+		 */
+		template <typename ARG, typename FN>
+		auto apply(Id id, FN const &fn, auto const &missing_fn)
+		-> typename Trait::Functor<decltype(&FN::operator())>::Return_type
+		{
+			T *obj_ptr = nullptr;
+			{
+				Mutex::Guard guard(_mutex);
+
+				if (_elements.first())
+					if (Element *e = _elements.first()->_lookup(id))
+						obj_ptr = &e->_obj;
+			}
+			if (obj_ptr)
+				return fn(static_cast<ARG &>(*obj_ptr));
+			else
+				return missing_fn();
 		}
 
 		/**
@@ -188,24 +214,12 @@ class Genode::Id_space : public Noncopyable
 		 *
 		 * \throw Unknown_id
 		 */
-		template <typename ARG, typename FUNC>
-		auto apply(Id id, FUNC const &fn)
-		-> typename Trait::Functor<decltype(&FUNC::operator())>::Return_type
+		template <typename ARG, typename FN>
+		auto apply(Id id, FN const &fn)
+		-> typename Trait::Functor<decltype(&FN::operator())>::Return_type
 		{
-			T *obj = nullptr;
-			{
-				Mutex::Guard guard(_mutex);
-
-				if (!_elements.first())
-					throw Unknown_id();
-
-				if (Element *e = _elements.first()->_lookup(id))
-					obj = &e->_obj;
-			}
-			if (obj)
-				return fn(static_cast<ARG &>(*obj));
-			else
-				throw Unknown_id();
+			using Result = typename Trait::Functor<decltype(&FN::operator())>::Return_type;
+			return apply<ARG>(id, fn, [&] () -> Result { throw Unknown_id(); });
 		}
 
 		/**
@@ -221,8 +235,8 @@ class Genode::Id_space : public Noncopyable
 		 * \return  true if 'fn' was applied, or
 		 *          false if the ID space is empty.
 		 */
-		template <typename ARG, typename FUNC>
-		bool apply_any(FUNC const &fn)
+		template <typename ARG>
+		bool apply_any(auto const &fn)
 		{
 			T *obj = nullptr;
 			{

@@ -42,18 +42,18 @@ class Pci_driver
 {
 	private:
 
-		enum { DMA_SIZE = 1024 * 1024 };
+		enum { DMA_SIZE = 256 * 1024 };
 
 		Genode::Env          & _env;
 		Platform::Connection   _pci    { _env };
-		Platform::Dma_buffer   _buffer { _pci, DMA_SIZE, Genode::UNCACHED };
+		Platform::Dma_buffer   _buffer { _pci, DMA_SIZE, Genode::CACHED };
 		Genode::Allocator_avl  _alloc;
 
 		struct Device
 		{
-			Platform::Device       dev;
-			Platform::Device::Irq  irq;
-			Platform::Device::Mmio mmio;
+			Platform::Device          dev;
+			Platform::Device::Irq     irq;
+			Platform::Device::Mmio<0> mmio;
 
 			Device(Platform::Connection &pci,
 			       Platform::Device::Name const &name)

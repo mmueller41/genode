@@ -37,7 +37,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 {
 	public:
 
-		typedef String<80> Version;
+		using Version = String<80>;
 
 		/**
 		 * Exception types
@@ -62,16 +62,40 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			virtual QUOTA resource_limit(QUOTA const &) const = 0;
 		};
 
-		typedef Resource_limit_accessor<Ram_quota> Ram_limit_accessor;
-		typedef Resource_limit_accessor<Cap_quota> Cap_limit_accessor;
-		typedef Resource_limit_accessor<Cpu_quota> Cpu_limit_accessor;
+		using Ram_limit_accessor = Resource_limit_accessor<Ram_quota>;
+		using Cap_limit_accessor = Resource_limit_accessor<Cap_quota>;
+		using Cpu_limit_accessor = Resource_limit_accessor<Cpu_quota>;
 
 		struct Cpu_quota_transfer : Interface
 		{
-			virtual void transfer_cpu_quota(Cpu_session_capability, Cpu_quota) = 0;
+			virtual void transfer_cpu_quota(Capability<Pd_session>, Pd_session &,
+			                                Capability<Cpu_session>, Cpu_quota) = 0;
 		};
 
 		enum class Sample_state_result { CHANGED, UNCHANGED };
+
+		/*
+		 * Helper for passing lambda functions as 'Pd_intrinsics::Fn'
+		 */
+
+		using Pd_intrinsics = Genode::Sandbox::Pd_intrinsics;
+
+		template <typename PD_SESSION, typename FN>
+		static void with_pd_intrinsics(Pd_intrinsics &pd_intrinsics,
+		                               Capability<Pd_session> cap, PD_SESSION &pd,
+		                               FN const &fn)
+		{
+			struct Impl : Pd_intrinsics::Fn
+			{
+				using Intrinsics = Pd_intrinsics::Intrinsics;
+
+				FN const &_fn;
+				Impl(FN const &fn) : _fn(fn) { }
+				void call(Intrinsics &intrinsics) const override { _fn(intrinsics); }
+			};
+
+			pd_intrinsics.with_intrinsics(cap, pd, Impl { fn });
+		}
 
 	private:
 
@@ -169,7 +193,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			throw Missing_name_attribute();
 		}
 
-		typedef String<64> Name;
+		using Name = String<64>;
 		Name const _unique_name { _name_from_xml(_start_node->xml()) };
 
 		static Binary_name _binary_from_xml(Xml_node start_node,
@@ -253,7 +277,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 			start_node.for_each_sub_node("resource", [&] (Xml_node rsc) {
 
-				typedef String<8> Name;
+				using Name = String<8>;
 				Name const name = rsc.attribute_value("name", Name());
 
 				if (name == "RAM")
@@ -280,6 +304,16 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		Ram_quota _configured_ram_quota() const;
 		Cap_quota _configured_cap_quota() const;
 
+		Pd_intrinsics &_pd_intrinsics;
+
+		template <typename FN>
+		void _with_pd_intrinsics(FN const &fn)
+		{
+			with_pd_intrinsics(_pd_intrinsics, _child.pd_session_cap(), _child.pd(), fn);
+		}
+
+		Capability<Pd_session> _ref_pd_cap { }; /* defined by 'init' */
+
 		using Local_service = Genode::Sandbox::Local_service_base;
 
 		Registry<Parent_service> &_parent_services;
@@ -288,12 +322,12 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		struct Inline_config_rom_service : Abandonable, Dynamic_rom_session::Content_producer
 		{
-			typedef Genode::Local_service<Dynamic_rom_session> Service;
+			using Service = Genode::Local_service<Dynamic_rom_session>;
 
 			Child &_child;
 
 			Dynamic_rom_session _session { _child._env.ep().rpc_ep(),
-			                               _child.ref_pd(), _child._env.rm(),
+			                               _child._env.ram(), _child._env.rm(),
 			                               *this };
 
 			Service::Single_session_factory _factory { _session };
@@ -557,7 +591,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		      Affinity::Space const    &affinity_space,
 		      Registry<Parent_service> &parent_services,
 		      Registry<Routed_service> &child_services,
-		      Registry<Local_service>  &local_services);
+		      Registry<Local_service>  &local_services,
+		      Pd_intrinsics            &pd_intrinsics);
 
 		virtual ~Child();
 
@@ -680,8 +715,17 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Child_policy::Name name() const override { return _unique_name; }
 
-		Pd_session           &ref_pd()           override { return _env.pd(); }
-		Pd_session_capability ref_pd_cap() const override { return _env.pd_session_cap(); }
+		Pd_session &ref_pd() override
+		{
+			Pd_session *_ref_pd_ptr = nullptr;
+			_with_pd_intrinsics([&] (Pd_intrinsics::Intrinsics &intrinsics) {
+				_ref_pd_ptr = &intrinsics.ref_pd; });
+			return *_ref_pd_ptr;
+		}
+
+		Pd_session_capability ref_pd_cap() const override { return _ref_pd_cap; }
+
+		Ram_allocator &session_md_ram() override { return _env.ram(); }
 
 		void init(Pd_session  &, Pd_session_capability)  override;
 		void init(Cpu_session &, Cpu_session_capability) override;
@@ -715,7 +759,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 			_child.close_all_sessions();
 
-			_report_update_trigger.trigger_report_update();
+			_report_update_trigger.trigger_immediate_report_update();
 
 			/*
 			 * Print a message as the exit is not handled otherwise. There are
@@ -731,6 +775,17 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		}
 
 		bool initiate_env_sessions() const override { return false; }
+
+		void _with_address_space(Pd_session &, With_address_space_fn const &fn) override
+		{
+			_with_pd_intrinsics([&] (Pd_intrinsics::Intrinsics &intrinsics) {
+				fn.call(intrinsics.address_space); });
+		}
+
+		void start_initial_thread(Capability<Cpu_thread> cap, addr_t ip) override
+		{
+			_pd_intrinsics.start_initial_thread(cap, ip);
+		}
 
 		void yield_response() override
 		{

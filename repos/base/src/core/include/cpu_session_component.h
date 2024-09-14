@@ -32,11 +32,11 @@
 #include <trace/source_registry.h>
 #include <native_cpu_component.h>
 
-namespace Genode { class Cpu_session_component; }
+namespace Core { class Cpu_session_component; }
 
 
-class Genode::Cpu_session_component : public  Session_object<Cpu_session>,
-                                      private List<Cpu_session_component>::Element
+class Core::Cpu_session_component : public  Session_object<Cpu_session>,
+                                    private List<Cpu_session_component>::Element
 {
 	private:
 
@@ -166,8 +166,8 @@ class Genode::Cpu_session_component : public  Session_object<Cpu_session>,
 		 ** CPU session interface **
 		 ***************************/
 
-		Thread_capability create_thread(Capability<Pd_session>, Name const &,
-		                                Affinity::Location, Weight, addr_t) override;
+		Create_thread_result create_thread(Capability<Pd_session>, Name const &,
+		                                   Affinity::Location, Weight, addr_t) override;
 		void kill_thread(Thread_capability) override;
 		void exception_sigh(Signal_context_capability) override;
 		Affinity::Space affinity_space() const override;

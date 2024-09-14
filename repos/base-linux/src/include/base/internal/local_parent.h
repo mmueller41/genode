@@ -44,7 +44,9 @@ class Genode::Local_parent : public Expanding_parent_client
 {
 	private:
 
-		Allocator &_alloc;
+		Region_map &_local_rm;
+		Allocator  &_alloc;
+
 		Id_space<Client> _local_sessions_id_space { };
 
 	public:
@@ -53,18 +55,18 @@ class Genode::Local_parent : public Expanding_parent_client
 		 ** Parent interface **
 		 **********************/
 
-		Session_capability session(Client::Id, Service_name const &, Session_args const &,
-		                           Affinity const & = Affinity()) override;
+		Session_result session(Client::Id, Service_name const &, Session_args const &,
+		                       Affinity const & = Affinity()) override;
 		Close_result close(Client::Id) override;
 
 		/**
 		 * Constructor
 		 *
-		 * \param parent_cap  real parent capability used to
-		 *                    promote requests to non-local
-		 *                    services
+		 * \param parent_cap  real parent capability used to direct requests to
+		 *                    non-local services
+		 * \param local_rm    region map of local address space
 		 */
-		Local_parent(Parent_capability parent_cap, Allocator &);
+		Local_parent(Parent_capability parent_cap, Region_map &local_rm, Allocator &);
 };
 
 #endif /* _INCLUDE__BASE__INTERNAL__LOCAL_PARENT_H_ */

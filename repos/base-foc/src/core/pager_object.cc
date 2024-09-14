@@ -20,7 +20,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Pager_object::wake_up()
@@ -39,5 +39,5 @@ void Pager_object::wake_up()
 
 void Pager_object::unresolved_page_fault_occurred()
 {
-	state.state.unresolved_page_fault = true;
+	state.state.state = Thread_state::State::PAGE_FAULT;
 }

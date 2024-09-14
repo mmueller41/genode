@@ -15,7 +15,7 @@
 /* base includes */
 #include <cpu/memory_barrier.h>
 
-/* base-hw Core includes */
+/* base-hw core includes */
 #include <platform_pd.h>
 #include <kernel/cpu.h>
 #include <kernel/pd.h>
@@ -24,6 +24,9 @@
 using namespace Kernel;
 
 extern "C" void kernel_to_user_context_switch(Cpu::Context*, Cpu::Fpu_context*);
+
+
+void Thread::_call_suspend() { }
 
 
 void Thread::exception(Cpu & cpu)
@@ -62,7 +65,13 @@ void Thread::exception(Cpu & cpu)
  * coprocessor registers (there might be ARM SoCs where this is not valid,
  * with several shareability domains, but until now we do not support them)
  */
-void Kernel::Thread::Tlb_invalidation::execute() { };
+void Kernel::Thread::Tlb_invalidation::execute(Cpu &) { }
+
+
+void Thread::Flush_and_stop_cpu::execute(Cpu &) { }
+
+
+void Cpu::Halt_job::proceed(Kernel::Cpu &) { }
 
 
 void Thread::proceed(Cpu & cpu)
@@ -78,7 +87,8 @@ void Thread::proceed(Cpu & cpu)
 
 void Thread::user_ret_time(Kernel::time_t const t)
 {
-	regs->r0 = t >> 32UL;
+	/* split 64-bit time_t value into 2 register */
+	regs->r0 = (addr_t) (t >> 32UL);
 	regs->r1 = t & ~0UL;
 }
 

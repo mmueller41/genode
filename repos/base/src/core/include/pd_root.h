@@ -20,12 +20,10 @@
 /* Core */
 #include <pd_session_component.h>
 
-namespace Genode {
-	class Pd_root;
-}
+namespace Core { class Pd_root; }
 
 
-class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_component>
+class Core::Pd_root : public Root_component<Pd_session_component>
 {
 	private:
 
@@ -35,6 +33,7 @@ class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_compone
 		Range_allocator  &_phys_alloc;
 		Region_map       &_local_rm;
 		Range_allocator  &_core_mem;
+		System_control   &_system_control;
 
 		/**
 		 * The RAM allocations of system management components are getting
@@ -60,7 +59,8 @@ class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_compone
 
 		static Ram_dataspace_factory::Virt_range _virt_range_from_args(char const *args)
 		{
-			addr_t const constrained = Arg_string::find_arg(args, "virt_space").ulong_value(Genode::Pd_connection::Virt_space::CONSTRAIN);
+			addr_t const constrained = Arg_string::find_arg(args, "virt_space")
+			                           .ulong_value(Pd_connection::Virt_space::CONSTRAIN);
 
 			if (!constrained)
 				return Ram_dataspace_factory::Virt_range { 0x1000, 0UL - 0x2000 };
@@ -92,7 +92,7 @@ class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_compone
 				                     _virt_range_from_args(args),
 				                     _managing_system(args),
 				                     _local_rm, _pager_ep, args,
-				                     _core_mem);
+				                     _core_mem, _system_control);
 		}
 
 		void _upgrade_session(Pd_session_component *pd, const char *args) override
@@ -112,11 +112,13 @@ class Genode::Pd_root : public Genode::Root_component<Genode::Pd_session_compone
 		        Range_allocator  &phys_alloc,
 		        Region_map       &local_rm,
 		        Allocator        &md_alloc,
-		        Range_allocator  &core_mem)
+		        Range_allocator  &core_mem,
+		        System_control   &system_control)
 		:
 			Root_component<Pd_session_component>(&ep, &md_alloc),
 			_ep(ep), _signal_ep(signal_ep), _pager_ep(pager_ep),
-			_phys_alloc(phys_alloc), _local_rm(local_rm), _core_mem(core_mem)
+			_phys_alloc(phys_alloc), _local_rm(local_rm), _core_mem(core_mem),
+			_system_control(system_control)
 		{ }
 };
 

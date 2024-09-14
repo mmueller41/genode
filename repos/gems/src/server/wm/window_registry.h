@@ -34,9 +34,9 @@ namespace Wm {
 	using Genode::Xml_generator;
 	using Genode::Reporter;
 
-	typedef Genode::Surface_base::Area  Area;
-	typedef Genode::Surface_base::Point Point;
-	typedef Genode::Surface_base::Rect  Rect;
+	using Area  = Genode::Surface_base::Area;
+	using Point = Genode::Surface_base::Point;
+	using Rect  = Genode::Surface_base::Rect;
 }
 
 
@@ -61,8 +61,8 @@ class Wm::Window_registry
 		{
 			public:
 
-				typedef Genode::String<200>   Title;
-				typedef Genode::Session_label Session_label;
+				using Title         = Gui::Title;
+				using Session_label = Genode::Session_label;
 
 				enum Has_alpha { HAS_ALPHA, HAS_NO_ALPHA };
 
@@ -131,8 +131,8 @@ class Wm::Window_registry
 						xml.attribute("id",     _id.value);
 						xml.attribute("label",  _attr.label.string());
 						xml.attribute("title",  _attr.title.string());
-						xml.attribute("width",  _attr.size.w());
-						xml.attribute("height", _attr.size.h());
+						xml.attribute("width",  _attr.size.w);
+						xml.attribute("height", _attr.size.h);
 
 						if (_attr.has_alpha == HAS_ALPHA)
 							xml.attribute("has_alpha", "yes");
@@ -162,9 +162,11 @@ class Wm::Window_registry
 		Allocator &_alloc;
 		Reporter  &_window_list_reporter;
 
-		enum { MAX_WINDOWS = 1024 };
+		static constexpr unsigned MAX_WINDOWS = 1024;
 
 		Genode::Bit_allocator<MAX_WINDOWS> _window_ids { };
+
+		unsigned _next_id = 0; /* used to alloc subsequent numbers */
 
 		List<Window> _windows { };
 
@@ -213,7 +215,20 @@ class Wm::Window_registry
 
 		Id create()
 		{
-			Window * const win = new (_alloc) Window((unsigned)_window_ids.alloc());
+			auto alloc_id = [&]
+			{
+				for (;;) {
+					unsigned try_id = _next_id;
+					_next_id = (_next_id + 1) % MAX_WINDOWS;
+					try {
+						_window_ids.alloc_addr(try_id);
+						return try_id;
+					}
+					catch (...) { }
+				}
+			};
+
+			Window * const win = new (_alloc) Window(alloc_id());
 
 			_windows.insert(win);
 
@@ -237,6 +252,8 @@ class Wm::Window_registry
 
 			_windows.remove(win);
 
+			_window_ids.free(win->id().value);
+
 			Genode::destroy(&_alloc, win);
 
 			_report_updated_window_list_model();
@@ -244,9 +261,9 @@ class Wm::Window_registry
 
 		void size(Id id, Area size) { _set_attr(id, size); }
 
-		void title(Id id, Window::Title title) { _set_attr(id, title); }
+		void title(Id id, Window::Title const &title) { _set_attr(id, title); }
 
-		void label(Id id, Window::Session_label label) { _set_attr(id, label); }
+		void label(Id id, Window::Session_label const &label) { _set_attr(id, label); }
 
 		void has_alpha(Id id, bool has_alpha)
 		{

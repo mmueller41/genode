@@ -1,10 +1,10 @@
-<runtime ram="34M" caps="400" binary="gears">
+<runtime ram="40M" caps="400" binary="gears">
 
 	<requires>
 		<gui/>
 		<gpu/>
 		<timer/>
-		<rom label="mesa_gpu_drv.lib.so"/>
+		<rom label="mesa_gpu.lib.so"/>
 	</requires>
 
 	<content>

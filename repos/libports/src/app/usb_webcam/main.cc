@@ -46,10 +46,10 @@ class Viewer
 
 		using PT = Genode::Pixel_rgb888;
 
-		Genode::Env               &_env;
-		Gui::Connection            _gui  { _env, "webcam" };
-		Gui::Session::View_handle  _view { _gui.create_view() };
-		Framebuffer::Mode const    _mode;
+		Genode::Env            &_env;
+		Gui::Connection         _gui  { _env, "webcam" };
+		Framebuffer::Mode const _mode;
+		Gui::Top_level_view     _view { _gui, { { }, _mode.area } };
 
 		Constructible<Genode::Attached_dataspace> _fb_ds { };
 		uint8_t *_framebuffer { nullptr };
@@ -63,22 +63,14 @@ class Viewer
 		{
 			_gui.buffer(mode, false);
 
-			_fb_ds.construct(_env.rm(), _gui.framebuffer()->dataspace());
+			_fb_ds.construct(_env.rm(), _gui.framebuffer.dataspace());
 			_framebuffer = _fb_ds->local_addr<uint8_t>();
-
-			using Command = Gui::Session::Command;
-			using namespace Gui;
-
-			_gui.enqueue<Command::Geometry>(_view, Gui::Rect(Gui::Point(0, 0), _mode.area));
-			_gui.enqueue<Command::To_front>(_view, Gui::Session::View_handle());
-			_gui.enqueue<Command::Title>(_view, "webcam");
-			_gui.execute();
 		}
 
 		uint8_t *framebuffer() { return _framebuffer; }
 
 		void refresh() {
-			_gui.framebuffer()->refresh(0, 0, _mode.area.w(), _mode.area.h());
+			_gui.framebuffer.refresh(0, 0, _mode.area.w, _mode.area.h);
 		}
 
 		Framebuffer::Mode const &mode() { return _mode; }
@@ -91,8 +83,8 @@ static void cb(uvc_frame_t *frame, void *ptr)
 	if (!viewer) return;
 
 	int err = 0;
-	int width  = viewer->mode().area.w();
-	int height = viewer->mode().area.h();
+	int width  = viewer->mode().area.w;
+	int height = viewer->mode().area.h;
 
 	switch (frame->frame_format) {
 		case UVC_COLOR_FORMAT_MJPEG:
@@ -183,7 +175,7 @@ class Webcam
 
 				uvc_stream_ctrl_t control;
 				res = uvc_get_stream_ctrl_format_size(_handle, &control, format,
-				                                      mode.area.w(), mode.area.h(),
+				                                      mode.area.w, mode.area.h,
 				                                      fps);
 				if (res < 0) {
 					error("Unsupported mode: ", mode, " format: ", (unsigned)format, " fps: ", fps);

@@ -24,6 +24,9 @@ extern "C" void kernel_to_user_context_switch(void *, void *);
 using namespace Kernel;
 
 
+void Thread::_call_suspend() { }
+
+
 void Thread::exception(Cpu & cpu)
 {
 	switch (regs->exception_type) {
@@ -37,22 +40,25 @@ void Thread::exception(Cpu & cpu)
 	case Cpu::SYNC_LEVEL_EL0: [[fallthrough]];
 	case Cpu::SYNC_LEVEL_EL1:
 		{
-			Cpu::Esr::access_t esr = Cpu::Esr_el1::read();
-			switch (Cpu::Esr::Ec::get(esr)) {
+			switch (Cpu::Esr::Ec::get(regs->esr_el1)) {
 			case Cpu::Esr::Ec::SVC:
 				_call();
 				return;
 			case Cpu::Esr::Ec::INST_ABORT_SAME_LEVEL: [[fallthrough]];
 			case Cpu::Esr::Ec::DATA_ABORT_SAME_LEVEL:
-				Genode::raw("Fault in kernel/core ESR=", Genode::Hex(esr));
+				Genode::raw("Fault in kernel/core ESR=", Genode::Hex(regs->esr_el1));
 				[[fallthrough]];
 			case Cpu::Esr::Ec::INST_ABORT_LOW_LEVEL:  [[fallthrough]];
 			case Cpu::Esr::Ec::DATA_ABORT_LOW_LEVEL:
 				_mmu_exception();
 				return;
+			case Cpu::Esr::Ec::SOFTWARE_STEP_LOW_LEVEL: [[fallthrough]];
+			case Cpu::Esr::Ec::BRK:
+				_exception();
+				return;
 			default:
-				Genode::raw("Unknown cpu exception EC=", Cpu::Esr::Ec::get(esr),
-				            " ISS=", Cpu::Esr::Iss::get(esr),
+				Genode::raw("Unknown cpu exception EC=", Cpu::Esr::Ec::get(regs->esr_el1),
+				            " ISS=", Cpu::Esr::Iss::get(regs->esr_el1),
 				            " ip=", (void*)regs->ip);
 			};
 			
@@ -82,7 +88,13 @@ void Thread::exception(Cpu & cpu)
  * coprocessor registers (there might be ARM SoCs where this is not valid,
  * with several shareability domains, but until now we do not support them)
  */
-void Kernel::Thread::Tlb_invalidation::execute() { };
+void Kernel::Thread::Tlb_invalidation::execute(Cpu &) { }
+
+
+void Thread::Flush_and_stop_cpu::execute(Cpu &) { }
+
+
+void Cpu::Halt_job::proceed(Kernel::Cpu &) { }
 
 
 bool Kernel::Pd::invalidate_tlb(Cpu & cpu, addr_t addr, size_t size)

@@ -33,13 +33,13 @@ bool Sculpt::Deploy::update_child_conditions()
 }
 
 
-void Sculpt::Deploy::gen_child_diagnostics(Xml_generator &xml) const
+void Sculpt::Deploy::view_diag(Scope<> &s) const
 {
 	/*
 	 * Collect messages in registry, avoiding duplicates
 	 */
-	typedef String<64> Message;
-	typedef Registered_no_delete<Message> Registered_message;
+	using Message = String<64>;
+	using Registered_message = Registered_no_delete<Message>;
 	Registry<Registered_message> messages { };
 
 	auto gen_missing_dependencies = [&] (Xml_node start, Start_name const &name)
@@ -59,7 +59,7 @@ void Sculpt::Deploy::gen_child_diagnostics(Xml_generator &xml) const
 	};
 
 	_children.for_each_unsatisfied_child([&] (Xml_node start, Xml_node launcher,
-	                                          Start_name const &name) {
+	                                                  Start_name const &name) {
 		gen_missing_dependencies(start,    name);
 		gen_missing_dependencies(launcher, name);
 	});
@@ -67,84 +67,104 @@ void Sculpt::Deploy::gen_child_diagnostics(Xml_generator &xml) const
 	/*
 	 * Generate dialog elements, drop consumed messages from the registry
 	 */
-	int count = 0;
 	messages.for_each([&] (Registered_message &message) {
-		gen_named_node(xml, "hbox", String<20>(count++), [&] () {
-			gen_named_node(xml, "float", "left", [&] () {
-				xml.attribute("west", "yes");
-				xml.node("label", [&] () {
-					xml.attribute("text", message);
-					xml.attribute("font", "annotation/regular");
-				});
-			});
-		});
+		s.sub_scope<Left_annotation>(message);
 		destroy(_alloc, &message);
 	});
 }
 
 
-void Sculpt::Deploy::handle_deploy()
+void Sculpt::Deploy::_handle_managed_deploy(Xml_node const &managed_deploy)
 {
-	Xml_node const managed_deploy = _managed_deploy_rom.xml();
-
 	/* determine CPU architecture of deployment */
+	Arch const orig_arch = _arch;
 	_arch = managed_deploy.attribute_value("arch", Arch());
 	if ((managed_deploy.type() != "empty") && !_arch.valid())
 		warning("managed deploy config lacks 'arch' attribute");
 
-	try { _children.apply_config(managed_deploy); }
-	catch (...) {
-		error("spurious exception during deploy update (apply_config)"); }
+	bool const arch_changed = (orig_arch != _arch);
 
-	/*
-	 * Apply launchers
-	 */
-	Xml_node const launcher_listing = _launcher_listing_rom.xml();
-	launcher_listing.for_each_sub_node("dir", [&] (Xml_node dir) {
+	auto apply_config = [&]
+	{
+		try { return _children.apply_config(managed_deploy); }
+		catch (...) {
+			error("spurious exception during deploy update (apply_config)"); }
+		return false;
+	};
 
-		typedef String<20> Path;
-		Path const path = dir.attribute_value("path", Path());
+	bool const config_affected_child = apply_config();
 
-		if (path != "/launcher")
-			return;
+	auto apply_launchers = [&]
+	{
+		bool any_child_affected = false;
 
-		dir.for_each_sub_node("file", [&] (Xml_node file) {
+		_launcher_listing_rom.with_xml([&] (Xml_node const &listing) {
+			listing.for_each_sub_node("dir", [&] (Xml_node const &dir) {
 
-			if (file.attribute_value("xml", false) == false)
-				return;
+				using Path = String<20>;
+				Path const path = dir.attribute_value("path", Path());
 
-			typedef Depot_deploy::Child::Launcher_name Name;
-			Name const name = file.attribute_value("name", Name());
+				if (path != "/launcher")
+					return;
 
-			file.for_each_sub_node("launcher", [&] (Xml_node launcher) {
-				_children.apply_launcher(name, launcher); });
+				dir.for_each_sub_node("file", [&] (Xml_node const &file) {
+
+					if (file.attribute_value("xml", false) == false)
+						return;
+
+					using Name = Depot_deploy::Child::Launcher_name;
+					Name const name = file.attribute_value("name", Name());
+
+					file.for_each_sub_node("launcher", [&] (Xml_node const &launcher) {
+						if (_children.apply_launcher(name, launcher))
+							any_child_affected = true; });
+				});
+			});
 		});
-	});
+		return any_child_affected;
+	};
 
-	try {
-		Xml_node const blueprint = _blueprint_rom.xml();
+	bool const launcher_affected_child = apply_launchers();
 
-		/* apply blueprint, except when stale */
-		typedef String<32> Version;
-		Version const version = blueprint.attribute_value("version", Version());
-		if (version == Version(_depot_query.depot_query_version().value))
-			_children.apply_blueprint(_blueprint_rom.xml());
+	auto apply_blueprint = [&]
+	{
+		bool progress = false;
+		try {
+			_blueprint_rom.with_xml([&] (Xml_node const &blueprint) {
+
+			/* apply blueprint, except when stale */
+				using Version = String<32>;
+				Version const version = blueprint.attribute_value("version", Version());
+				if (version == Version(_depot_query.depot_query_version().value))
+					progress = _children.apply_blueprint(blueprint);
+			});
+		}
+		catch (...) {
+			error("spurious exception during deploy update (apply_blueprint)"); }
+		return progress;
+	};
+
+	bool const blueprint_affected_child = apply_blueprint();
+
+	bool const progress = arch_changed
+	                   || config_affected_child
+	                   || launcher_affected_child
+	                   || blueprint_affected_child;
+	if (progress) {
+
+		/* update query for blueprints of all unconfigured start nodes */
+		if (!_download_queue.any_active_download())
+			_depot_query.trigger_depot_query();
+
+		/* feed missing packages to installation queue */
+		update_installation();
+
+		/* apply runtime condition checks */
+		update_child_conditions();
+
+		_action.refresh_deploy_dialog();
+		_runtime_config_generator.generate_runtime_config();
 	}
-	catch (...) {
-		error("spurious exception during deploy update (apply_blueprint)"); }
-
-	/* update query for blueprints of all unconfigured start nodes */
-	if (_children.any_blueprint_needed())
-		_depot_query.trigger_depot_query();
-
-	/* feed missing packages to installation queue */
-	update_installation();
-
-	/* apply runtime condition checks */
-	update_child_conditions();
-
-	_dialog_generator.generate_dialog();
-	_runtime_config_generator.generate_runtime_config();
 }
 
 
@@ -153,30 +173,34 @@ void Sculpt::Deploy::gen_runtime_start_nodes(Xml_generator  &xml,
                                              Affinity::Space affinity_space) const
 {
 	/* depot-ROM instance for regular (immutable) depot content */
-	xml.node("start", [&] () {
+	xml.node("start", [&] {
 		gen_fs_rom_start_content(xml, "cached_fs_rom", "depot",
 		                         cached_depot_rom_state); });
 
 	/* depot-ROM instance for mutable content (/depot/local/) */
-	xml.node("start", [&] () {
+	xml.node("start", [&] {
 		gen_fs_rom_start_content(xml, "fs_rom", "depot",
 		                         uncached_depot_rom_state); });
 
-	xml.node("start", [&] () {
+	xml.node("start", [&] {
 		gen_depot_query_start_content(xml); });
 
-	Xml_node const managed_deploy = _managed_deploy_rom.xml();
+	_managed_deploy_rom.with_xml([&] (Xml_node const &managed_deploy) {
 
-	/* insert content of '<static>' node as is */
-	if (managed_deploy.has_sub_node("static")) {
-		Xml_node static_config = managed_deploy.sub_node("static");
-		static_config.with_raw_content([&] (char const *start, size_t length) {
-			xml.append(start, length); });
-	}
+		/* insert content of '<static>' node as is */
+		if (managed_deploy.has_sub_node("static")) {
+			Xml_node static_config = managed_deploy.sub_node("static");
+			static_config.with_raw_content([&] (char const *start, size_t length) {
+				xml.append(start, length); });
+		}
 
-	/* generate start nodes for deployed packages */
-	if (managed_deploy.has_sub_node("common_routes"))
-		_children.gen_start_nodes(xml, managed_deploy.sub_node("common_routes"),
-		                          prio_levels, affinity_space,
-		                          "depot_rom", "dynamic_depot_rom");
+		/* generate start nodes for deployed packages */
+		if (managed_deploy.has_sub_node("common_routes")) {
+			_children.gen_start_nodes(xml, managed_deploy.sub_node("common_routes"),
+			                          prio_levels, affinity_space,
+			                          "depot_rom", "dynamic_depot_rom");
+			xml.node("monitor", [&] {
+				_children.gen_monitor_policy_nodes(xml);});
+		}
+	});
 }

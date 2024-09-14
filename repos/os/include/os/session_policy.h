@@ -24,9 +24,9 @@ namespace Genode {
 
 	struct Xml_node_label_score;
 
-	template <size_t N, typename MATCH_FN, typename NO_MATCH_FN>
+	template <size_t N>
 	void with_matching_policy(String<N> const &, Xml_node const &,
-	                          MATCH_FN const &, NO_MATCH_FN const &);
+	                          auto const &, auto const &);
 
 	class  Session_policy;
 }
@@ -67,7 +67,7 @@ struct Genode::Xml_node_label_score
 			label_match = node.attribute_value("label", String<N>()) == label;
 
 		if (prefix_present) {
-			typedef String<N> Prefix;
+			using Prefix = String<N>;
 			Prefix const prefix = node.attribute_value("label_prefix", Prefix());
 
 			if (!strcmp(label.string(), prefix.string(), prefix.length() - 1))
@@ -75,7 +75,7 @@ struct Genode::Xml_node_label_score
 		}
 
 		if (suffix_present) {
-			typedef String<N> Suffix;
+			using Suffix = String<N>;
 			Suffix const suffix = node.attribute_value("label_suffix", Suffix());
 
 			if (label.length() >= suffix.length()) {
@@ -169,11 +169,11 @@ struct Genode::Xml_node_label_score
  *                     argmument
  * \param no_match_fn  functor called if no matching policy exists
  */
-template <Genode::size_t N, typename MATCH_FN, typename NO_MATCH_FN>
-void Genode::with_matching_policy(String<N>   const &label,
-                                  Xml_node    const &policies,
-                                  MATCH_FN    const &match_fn,
-                                  NO_MATCH_FN const &no_match_fn)
+template <Genode::size_t N>
+void Genode::with_matching_policy(String<N> const &label,
+                                  Xml_node  const &policies,
+                                  auto      const &match_fn,
+                                  auto      const &no_match_fn)
 {
 	/*
 	 * Find policy node that matches best

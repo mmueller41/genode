@@ -44,6 +44,35 @@ class Genode::Sandbox : Noncopyable
 			virtual void handle_sandbox_state() = 0;
 		};
 
+		/**
+		 * Interface for accessing the PD intrinsics relevant to differentiate
+		 * the regular use of core's PD service from a locally implemented PD
+		 * service.
+		 */
+		struct Pd_intrinsics : Interface, Noncopyable
+		{
+			struct Intrinsics
+			{
+				Pd_session             &ref_pd;
+				Capability<Pd_session>  ref_pd_cap;
+				Cpu_session            &ref_cpu;
+				Capability<Cpu_session> ref_cpu_cap;
+				Region_map             &address_space;
+			};
+
+			struct Fn : Interface { virtual void call(Intrinsics &) const = 0; };
+
+			/**
+			 * Call 'Fn' with the 'Intrinsics' that apply for the specified PD
+			 */
+			virtual void with_intrinsics(Capability<Pd_session>, Pd_session &, Fn const &) = 0;
+
+			/**
+			 * Start the initial thread of new PD at the given instruction pointer
+			 */
+			virtual void start_initial_thread(Capability<Cpu_thread>, addr_t ip) = 0;
+		};
+
 	private:
 
 		friend class Local_service_base;
@@ -59,6 +88,15 @@ class Genode::Sandbox : Noncopyable
 	public:
 
 		Sandbox(Env &, State_handler &);
+
+		/**
+		 * Constructor designated for monitoring PD-session operations
+		 *
+		 * The 'Pd_intrinsics' argument allows for the customization of the
+		 * reference PD session used for quota transfers between the sandboxed
+		 * children and the local runtime.
+		 */
+		Sandbox(Env &, State_handler &, Pd_intrinsics &);
 
 		void apply_config(Xml_node const &);
 
@@ -101,7 +139,9 @@ class Genode::Sandbox::Local_service_base : public Service
 				:
 					resources(session_resources_from_args(session.args().string())),
 					label(session.label()),
-					diag(session_diag_from_args(session.args().string()))
+					diag(session_diag_from_args(session.args().string())),
+					args(session.args()),
+					affinity(session.affinity())
 				{ }
 
 				/*
@@ -112,9 +152,13 @@ class Genode::Sandbox::Local_service_base : public Service
 
 			public:
 
+				using Args = Session_state::Args;
+
 				Session::Resources const resources;
 				Session::Label     const label;
 				Session::Diag      const diag;
+				Args               const args;
+				Affinity           const affinity;
 
 				template <typename ST>
 				void deliver_session(ST &session)
@@ -196,6 +240,7 @@ struct Genode::Sandbox::Local_service : private Local_service_base
 	Local_service(Sandbox &sandbox, Wakeup &wakeup)
 	: Local_service_base(sandbox, ST::service_name(), wakeup) { }
 
+	using Local_session    = ST;
 	using Upgrade_response = Local_service_base::Upgrade_response;
 	using Close_response   = Local_service_base::Close_response;
 	using Request          = Local_service_base::Request;

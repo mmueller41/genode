@@ -14,7 +14,7 @@
 #include <input/event.h>
 #include <input/keycodes.h>
 
-#include "user_state.h"
+#include <user_state.h>
 
 using namespace Input;
 
@@ -95,11 +95,11 @@ void User_state::_handle_input_event(Input::Event ev)
 	/* transparently convert relative into absolute motion event */
 	ev.handle_relative_motion([&] (int x, int y) {
 
-		int const ox = _pointer_pos.x(),
-		          oy = _pointer_pos.y();
+		int const ox = _pointer_pos.x,
+		          oy = _pointer_pos.y;
 
-		int const ax = max(0, min((int)_view_stack.size().w() - 1, ox + x)),
-		          ay = max(0, min((int)_view_stack.size().h() - 1, oy + y));
+		int const ax = max(0, min((int)_view_stack.size().w - 1, ox + x)),
+		          ay = max(0, min((int)_view_stack.size().h - 1, oy + y));
 
 		ev = Absolute_motion{ax, ay};
 	});
@@ -112,22 +112,33 @@ void User_state::_handle_input_event(Input::Event ev)
 	ev.handle_touch([&] (Input::Touch_id, float x, float y) {
 		_pointer_pos = Point((int)x, (int)y); });
 
+	/* track key states, drop double press/release events */
+	{
+		bool drop = false;
+
+		ev.handle_press([&] (Keycode key, Codepoint) {
+			if (_key_array.pressed(key)) {
+				warning("suspicious double press of ", Input::key_name(key));
+				drop = true;
+			}
+			_key_array.pressed(key, true);
+		});
+
+		ev.handle_release([&] (Keycode key) {
+			if (!_key_array.pressed(key)) {
+				warning("suspicious double release of ", Input::key_name(key));
+				drop = true;
+			}
+			_key_array.pressed(key, false);
+		});
+
+		if (drop)
+			return;
+	}
+
 	/* count keys */
 	if (ev.press()) _key_cnt++;
 	if (ev.release() && (_key_cnt > 0)) _key_cnt--;
-
-	/* track key states */
-	ev.handle_press([&] (Keycode key, Codepoint) {
-		if (_key_array.pressed(key))
-			Genode::warning("suspicious double press of ", Input::key_name(key));
-		_key_array.pressed(key, true);
-	});
-
-	ev.handle_release([&] (Keycode key) {
-		if (!_key_array.pressed(key))
-			Genode::warning("suspicious double release of ", Input::key_name(key));
-		_key_array.pressed(key, false);
-	});
 
 	if (ev.absolute_motion() || ev.relative_motion() || ev.touch()) {
 		update_hover();
@@ -177,8 +188,8 @@ void User_state::_handle_input_event(Input::Event ev)
 				_focused->submit_input_event(Focus_leave());
 
 			if (_hovered) {
-				_hovered->submit_input_event(Absolute_motion{_pointer_pos.x(),
-				                                             _pointer_pos.y()});
+				_hovered->submit_input_event(Absolute_motion{_pointer_pos.x,
+				                                             _pointer_pos.y});
 				_hovered->submit_input_event(Focus_enter());
 			}
 
@@ -354,9 +365,12 @@ User_state::handle_input_events(Input_batch batch)
 	 */
 	button_activity |= _key_pressed();
 
+	bool touch_occurred = false;
 	bool key_state_affected = false;
-	for (unsigned i = 0; i < batch.count; i++)
+	for (unsigned i = 0; i < batch.count; i++) {
 		key_state_affected |= (batch.events[i].press() || batch.events[i].release());
+		touch_occurred     |= batch.events[i].touch();
+	}
 
 	_apply_pending_focus_change();
 
@@ -381,7 +395,7 @@ User_state::handle_input_events(Input_batch batch)
 		                        (_input_receiver != old_input_receiver),
 		.key_state_affected   = key_state_affected,
 		.button_activity      = button_activity,
-		.motion_activity      = (_pointer_pos != old_pointer_pos),
+		.motion_activity      = (_pointer_pos != old_pointer_pos) || touch_occurred,
 		.key_pressed          = _key_pressed(),
 		.last_clicked_changed = last_clicked_changed
 	};
@@ -397,8 +411,8 @@ void User_state::report_keystate(Xml_generator &xml) const
 
 void User_state::report_pointer_position(Xml_generator &xml) const
 {
-	xml.attribute("xpos", _pointer_pos.x());
-	xml.attribute("ypos", _pointer_pos.y());
+	xml.attribute("xpos", _pointer_pos.x);
+	xml.attribute("ypos", _pointer_pos.y);
 }
 
 
@@ -485,8 +499,8 @@ User_state::Update_hover_result User_state::update_hover()
 			old_hovered->submit_input_event(Hover_leave());
 
 		if (_hovered)
-			_hovered->submit_input_event(Absolute_motion{_pointer_pos.x(),
-			                                             _pointer_pos.y()});
+			_hovered->submit_input_event(Absolute_motion{_pointer_pos.x,
+			                                             _pointer_pos.y});
 	}
 
 	return { .hover_changed = (_hovered != old_hovered) };

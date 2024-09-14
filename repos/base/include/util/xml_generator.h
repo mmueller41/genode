@@ -16,7 +16,6 @@
 
 #include <util/string.h>
 #include <util/print_lines.h>
-#include <base/snprintf.h>
 
 namespace Genode { class Xml_generator; }
 
@@ -297,26 +296,23 @@ class Genode::Xml_generator
 
 	public:
 
-		template <typename FUNC>
-		Xml_generator(char *dst, size_t dst_len,
-		              char const *name, FUNC const &func)
+		Xml_generator(char *dst, size_t dst_len, char const *name, auto const &fn)
 		:
 			_out_buffer(dst, dst_len)
 		{
 			if (dst) {
-				node(name, func);
+				node(name, fn);
 				_out_buffer.append('\n');
 				_out_buffer.append('\0');
 			}
 		}
 
-		template <typename FUNC>
-		void node(char const *name, FUNC const &func = [] () { } )
+		void node(char const *name, auto const &fn = [] { } )
 		{
-			Node(*this, name, func);
+			Node(*this, name, fn);
 		}
 
-		void node(char const *name) { Node(*this, name, [] () { }); }
+		void node(char const *name) { Node(*this, name, [] { }); }
 
 		void attribute(char const *name, char const *str)
 		{
@@ -336,9 +332,7 @@ class Genode::Xml_generator
 
 		void attribute(char const *name, long long value)
 		{
-			char buf[64];
-			Genode::snprintf(buf, sizeof(buf), "%lld", value);
-			_curr_node->insert_attribute(name, buf);
+			_curr_node->insert_attribute(name, String<64>(value).string());
 		}
 
 		void attribute(char const *name, long value)
@@ -353,9 +347,7 @@ class Genode::Xml_generator
 
 		void attribute(char const *name, unsigned long long value)
 		{
-			char buf[64];
-			Genode::snprintf(buf, sizeof(buf), "%llu", value);
-			_curr_node->insert_attribute(name, buf);
+			_curr_node->insert_attribute(name, String<64>(value).string());
 		}
 
 		void attribute(char const *name, unsigned long value)
@@ -399,8 +391,7 @@ class Genode::Xml_generator
 		 *
 		 * This method must not be followed by calls of 'attribute'.
 		 */
-		template <typename... ARGS>
-		void append_content(ARGS &&... args)
+		void append_content(auto &&... args)
 		{
 			struct Node_output : Genode::Output
 			{

@@ -57,11 +57,11 @@ struct Platform::Session : Genode::Session
 	 */
 	static const char *service_name() { return "Platform"; }
 
-	enum { RAM_QUOTA = 32 * 1024, CAP_QUOTA = 6 };
+	static constexpr unsigned CAP_QUOTA = 18;
 
 	virtual ~Session() { }
 
-	typedef String<64> Device_name;
+	using Device_name = String<64>;
 
 	/**
 	 * Request ROM session containing the information about available devices.

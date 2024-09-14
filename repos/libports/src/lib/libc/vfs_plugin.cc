@@ -36,10 +36,8 @@
 #include <net/if.h>
 #include <net/if_tap.h>
 
-/* libc plugin interface */
-#include <libc-plugin/plugin.h>
-
 /* libc-internal includes */
+#include <internal/plugin.h>
 #include <internal/kernel.h>
 #include <internal/vfs_plugin.h>
 #include <internal/mem_alloc.h>
@@ -112,7 +110,7 @@ static void vfs_stat_to_libc_stat_struct(Vfs::Directory_service::Stat const &src
 		switch (type) {
 		case Vfs::Node_type::DIRECTORY:          return S_IFDIR;
 		case Vfs::Node_type::CONTINUOUS_FILE:    return S_IFREG;
-		case Vfs::Node_type::TRANSACTIONAL_FILE: return S_IFSOCK;
+		case Vfs::Node_type::TRANSACTIONAL_FILE: return S_IFCHR;
 		case Vfs::Node_type::SYMLINK:            return S_IFLNK;
 		}
 		return 0;
@@ -158,7 +156,7 @@ namespace Libc {
 	{
 		private:
 
-			typedef String<Vfs::MAX_PATH_LEN> Value;
+			using Value = String<Vfs::MAX_PATH_LEN>;
 			Value const _value;
 
 		public:
@@ -219,7 +217,16 @@ namespace Libc {
 
 		handle->fs().notify_read_ready(handle);
 
-		return handle->fs().read_ready(handle);
+		return handle->fs().read_ready(*handle);
+	}
+
+	bool write_ready_from_kernel(File_descriptor *fd)
+	{
+		Vfs::Vfs_handle const *handle = vfs_handle(fd);
+		if (!handle)
+			return false;
+
+		return handle->fs().write_ready(*handle);
 	}
 }
 
@@ -230,26 +237,19 @@ namespace Libc {
 template <typename FN>
 void Libc::Vfs_plugin::_with_info(File_descriptor &fd, FN const &fn)
 {
-	if (!_root_dir.constructed())
-		return;
-
 	Absolute_path path = ioctl_dir(fd);
 	path.append_element("info");
 
-	try {
-		/*
-		 * Opening the info file repeatedly could be too expensive if
-		 * file system servers are part of the VFS, because the directory
-		 * status of the path would be checked at each VFS plugin every
-		 * time. So, we open the file only once.
-		 */
-		static Readonly_file file { *_root_dir, path.string() };
-		static char buffer[4096];
+	_cached_ioctl_info.with_file(path, [&] (Readonly_file const &file) {
+
+		char buffer[4096] { };
+
 		Byte_range_ptr range(buffer,
 		                     min((size_t)(_root_dir->file_size(path.string())),
 		                         sizeof(buffer)));
+
 		with_xml_file_content(file, range, [&] (Xml_node node) { fn(node); });
-	} catch (...) { }
+	});
 }
 
 
@@ -282,7 +282,7 @@ Libc::File_descriptor *Libc::Vfs_plugin::open_from_kernel(const char *path, int 
 
 		Vfs::Vfs_handle *handle = 0;
 
-		typedef Vfs::Directory_service::Opendir_result Opendir_result;
+		using Opendir_result = Vfs::Directory_service::Opendir_result;
 
 		switch (_root_fs.opendir(path, false, &handle, _alloc)) {
 		case Opendir_result::OPENDIR_OK:                      break;
@@ -317,7 +317,7 @@ Libc::File_descriptor *Libc::Vfs_plugin::open_from_kernel(const char *path, int 
 		return nullptr;
 	}
 
-	typedef Vfs::Directory_service::Open_result Result;
+	using Result = Vfs::Directory_service::Open_result;
 
 	Vfs::Vfs_handle *handle = 0;
 
@@ -414,7 +414,7 @@ Libc::File_descriptor *Libc::Vfs_plugin::open(char const *path, int flags)
 
 				Vfs::Vfs_handle *handle = 0;
 
-				typedef Vfs::Directory_service::Opendir_result Opendir_result;
+				using Opendir_result = Vfs::Directory_service::Opendir_result;
 
 				switch (_root_fs.opendir(path, false, &handle, _alloc)) {
 				case Opendir_result::OPENDIR_OK:                      break;
@@ -449,7 +449,7 @@ Libc::File_descriptor *Libc::Vfs_plugin::open(char const *path, int flags)
 			}
 
 			/* handle open for files */
-			typedef Vfs::Directory_service::Open_result Result;
+			using Result = Vfs::Directory_service::Open_result;
 
 			Vfs::Vfs_handle *handle = 0;
 
@@ -591,8 +591,10 @@ int Libc::Vfs_plugin::close_from_kernel(File_descriptor *fd)
 		/* XXX mtime not updated here */
 		Sync sync { *handle, Update_mtime::NO, _current_real_time };
 
-		while (!sync.complete())
+		while (!sync.complete()) {
+			Libc::Kernel::kernel().wakeup_remote_peers();
 			Libc::Kernel::kernel().libc_env().ep().wait_and_dispatch_one_io_signal();
+		}
 	}
 
 	handle->close();
@@ -628,7 +630,7 @@ int Libc::Vfs_plugin::dup2(File_descriptor *fd,
 {
 	Vfs::Vfs_handle *handle = nullptr;
 
-	typedef Vfs::Directory_service::Open_result Result;
+	using Result = Vfs::Directory_service::Open_result;
 
 	int result = -1;
 	monitor().monitor([&] {
@@ -657,7 +659,7 @@ Libc::File_descriptor *Libc::Vfs_plugin::dup(File_descriptor *fd)
 {
 	Vfs::Vfs_handle *handle = nullptr;
 
-	typedef Vfs::Directory_service::Open_result Result;
+	using Result = Vfs::Directory_service::Open_result;
 
 	Libc::File_descriptor *result = nullptr;
 	int result_errno = 0;
@@ -742,7 +744,7 @@ int Libc::Vfs_plugin::mkdir(const char *path, mode_t mode)
 {
 	Vfs::Vfs_handle *dir_handle { 0 };
 
-	typedef Vfs::Directory_service::Opendir_result Opendir_result;
+	using Opendir_result = Vfs::Directory_service::Opendir_result;
 
 	int result = -1;
 	int result_errno = 0;
@@ -777,7 +779,7 @@ int Libc::Vfs_plugin::stat_from_kernel(const char *path, struct stat *buf)
 		return Errno(EFAULT);
 
 
-	typedef Vfs::Directory_service::Stat_result Result;
+	using Result = Vfs::Directory_service::Stat_result;
 
 	Vfs::Directory_service::Stat stat;
 
@@ -798,7 +800,7 @@ int Libc::Vfs_plugin::stat(char const *path, struct stat *buf)
 		return Errno(EFAULT);
 	}
 
-	typedef Vfs::Directory_service::Stat_result Result;
+	using Result = Vfs::Directory_service::Stat_result;
 
 	Vfs::Directory_service::Stat stat;
 
@@ -827,7 +829,7 @@ int Libc::Vfs_plugin::stat(char const *path, struct stat *buf)
 ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
                                 ::size_t count)
 {
-	typedef Vfs::File_io_service::Write_result Result;
+	using Result = Vfs::File_io_service::Write_result;
 
 	if ((fd->flags & O_ACCMODE) == O_RDONLY) {
 		return Errno(EBADF);
@@ -835,14 +837,14 @@ ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
 
 	Vfs::Vfs_handle *handle = vfs_handle(fd);
 
-	Vfs::file_size out_count  = 0;
-	Result         out_result = Result::WRITE_OK;
+	::size_t out_count  = 0;
+	Result   out_result = Result::WRITE_OK;
+
+	Const_byte_range_ptr const src { (char const *)buf, count };
 
 	if (fd->flags & O_NONBLOCK) {
 		monitor().monitor([&] {
-			try {
-				out_result = handle->fs().write(handle, (char const *)buf, count, out_count);
-			} catch (Vfs::File_io_service::Insufficient_buffer) { }
+			out_result = handle->fs().write(handle, src, out_count);
 			return Fn::COMPLETE;
 		});
 	} else {
@@ -853,7 +855,7 @@ ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
 		Vfs::Vfs_handle   *_handle     { handle };
 		void const        *_buf        { buf };
 		::size_t           _count      { count };
-		Vfs::file_size    &_out_count  { out_count };
+		::size_t          &_out_count  { out_count };
 		Result            &_out_result { out_result };
 		::off_t            _offset     { 0 };
 		unsigned           _iteration  { 0 };
@@ -865,7 +867,7 @@ ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
 				return false;
 			}
 
-			typedef Vfs::Directory_service::Stat_result Result;
+			using Result = Vfs::Directory_service::Stat_result;
 
 			Vfs::Directory_service::Stat stat { };
 
@@ -880,25 +882,25 @@ ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
 			for (;;) {
 
 				/* number of bytes written in one iteration */
-				Vfs::file_size partial_out_count = 0;
+				::size_t partial_out_count = 0;
 
-				try {
-					char const * const src = (char const *)_buf + _offset;
+				Const_byte_range_ptr const src { (char const *)_buf + _offset,
+				                                  _count };
 
-					_out_result = _handle->fs().write(_handle, src, _count, partial_out_count);
-				} catch (Vfs::File_io_service::Insufficient_buffer) { return Fn::INCOMPLETE; }
+				_out_result = _handle->fs().write(_handle, src, partial_out_count);
 
-				if (_out_result != Result::WRITE_OK) {
+				if (_out_result == Result::WRITE_ERR_WOULD_BLOCK)
+					return Fn::INCOMPLETE;
+
+				if (_out_result != Result::WRITE_OK)
 					return Fn::COMPLETE;
-				}
 
 				/* increment byte count reported to caller */
 				_out_count += partial_out_count;
 
 				bool const write_complete = (partial_out_count == _count);
-				if (write_complete) {
+				if (write_complete)
 					return Fn::COMPLETE;
-				}
 
 				/*
 				 * If the write has not consumed all bytes, set up
@@ -937,11 +939,9 @@ ssize_t Libc::Vfs_plugin::write(File_descriptor *fd, const void *buf,
 	Plugin::resume_all();
 
 	switch (out_result) {
-	case Result::WRITE_ERR_AGAIN:       return Errno(EAGAIN);
 	case Result::WRITE_ERR_WOULD_BLOCK: return Errno(EWOULDBLOCK);
 	case Result::WRITE_ERR_INVALID:     return Errno(EINVAL);
 	case Result::WRITE_ERR_IO:          return Errno(EIO);
-	case Result::WRITE_ERR_INTERRUPT:   return Errno(EINTR);
 	case Result::WRITE_OK:              break;
 	}
 
@@ -959,7 +959,7 @@ ssize_t Libc::Vfs_plugin::read(File_descriptor *fd, void *buf,
 		return Errno(EBADF);
 	}
 
-	typedef Vfs::File_io_service::Read_result Result;
+	using Result = Vfs::File_io_service::Read_result;
 
 	Vfs::Vfs_handle *handle = vfs_handle(fd);
 
@@ -981,22 +981,21 @@ ssize_t Libc::Vfs_plugin::read(File_descriptor *fd, void *buf,
 	if (!succeeded)
 		return Errno(result_errno);
 
-	Vfs::file_size out_count = 0;
-	Result         out_result;
+	::size_t out_count = 0;
+	Result   out_result;
 
 	monitor().monitor([&] {
-		out_result = handle->fs().complete_read(handle, (char *)buf, count, out_count);
+		Byte_range_ptr const dst { (char *)buf, count };
+		out_result = handle->fs().complete_read(handle, dst, out_count);
 		return out_result != Result::READ_QUEUED ? Fn::COMPLETE : Fn::INCOMPLETE;
 	});
 
 	Plugin::resume_all();
 
 	switch (out_result) {
-	case Result::READ_ERR_AGAIN:       return Errno(EAGAIN);
 	case Result::READ_ERR_WOULD_BLOCK: return Errno(EWOULDBLOCK);
 	case Result::READ_ERR_INVALID:     return Errno(EINVAL);
 	case Result::READ_ERR_IO:          return Errno(EIO);
-	case Result::READ_ERR_INTERRUPT:   return Errno(EINTR);
 	case Result::READ_OK:              break;
 
 	case Result::READ_QUEUED: /* handled above, so never reached */ break;
@@ -1016,11 +1015,11 @@ ssize_t Libc::Vfs_plugin::getdirentries(File_descriptor *fd, char *buf,
 		return -1;
 	}
 
-	typedef Vfs::File_io_service::Read_result Result;
+	using Result = Vfs::File_io_service::Read_result;
 
 	Vfs::Vfs_handle *handle = vfs_handle(fd);
 
-	typedef Vfs::Directory_service::Dirent Dirent;
+	using Dirent = Vfs::Directory_service::Dirent;
 
 	Dirent dirent_out;
 
@@ -1030,11 +1029,12 @@ ssize_t Libc::Vfs_plugin::getdirentries(File_descriptor *fd, char *buf,
 		return handle->fs().queue_read(handle, sizeof(Dirent)) ? Fn::COMPLETE : Fn::INCOMPLETE;
 	});
 
-	Result         out_result;
-	Vfs::file_size out_count;
+	Result   out_result;
+	::size_t out_count;
 
 	monitor().monitor([&] {
-		out_result = handle->fs().complete_read(handle, (char *)&dirent_out, sizeof(Dirent), out_count);
+		Byte_range_ptr const dst { (char *)&dirent_out, sizeof(Dirent) };
+		out_result = handle->fs().complete_read(handle, dst, out_count);
 		return out_result != Result::READ_QUEUED ? Fn::COMPLETE : Fn::INCOMPLETE;
 	});
 
@@ -1059,7 +1059,7 @@ ssize_t Libc::Vfs_plugin::getdirentries(File_descriptor *fd, char *buf,
 		switch (type) {
 		case Dirent_type::DIRECTORY:          return DT_DIR;
 		case Dirent_type::CONTINUOUS_FILE:    return DT_REG;
-		case Dirent_type::TRANSACTIONAL_FILE: return DT_SOCK;
+		case Dirent_type::TRANSACTIONAL_FILE: return DT_CHR;
 		case Dirent_type::SYMLINK:            return DT_LNK;
 		case Dirent_type::END:                return DT_UNKNOWN;
 		}
@@ -1724,31 +1724,57 @@ Libc::Vfs_plugin::_ioctl_sndctl(File_descriptor *fd, unsigned long request, char
 
 		if (!argp) return { true, EINVAL };
 
+		int const sample_rate = *(int const *)argp;
+		if (sample_rate < 0)
+			return { true, EINVAL };
+
+		bool legacy_oss = false;
+
+		monitor().monitor([&] {
+			_with_info(*fd, [&] (Xml_node info) {
+				if (info.type() != "oss") return;
+
+				/* assume legacy if version is not set, current is 2 */
+				legacy_oss = info.attribute_value("plugin_version", 1U) == 1U;
+			});
+
+			return Fn::COMPLETE;
+		});
+
+		if (!legacy_oss) {
+
+			char sample_rate_string[8] { };
+
+			::snprintf(sample_rate_string, sizeof(sample_rate_string), "%u", sample_rate);
+
+			Absolute_path sample_rate_path = ioctl_dir(*fd);
+			sample_rate_path.append_element("sample_rate");
+			File_descriptor *sample_rate_fd = open(sample_rate_path.base(), O_RDWR);
+			if (!sample_rate_fd)
+				return { true, ENOTSUP };
+			write(sample_rate_fd, sample_rate_string, sizeof(sample_rate_string));
+			close(sample_rate_fd);
+		}
+
 		monitor().monitor([&] {
 			_with_info(*fd, [&] (Xml_node info) {
 				if (info.type() != "oss") {
 					return;
 				}
 
-				unsigned int const samplerate =
+				unsigned int const got_sample_rate =
 					info.attribute_value("sample_rate", 0U);
-				if (samplerate == 0U) {
+				if (got_sample_rate == 0U) {
 					result = EINVAL;
 					return;
 				}
 
-				int const speed = *(int const *)argp;
-				if (speed < 0) {
-					result = EINVAL;
-					return;
-				}
-
-				if ((unsigned)speed != samplerate) {
+				if ((unsigned)sample_rate != got_sample_rate) {
 					result = ENOTSUP;
 					return;
 				}
 
-				*(int *)argp = samplerate;
+				*(int *)argp = got_sample_rate;
 
 				handled = true;
 			});
@@ -1936,160 +1962,10 @@ int Libc::Vfs_plugin::ioctl(File_descriptor *fd, unsigned long request, char *ar
 		break;
 	}
 
-	if (result.handled) {
-		if (result.error)
-			error("XXXXX error=", result.error, " request=", Hex(request), "/", (request==SNDCTL_DSP_RESET?"":"!"), "SNDCTL_DSP_RESET");
-		return result.error ? Errno(result.error) : 0;
-	}
+	if (!result.handled)
+		return Errno(EINVAL);
 
-	return _legacy_ioctl(fd, request, argp);
-}
-
-
-/**
- * Fallback for ioctl operations targeting the deprecated VFS ioctl interface
- *
- * XXX Remove this method once all ioctl operations are supported via
- *     regular VFS file accesses.
- */
-int Libc::Vfs_plugin::_legacy_ioctl(File_descriptor *fd, unsigned long request, char *argp)
-{
-	using ::off_t;
-
-	/*
-	 * Marshal ioctl arguments
-	 */
-
-	typedef Vfs::File_io_service::Ioctl_opcode Opcode;
-
-	Opcode opcode = Opcode::IOCTL_OP_UNDEFINED;
-
-	Vfs::File_io_service::Ioctl_arg arg = 0;
-
-	switch (request) {
-
-	case TIOCGWINSZ:
-		{
-			if (!argp) {
-				errno = EINVAL;
-				return -1;
-			}
-
-			opcode = Opcode::IOCTL_OP_TIOCGWINSZ;
-			break;
-		}
-
-	case TIOCSETAF:
-		{
-			opcode = Opcode::IOCTL_OP_TIOCSETAF;
-
-			::termios *termios = (::termios *)argp;
-
-			/*
-			 * For now only enabling/disabling of ECHO is supported
-			 */
-			if (termios->c_lflag & (ECHO | ECHONL)) {
-				arg = (Vfs::File_io_service::IOCTL_VAL_ECHO |
-				       Vfs::File_io_service::IOCTL_VAL_ECHONL);
-			}
-			else {
-				arg = Vfs::File_io_service::IOCTL_VAL_NULL;
-			}
-
-			break;
-		}
-
-	case TIOCSETAW:
-		{
-			opcode = Opcode::IOCTL_OP_TIOCSETAW;
-			arg    = argp ? *(int*)argp : 0;
-			break;
-		}
-
-	case FIONBIO:
-		{
-			opcode = Opcode::IOCTL_OP_FIONBIO;
-			arg    = argp ? *(int*)argp : 0;
-			break;
-		}
-
-	case DIOCGMEDIASIZE:
-		{
-			if (!argp) {
-				errno = EINVAL;
-				return -1;
-			}
-
-			opcode = Opcode::IOCTL_OP_DIOCGMEDIASIZE;
-			arg    = 0;
-			break;
-		}
-
-	default:
-		warning("unsupported ioctl (request=", Hex(request), ")");
-		break;
-	}
-
-	if (opcode == Opcode::IOCTL_OP_UNDEFINED) {
-		errno = ENOTTY;
-		return -1;
-	}
-
-	typedef Vfs::File_io_service::Ioctl_result Result;
-
-	Vfs::File_io_service::Ioctl_out out;
-	Genode::memset(&out, 0, sizeof(out));
-
-	Vfs::Vfs_handle *handle = vfs_handle(fd);
-
-	bool succeeded = false;
-	int result_errno = 0;
-	monitor().monitor([&] {
-		switch (handle->fs().ioctl(handle, opcode, arg, out)) {
-		case Result::IOCTL_ERR_INVALID: result_errno = EINVAL; break;
-		case Result::IOCTL_ERR_NOTTY:   result_errno = ENOTTY; break;
-		case Result::IOCTL_OK:      succeeded = true;   break;
-		}
-		return Fn::COMPLETE;
-	});
-	if (!succeeded)
-		return Errno(result_errno);
-
-
-	/*
-	 * Unmarshal ioctl results
-	 */
-	switch (request) {
-
-	case TIOCGWINSZ:
-		{
-			::winsize *winsize = (::winsize *)argp;
-			winsize->ws_row = out.tiocgwinsz.rows;
-			winsize->ws_col = out.tiocgwinsz.columns;
-			return 0;
-		}
-	case TIOCSETAF:
-	case TIOCSETAW:
-		return 0;
-
-	case FIONBIO:
-		return 0;
-
-	case DIOCGMEDIASIZE:
-		{
-			/* resolve ambiguity with libc type */
-			using Genode::int64_t;
-
-			int64_t *disk_size = (int64_t*)argp;
-			*disk_size = out.diocgmediasize.size;
-			return 0;
-		}
-
-	default:
-		break;
-	}
-
-	return -1;
+	return result.error ? Errno(result.error) : 0;
 }
 
 
@@ -2138,7 +2014,7 @@ int Libc::Vfs_plugin::ftruncate(File_descriptor *fd, ::off_t length)
 			fd->modified = false;
 		}
 
-		typedef Vfs::File_io_service::Ftruncate_result Result;
+		using Result = Vfs::File_io_service::Ftruncate_result;
 
 		switch (handle->fs().ftruncate(handle, length)) {
 		case Result::FTRUNCATE_ERR_NO_PERM:   result_errno = EPERM;  break;
@@ -2190,7 +2066,12 @@ int Libc::Vfs_plugin::fcntl(File_descriptor *fd, int cmd, long arg)
 		break;
 	}
 
-	error("fcntl(): command ", cmd, " not supported - vfs");
+	/* limit the amount of repeating error messages in the log */
+	static int previous_unsupported_command = -1;
+	if (cmd != previous_unsupported_command) {
+		previous_unsupported_command = cmd;
+		error("fcntl(): command ", Hex(cmd), " not supported - vfs");
+	}
 	return Errno(EINVAL);
 }
 
@@ -2217,17 +2098,19 @@ int Libc::Vfs_plugin::fsync(File_descriptor *fd)
 
 int Libc::Vfs_plugin::symlink(const char *target_path, const char *link_path)
 {
-	Vfs::Vfs_handle     *handle    { nullptr };
-	Constructible<Sync>  sync;
-	Vfs::file_size const count     { ::strlen(target_path) + 1 };
-	Vfs::file_size       out_count { 0 };
+	Vfs::Vfs_handle *handle    { nullptr };
+	Constructible<Sync> sync;
+
+	size_t const count = ::strlen(target_path) + 1;
+
+	size_t out_count = 0;
 
 	{
 		bool succeeded { false };
 		int result_errno { 0 };
 		monitor().monitor([&] {
 
-			typedef Vfs::Directory_service::Openlink_result Openlink_result;
+			using Openlink_result = Vfs::Directory_service::Openlink_result;
 
 			Openlink_result openlink_result =
 				_root_fs.openlink(link_path, true, &handle, _alloc);
@@ -2274,12 +2157,17 @@ int Libc::Vfs_plugin::symlink(const char *target_path, const char *link_path)
 
 			case Stage::WRITE:
 				{
-					try {
-						handle->fs().write(handle, target_path, count, out_count);
-					} catch (Vfs::File_io_service::Insufficient_buffer) {
+					using Result = Vfs::File_io_service::Write_result;
+
+					Const_byte_range_ptr const src { target_path, count };
+
+					Result result = handle->fs().write(handle, src, out_count);
+
+					if (result == Result::WRITE_ERR_WOULD_BLOCK)
 						return Fn::INCOMPLETE;
-					}
-				} stage = Stage::SYNC; [[fallthrough]];
+				}
+				stage = Stage::SYNC;
+				[[fallthrough]];
 
 			case Stage::SYNC:
 				{
@@ -2308,18 +2196,20 @@ ssize_t Libc::Vfs_plugin::readlink(const char *link_path, char *buf, ::size_t bu
 {
 	enum class Stage { OPEN, QUEUE_READ, COMPLETE_READ };
 
-	Stage            stage   { Stage::OPEN };
-	Vfs::Vfs_handle *handle  { nullptr };
-	Vfs::file_size   out_len { 0 };
+	Stage stage { Stage::OPEN };
 
-	bool succeeded { false };
-	int result_errno { 0 };
+	Vfs::Vfs_handle *handle = nullptr;
+
+	::size_t out_count    = 0;
+	bool     succeeded    = false;
+	int      result_errno = 0;
+
 	monitor().monitor([&] {
 
 		switch (stage) {
 		case Stage::OPEN:
 			{
-				typedef Vfs::Directory_service::Openlink_result Openlink_result;
+				using Openlink_result = Vfs::Directory_service::Openlink_result;
 
 				Openlink_result openlink_result =
 					_root_fs.openlink(link_path, false, &handle, _alloc);
@@ -2351,20 +2241,20 @@ ssize_t Libc::Vfs_plugin::readlink(const char *link_path, char *buf, ::size_t bu
 
 		case Stage::COMPLETE_READ:
 			{
-				typedef Vfs::File_io_service::Read_result Result;
+				using Result = Vfs::File_io_service::Read_result;
+
+				Byte_range_ptr const dst { buf, buf_size };
 
 				Result out_result =
-					handle->fs().complete_read(handle, buf, buf_size, out_len);
+					handle->fs().complete_read(handle, dst, out_count);
 
 				switch (out_result) {
 				case Result::READ_QUEUED: return Fn::INCOMPLETE;;
 
-				case Result::READ_ERR_AGAIN:       result_errno = EAGAIN;      break;
 				case Result::READ_ERR_WOULD_BLOCK: result_errno = EWOULDBLOCK; break;
 				case Result::READ_ERR_INVALID:     result_errno = EINVAL;      break;
 				case Result::READ_ERR_IO:          result_errno = EIO;         break;
-				case Result::READ_ERR_INTERRUPT:   result_errno = EINTR;       break;
-				case Result::READ_OK:          succeeded = true;        break;
+				case Result::READ_OK:              succeeded = true;           break;
 				};
 				handle->close();
 			} break;
@@ -2376,7 +2266,7 @@ ssize_t Libc::Vfs_plugin::readlink(const char *link_path, char *buf, ::size_t bu
 	if (!succeeded)
 		return Errno(result_errno);
 
-	return out_len;
+	return out_count;
 }
 
 
@@ -2388,7 +2278,7 @@ int Libc::Vfs_plugin::rmdir(char const *path)
 
 int Libc::Vfs_plugin::unlink(char const *path)
 {
-	typedef Vfs::Directory_service::Unlink_result Result;
+	using Result = Vfs::Directory_service::Unlink_result;
 
 	bool succeeded = false;
 	int result_errno = 0;
@@ -2410,7 +2300,7 @@ int Libc::Vfs_plugin::unlink(char const *path)
 
 int Libc::Vfs_plugin::rename(char const *from_path, char const *to_path)
 {
-	typedef Vfs::Directory_service::Rename_result Result;
+	using Result = Vfs::Directory_service::Rename_result;
 
 	bool succeeded = false;
 	int result_errno = false;
@@ -2503,7 +2393,7 @@ void *Libc::Vfs_plugin::mmap(void *addr_in, ::size_t length, int prot, int flags
 		/* create another VFS handle to keep the file open as long as the mapping exists */
 
 		Vfs::Vfs_handle *reference_handle = nullptr;
-		typedef Vfs::Directory_service::Open_result Result;
+		using Result = Vfs::Directory_service::Open_result;
 		Result vfs_open_result;
 		monitor().monitor([&] {
 			vfs_open_result = _root_fs.open(fd->fd_path, fd->flags,
@@ -2534,9 +2424,19 @@ void *Libc::Vfs_plugin::mmap(void *addr_in, ::size_t length, int prot, int flags
 			return MAP_FAILED;
 		}
 
-		try {
-			addr = region_map().attach(ds_cap, length, offset);
-		} catch (...) {
+		region_map().attach(ds_cap, {
+			.size       = length,
+			.offset     = addr_t(offset),
+			.use_at     = { },
+			.at         = { },
+			.executable = { },
+			.writeable  = true
+		}).with_result(
+			[&] (Region_map::Range range)  { addr = (void *)range.start; },
+			[&] (Region_map::Attach_error) { addr = nullptr; }
+		);
+
+		if (!addr) {
 			monitor().monitor([&] {
 				reference_handle->close();
 				return Fn::COMPLETE;
@@ -2579,7 +2479,7 @@ int Libc::Vfs_plugin::munmap(void *addr, ::size_t)
 		if (entry.start == addr) {
 			reference_handle = entry.reference_handle;
 			destroy(_alloc, &entry);
-			region_map().detach(addr);
+			region_map().detach(addr_t(addr));
 		}
 	});
 
@@ -2654,84 +2554,39 @@ int Libc::Vfs_plugin::pipe(Libc::File_descriptor *pipefdo[2])
 }
 
 
-bool Libc::Vfs_plugin::poll(File_descriptor &fd, struct pollfd &pfd)
-{
-	error("Plugin::poll() is deprecated");
-	return false;
-}
-
-
-bool Libc::Vfs_plugin::supports_select(int nfds,
-                                       fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                                       struct timeval *timeout)
-{
-	/* return true if any file descriptor (which is set) belongs to the VFS */
-	for (int fd = 0; fd < nfds; ++fd) {
-
-		if (FD_ISSET(fd, readfds) || FD_ISSET(fd, writefds) || FD_ISSET(fd, exceptfds)) {
-
-			File_descriptor *fdo =
-				file_descriptor_allocator()->find_by_libc_fd(fd);
-
-			if (fdo && (fdo->plugin == this))
-				return true;
-		}
-	}
-	return false;
-}
-
-
-int Libc::Vfs_plugin::select(int nfds,
-                             fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                             struct timeval *timeout)
+int Libc::Vfs_plugin::poll(Pollfd fds[], int nfds)
 {
 	int nready = 0;
 
-	fd_set const in_readfds  = *readfds;
-	fd_set const in_writefds = *writefds;
-	/* XXX exceptfds not supported */
-
-	/* clear fd sets */
-	FD_ZERO(readfds);
-	FD_ZERO(writefds);
-	FD_ZERO(exceptfds);
-
 	auto fn = [&] {
-		for (int fd = 0; fd < nfds; ++fd) {
 
-			bool fd_in_readfds = FD_ISSET(fd, &in_readfds);
-			bool fd_in_writefds = FD_ISSET(fd, &in_writefds);
+		for (int pollfd_index = 0; pollfd_index < nfds; pollfd_index++) {
 
-			if (!fd_in_readfds && !fd_in_writefds)
-				continue;
-
-			File_descriptor *fdo =
-				file_descriptor_allocator()->find_by_libc_fd(fd);
-
-			/* handle only fds that belong to this plugin */
-			if (!fdo || (fdo->plugin != this))
-				continue;
-
-			Vfs::Vfs_handle *handle = vfs_handle(fdo);
+			Vfs::Vfs_handle *handle = vfs_handle(fds[pollfd_index].fdo);
 			if (!handle) continue;
 
-			if (fd_in_readfds) {
-				if (handle->fs().read_ready(handle)) {
-					FD_SET(fd, readfds);
-					++nready;
+			bool fd_ready = false;
+
+			if (fds[pollfd_index].events & (POLLIN | POLLPRI | POLLRDNORM | POLLRDBAND)) {
+				if (handle->fs().read_ready(*handle)) {
+					*fds[pollfd_index].revents |= POLLIN;
+					fd_ready = true;
 				} else {
 					handle->fs().notify_read_ready(handle);
 				}
 			}
 
-			if (fd_in_writefds) {
-				if (true /* XXX always writeable */) {
-					FD_SET(fd, writefds);
-					++nready;
+			if (fds[pollfd_index].events & (POLLOUT | POLLWRNORM | POLLWRBAND)) {
+				if (handle->fs().write_ready(*handle)) {
+					*fds[pollfd_index].revents |= POLLOUT;
+					fd_ready = true;
 				}
 			}
 
-			/* XXX exceptfds not supported */
+			/* XXX POLLERR not supported */
+
+			if (fd_ready)
+				nready++;
 		}
 		return Fn::COMPLETE;
 	};

@@ -33,13 +33,13 @@ class Vfs_import::Flush_guard
 {
 	private:
 
-		Genode::Entrypoint &_ep;
-		Vfs_handle         &_handle;
+		Vfs::Env::Io &_io;
+		Vfs_handle   &_handle;
 
 	public:
 
-		Flush_guard(Vfs::Env &env, Vfs_handle &handle)
-		: _ep(env.env().ep()), _handle(handle) { }
+		Flush_guard(Vfs::Env::Io &io, Vfs_handle &handle)
+		: _io(io), _handle(handle) { }
 
 		~Flush_guard()
 		{
@@ -48,7 +48,7 @@ class Vfs_import::Flush_guard
 				 && (_handle.fs().complete_sync(&_handle)
 				  == Vfs::File_io_service::SYNC_OK))
 					break;
-				_ep.wait_and_dispatch_one_io_signal();
+				_io.commit_and_wait();
 			}
 		}
 };
@@ -89,20 +89,19 @@ class Vfs_import::File_system : public Vfs::File_system
 
 			Vfs_handle::Guard guard(dst_handle);
 			{
-				Flush_guard flush(env, *dst_handle);
+				Flush_guard flush(env.io(), *dst_handle);
 
-				file_size count = target.length();
+				Const_byte_range_ptr const src { target.string(), target.length() };
+
 				for (;;) {
-					file_size out_count = 0;
-					auto wres = dst_handle->fs().write(
-						dst_handle, target.string(), count, out_count);
+					size_t out_count = 0;
+					auto wres = dst_handle->fs().write(dst_handle, src, out_count);
 
 					switch (wres) {
-					case WRITE_ERR_AGAIN:
 					case WRITE_ERR_WOULD_BLOCK:
 						break;
 					default:
-						if (out_count < count) {
+						if (out_count < src.num_bytes) {
 							Genode::error("failed to write symlink ", path, ", ", wres);
 							env.root_dir().unlink(path.string());
 						}
@@ -140,52 +139,53 @@ class Vfs_import::File_system : public Vfs::File_system
 				return;
 			}
 
+			dst_handle->fs().ftruncate(dst_handle, 0);
+
 			char              buf[4096];
 			Vfs_handle::Guard guard { dst_handle };
-			Flush_guard       flush { env, *dst_handle };
+			Flush_guard       flush { env.io(), *dst_handle };
 			Readonly_file::At at    { };
 
 			while (true) {
 
-				file_size bytes_from_source { src_file.read(at, buf, sizeof(buf)) };
+				size_t const bytes_from_source =
+					src_file.read(at, Genode::Byte_range_ptr(buf, sizeof(buf)));
 
-				if (!bytes_from_source) break;
+				if (!bytes_from_source)
+					break;
 
-				bool           stalled         { false };
-				bool           write_error     { false };
-				Vfs::file_size remaining_bytes { bytes_from_source };
-				char const    *src             { buf };
+				bool write_error = false;
+
+				size_t remaining_bytes = bytes_from_source;
+
+				char const *src_ptr = buf;
 
 				while (remaining_bytes > 0 && !write_error) {
 
-					try {
-						Vfs::file_size out_count { 0 };
-						switch (dst_handle->fs().write(dst_handle, src,
-						                               remaining_bytes,
-						                               out_count)) {
-						case WRITE_ERR_AGAIN:
-						case WRITE_ERR_WOULD_BLOCK:
-							stalled = true;
-							break;
-						case Write_result::WRITE_ERR_INVALID:
-						case Write_result::WRITE_ERR_IO:
-						case Write_result::WRITE_ERR_INTERRUPT:
-							env.root_dir().unlink(path.string());
-							write_error = true;
-							break;
-						case WRITE_OK:
-							out_count = min(remaining_bytes, out_count);
-							remaining_bytes -= out_count;
-							src             += out_count;
-							at.value        += out_count;
-							dst_handle->advance_seek(out_count);
-							break;
-						}
-					} catch (Vfs::File_io_service::Insufficient_buffer) {
-						stalled = true; }
+					size_t out_count = 0;
 
-					if (stalled)
-						env.env().ep().wait_and_dispatch_one_io_signal();
+					Const_byte_range_ptr const src { src_ptr, remaining_bytes };
+
+					switch (dst_handle->fs().write(dst_handle, src, out_count)) {
+
+					case WRITE_ERR_WOULD_BLOCK:
+						env.io().commit_and_wait();
+						break;
+
+					case Write_result::WRITE_ERR_INVALID:
+					case Write_result::WRITE_ERR_IO:
+						env.root_dir().unlink(path.string());
+						write_error = true;
+						break;
+
+					case WRITE_OK:
+						out_count = min(remaining_bytes, out_count);
+						remaining_bytes -= out_count;
+						src_ptr         += out_count;
+						at.value        += out_count;
+						dst_handle->advance_seek(out_count);
+						break;
+					}
 				}
 				if (write_error)
 					break;
@@ -281,17 +281,16 @@ class Vfs_import::File_system : public Vfs::File_system
 		 ** File I/O service **
 		 **********************/
 
-		Write_result write(Vfs_handle*,
-		                   const char *, file_size,
-		                   file_size &) override {
+		Write_result write(Vfs_handle*, Const_byte_range_ptr const &, size_t &) override {
 			return WRITE_ERR_INVALID; }
 
-		Read_result complete_read(Vfs_handle*,
-		                          char*, file_size,
-		                          file_size&) override {
+		Read_result complete_read(Vfs_handle*, Byte_range_ptr const &, size_t &) override {
 			return READ_ERR_INVALID; }
 
-		bool read_ready(Vfs_handle*) override {
+		bool read_ready(Vfs_handle const &) const override {
+			return true; }
+
+		bool write_ready(Vfs_handle const &) const override {
 			return true; }
 
 		bool notify_read_ready(Vfs_handle*) override {

@@ -31,16 +31,16 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 	bool assign_pci(addr_t pci_config_memory_address, uint16_t bdf) override {
 		return call<Rpc_assign_pci>(pci_config_memory_address, bdf); }
 
-	void map(addr_t virt, addr_t size) override { call<Rpc_map>(virt, size); }
+	Map_result map(Virt_range range) override { return call<Rpc_map>(range); }
 
-	Signal_source_capability alloc_signal_source() override {
-		return call<Rpc_alloc_signal_source>(); }
+	Signal_source_result signal_source() override {
+		return call<Rpc_signal_source>(); }
 
-	void free_signal_source(Signal_source_capability cap) override {
+	void free_signal_source(Capability<Signal_source> cap) override {
 		call<Rpc_free_signal_source>(cap); }
 
-	Signal_context_capability alloc_context(Signal_source_capability source,
-	                                        unsigned long imprint) override {
+	Alloc_context_result alloc_context(Capability<Signal_source> source,
+	                                   Imprint imprint) override {
 		return call<Rpc_alloc_context>(source, imprint); }
 
 	void free_context(Signal_context_capability cap) override {
@@ -49,7 +49,7 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 	void submit(Signal_context_capability receiver, unsigned cnt = 1) override {
 		call<Rpc_submit>(receiver, cnt); }
 
-	Native_capability alloc_rpc_cap(Native_capability ep) override {
+	Alloc_rpc_cap_result alloc_rpc_cap(Native_capability ep) override {
 		return call<Rpc_alloc_rpc_cap>(ep); }
 
 	void free_rpc_cap(Native_capability cap) override {
@@ -64,11 +64,14 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 	Capability<Region_map> linker_area() override {
 		return call<Rpc_linker_area>(); }
 
-	void ref_account(Capability<Pd_session> pd) override {
-		call<Rpc_ref_account>(pd); }
+	Ref_account_result ref_account(Capability<Pd_session> pd) override {
+		return call<Rpc_ref_account>(pd); }
 
-	void transfer_quota(Capability<Pd_session> pd, Cap_quota amount) override {
-		call<Rpc_transfer_cap_quota>(pd, amount); }
+	Transfer_cap_quota_result transfer_quota(Capability<Pd_session> pd,
+	                                         Cap_quota amount) override
+	{
+		return call<Rpc_transfer_cap_quota>(pd, amount);
+	}
 
 	Cap_quota cap_quota() const override { return call<Rpc_cap_quota>(); }
 	Cap_quota used_caps() const override { return call<Rpc_used_caps>(); }
@@ -85,16 +88,19 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 		return ds.valid() ? Dataspace_client(ds).size() : 0;
 	}
 
-	void transfer_quota(Pd_session_capability pd_session, Ram_quota amount) override {
-		call<Rpc_transfer_ram_quota>(pd_session, amount); }
+	Transfer_ram_quota_result transfer_quota(Pd_session_capability pd_session,
+	                                         Ram_quota amount) override
+	{
+		return call<Rpc_transfer_ram_quota>(pd_session, amount);
+	}
 
 	Ram_quota ram_quota() const override { return call<Rpc_ram_quota>(); }
 	Ram_quota used_ram()  const override { return call<Rpc_used_ram>(); }
 
 	Capability<Native_pd> native_pd() override { return call<Rpc_native_pd>(); }
 
-	Managing_system_state managing_system(Managing_system_state const & state) override {
-		return call<Rpc_managing_system>(state); }
+	Capability<System_control> system_control_cap(Affinity::Location const location) override {
+		return call<Rpc_system_control_cap>(location); }
 
 	addr_t dma_addr(Ram_dataspace_capability ds) override { return call<Rpc_dma_addr>(ds); }
 

@@ -16,8 +16,9 @@
 
 namespace Vfs_block {
 
-	using file_size = Vfs::file_size;
+	using file_size   = Vfs::file_size;
 	using file_offset = Vfs::file_offset;
+	using size_t      = Genode::size_t;
 
 	struct Job
 	{
@@ -57,7 +58,7 @@ namespace Vfs_block {
 		State              state;
 		file_offset const  base_offset;
 		file_offset        current_offset;
-		file_size          current_count;
+		size_t             current_count;
 
 		bool success;
 		bool complete;
@@ -82,16 +83,15 @@ namespace Vfs_block {
 				using Result = Vfs::File_io_service::Read_result;
 
 				bool completed = false;
-				file_size out = 0;
+				size_t out = 0;
 
-				Result const result =
-					_handle.fs().complete_read(&_handle,
-					                           data + current_offset,
-					                           current_count, out);
-				if (   result == Result::READ_QUEUED
-				    || result == Result::READ_ERR_INTERRUPT
-				    || result == Result::READ_ERR_AGAIN
-				    || result == Result::READ_ERR_WOULD_BLOCK) {
+				Genode::Byte_range_ptr const dst { data + current_offset,
+				                                   current_count };
+
+				Result const result = _handle.fs().complete_read(&_handle, dst, out);
+
+				if (result == Result::READ_QUEUED
+				 || result == Result::READ_ERR_WOULD_BLOCK) {
 					return progress;
 				} else
 
@@ -137,39 +137,35 @@ namespace Vfs_block {
 				_handle.seek(base_offset + current_offset);
 				state = State::IN_PROGRESS;
 				progress = true;
+
 			[[fallthrough]];
 			case State::IN_PROGRESS:
 			{
 				using Result = Vfs::File_io_service::Write_result;
 
 				bool completed = false;
-				file_size out = 0;
+				size_t out = 0;
 
-				Result result = Result::WRITE_ERR_INVALID;
-				try {
-					result = _handle.fs().write(&_handle,
-					                            data + current_offset,
-					                            current_count, out);
-				} catch (Vfs::File_io_service::Insufficient_buffer) {
+				Genode::Const_byte_range_ptr const src { data + current_offset,
+				                                         current_count };
+
+				Result result = _handle.fs().write(&_handle, src, out);
+
+				switch (result) {
+				case Result::WRITE_ERR_WOULD_BLOCK:
 					return progress;
-				}
 
-				if (   result == Result::WRITE_ERR_AGAIN
-				    || result == Result::WRITE_ERR_INTERRUPT
-				    || result == Result::WRITE_ERR_WOULD_BLOCK) {
-					return progress;
-				} else
-
-				if (result == Result::WRITE_OK) {
+				case Result::WRITE_OK:
 					current_offset += out;
 					current_count  -= out;
 					success = true;
-				} else
+					break;
 
-				if (   result == Result::WRITE_ERR_IO
-					|| result == Result::WRITE_ERR_INVALID) {
+				case Result::WRITE_ERR_IO:
+				case Result::WRITE_ERR_INVALID:
 					success = false;
 					completed = true;
+					break;
 				}
 
 				if (current_count == 0 || completed) {
@@ -251,7 +247,7 @@ namespace Vfs_block {
 		    Block::Request   request,
 		    file_offset      base_offset,
 		    char            *data,
-		    file_size        length)
+		    size_t           length)
 		:
 			_handle        { handle },
 			request        { request },

@@ -28,7 +28,16 @@
 extern unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)];
 #define ZERO_PAGE(vaddr) ((void)(vaddr),virt_to_page(empty_zero_page))
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0)
+struct vm_area_struct;
+
+#ifndef pte_mkwrite
+pte_t pte_mkwrite(pte_t pte, struct vm_area_struct *vma);
+#endif
+
+#else
 pte_t pte_mkwrite(pte_t pte);
+#endif
 
 pte_t pte_get(pte_t pte);
 pte_t pte_wrprotect(pte_t pte);
@@ -52,6 +61,7 @@ int pte_write(pte_t ptr);
 
 extern pgd_t reserved_pg_dir[PTRS_PER_PGD];
 extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
+extern pgd_t idmap_pg_dir[PTRS_PER_PGD];
 
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 swp_entry_t __pmd_to_swp_entry(pmd_t pmd);
@@ -74,11 +84,17 @@ int pud_trans_huge(pud_t pud);
 
 pgprot_t pgprot_noncached(pgprot_t prot);
 pgprot_t pgprot_writecombine(pgprot_t prot);
+pgprot_t pgprot_tagged(pgprot_t prot);
 
 pte_t mk_pte(struct page * page, pgprot_t prot);
 
 #define HPAGE_SHIFT         PMD_SHIFT
 #define HUGETLB_PAGE_ORDER  (HPAGE_SHIFT - PAGE_SHIFT)
+
+static inline bool pud_sect_supported(void) { return 1; }
+
+#define VMALLOC_START 0UL
+#define VMALLOC_END   0xffffffffUL
 
 #endif /* __ASSEMBLY__ */
 

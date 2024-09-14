@@ -78,29 +78,13 @@ class Vfs_block::File
 
 		Constructible<Vfs_block::Job> _job { };
 
-		struct Io_response_handler : Vfs::Io_response_handler
-		{
-			Signal_context_capability sigh { };
-
-			void read_ready_response() override { }
-
-			void io_progress_response() override
-			{
-				if (sigh.valid()) {
-					Signal_transmitter(sigh).submit();
-				}
-			}
-		};
-		Io_response_handler _io_response_handler { };
-
 		Block::Session::Info _block_info { };
 
 	public:
 
-		File(Genode::Allocator         &alloc,
-		     Vfs::File_system          &vfs,
-		     Signal_context_capability  sigh,
-		     File_info           const &info)
+		File(Genode::Allocator &alloc,
+		     Vfs::File_system  &vfs,
+		     File_info   const &info)
 		:
 			_vfs        { vfs },
 			_vfs_handle { nullptr }
@@ -137,9 +121,6 @@ class Vfs_block::File
 				.align_log2  = log2(info.block_size),
 				.writeable   = info.writeable,
 			};
-
-			_io_response_handler.sigh = sigh;
-			_vfs_handle->handler(&_io_response_handler);
 		}
 
 		~File()
@@ -227,16 +208,19 @@ struct Block_session_component : Rpc_object<Block::Session>,
 	using Block::Request_stream::wakeup_client_if_needed;
 
 	Vfs_block::File &_file;
+	Vfs::Env::Io    &_io;
 
 	Block_session_component(Region_map                 &rm,
 	                        Entrypoint                 &ep,
 	                        Dataspace_capability        ds,
 	                        Signal_context_capability   sigh,
-	                        Vfs_block::File            &file)
+	                        Vfs_block::File            &file,
+	                        Vfs::Env::Io               &io)
 	:
 		Request_stream { rm, ds, ep, sigh, file.block_info() },
-		_ep            { ep },
-		_file          { file }
+		_ep   { ep },
+		_file { file },
+		_io   { io }
 	{
 		_ep.manage(*this);
 	}
@@ -303,12 +287,15 @@ struct Block_session_component : Rpc_object<Block::Session>,
 			}
 		}
 
+		_io.commit();
+
 		wakeup_client_if_needed();
 	}
 };
 
 
-struct Main : Rpc_object<Typed_root<Block::Session>>
+struct Main : Rpc_object<Typed_root<Block::Session>>,
+              private Vfs::Env::User
 {
 	Env &_env;
 
@@ -319,7 +306,7 @@ struct Main : Rpc_object<Typed_root<Block::Session>>
 	Attached_rom_dataspace  _config_rom { _env, "config" };
 
 	Vfs::Simple_env _vfs_env { _env, _heap,
-		_config_rom.xml().sub_node("vfs") };
+		_config_rom.xml().sub_node("vfs"), *this };
 
 	Constructible<Attached_ram_dataspace>  _block_ds { };
 	Constructible<Vfs_block::File>         _block_file { };
@@ -334,6 +321,13 @@ struct Main : Rpc_object<Typed_root<Block::Session>>
 		_block_session->handle_request();
 	}
 
+	/*
+	 * Vfs::Env::User interface
+	 */
+	void wakeup_vfs_user() override
+	{
+		_request_handler.local_submit();
+	}
 
 	/*
 	 * Root interface
@@ -373,11 +367,11 @@ struct Main : Rpc_object<Typed_root<Block::Session>>
 
 		try {
 			_block_ds.construct(_env.ram(), _env.rm(), tx_buf_size);
-			_block_file.construct(_heap, _vfs_env.root_dir(),
-			                      _request_handler, file_info);
+			_block_file.construct(_heap, _vfs_env.root_dir(), file_info);
 			_block_session.construct(_env.rm(), _env.ep(),
 			                         _block_ds->cap(),
-			                         _request_handler, *_block_file);
+			                         _request_handler, *_block_file,
+			                         _vfs_env.io());
 
 			return _block_session->cap();
 		} catch (...) {
@@ -389,6 +383,9 @@ struct Main : Rpc_object<Typed_root<Block::Session>>
 
 	void close(Capability<Session> cap) override
 	{
+		if (!_block_session.constructed())
+			return;
+
 		if (cap == _block_session->cap()) {
 			_block_session.destruct();
 			_block_file.destruct();

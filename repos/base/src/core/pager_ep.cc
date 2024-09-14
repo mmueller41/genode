@@ -12,10 +12,10 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Core includes */
+/* core includes */
 #include <pager.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Pager_entrypoint::entry()
@@ -39,11 +39,8 @@ void Pager_entrypoint::entry()
 					obj->submit_exception_signal();
 				} else {
 					/* send reply if page-fault handling succeeded */
-					reply_pending = !obj->pager(_pager);
-					if (!reply_pending)
-						warning("page-fault, ", *obj,
-						        " ip=", Hex(_pager.fault_ip()),
-						        " pf-addr=", Hex(_pager.fault_addr()));
+					using Result = Pager_object::Pager_result;
+					reply_pending = (obj->pager(_pager) == Result::CONTINUE);
 				}
 			} else {
 

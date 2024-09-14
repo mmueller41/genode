@@ -20,15 +20,14 @@
 /* core includes */
 #include <core_cspace.h>
 
-
-namespace Genode {
+namespace Core {
 
 	constexpr addr_t get_page_mask()      { return ~(get_page_size() - 1); }
 	inline addr_t trunc_page(addr_t addr) { return addr & get_page_mask(); }
 	inline addr_t round_page(addr_t addr) { return trunc_page(addr + get_page_size() - 1); }
 
 	inline addr_t map_src_addr(addr_t, addr_t phys) { return phys; }
-	inline size_t constrain_map_size_log2(size_t) { return get_page_size_log2(); }
+	inline Log2 kernel_constrained_map_size(Log2) { return { get_page_size_log2() }; }
 }
 
 #endif /* _CORE__INCLUDE__UTIL_H_ */

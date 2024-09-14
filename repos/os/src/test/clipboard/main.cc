@@ -92,7 +92,7 @@ class Test::Subsystem
 
 		Env &_env;
 
-		typedef String<100> Label;
+		using Label = String<100>;
 
 		Label _name;
 
@@ -100,12 +100,7 @@ class Test::Subsystem
 
 		bool _expect_import = true;
 
-		Label _session_label()
-		{
-			char buf[Label::capacity()];
-			snprintf(buf, sizeof(buf), "%s -> clipboard", _name.string());
-			return Label(Cstring(buf));
-		}
+		Label _session_label() { return Label(_name, " -> clipboard"); }
 
 		Attached_rom_dataspace _import_rom;
 
@@ -206,7 +201,7 @@ class Test::Subsystem
 		{
 			using namespace Genode;
 			try {
-				typedef String<100> String;
+				using String = String<100>;
 
 				String const expected(str);
 				String const imported = _imported_text().decoded_content<String>();

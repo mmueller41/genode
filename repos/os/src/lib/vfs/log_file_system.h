@@ -25,7 +25,7 @@ class Vfs::Log_file_system : public Single_file_system
 {
 	private:
 
-		typedef Genode::String<64> Label;
+		using Label = Genode::String<64>;
 		Label _label;
 
 		Genode::Constructible<Genode::Log_connection>     _log_connection { };
@@ -33,15 +33,21 @@ class Vfs::Log_file_system : public Single_file_system
 
 		Genode::Log_session & _log_session(Genode::Env &env)
 		{
+			using namespace Genode;
+
 			if (_label.valid()) {
 				_log_connection.construct(env, _label);
 				return *_log_connection;
-			} else {
-				_log_client.construct(
-					Genode::reinterpret_cap_cast<Genode::Log_session>
-					(env.parent().session_cap(Genode::Parent::Env::log())));
-				return *_log_client;
 			}
+
+			_log_client.construct(
+				env.parent().session_cap(Parent::Env::log())
+					.convert<Capability<Log_session>>(
+						[&] (Capability<Session> cap) {
+							return static_cap_cast<Log_session>(cap); },
+						[&] (Parent::Session_cap_error) {
+							return Capability<Log_session>(); }));
+			return *_log_client;
 		}
 
 		Genode::Log_session &_log;
@@ -52,7 +58,7 @@ class Vfs::Log_file_system : public Single_file_system
 
 				char _line_buf[Genode::Log_session::MAX_STRING_LEN];
 
-				file_offset _line_pos = 0;
+				size_t _line_pos = 0;
 
 				Genode::Log_session &_log;
 
@@ -83,37 +89,40 @@ class Vfs::Log_file_system : public Single_file_system
 				               File_io_service   &fs,
 				               Genode::Allocator &alloc,
 				               Genode::Log_session &log)
-				: Single_vfs_handle(ds, fs, alloc, 0),
-				  _log(log) { }
+				:
+					Single_vfs_handle(ds, fs, alloc, 0), _log(log)
+				{ }
 
 				~Log_vfs_handle()
 				{
 					if (_line_pos > 0) _flush();
 				}
 
-				Read_result read(char *, file_size, file_size &out_count) override
+				Read_result read(Byte_range_ptr const &, size_t &) override
 				{
-					out_count = 0;
-					return READ_OK;
+					/* block indefinitely - mimics stdout resp. stdin w/o input */
+					return READ_QUEUED;
 				}
 
-				Write_result write(char const *src, file_size count,
-				                   file_size &out_count) override
+				Write_result write(Const_byte_range_ptr const &buf, size_t &out_count) override
 				{
+					size_t       count = buf.num_bytes;
+					char const * src   = buf.start;
+
 					out_count = count;
 
 					/* count does not include the trailing '\0' */
 					while (count > 0) {
-						file_size curr_count = min(count, (file_size)((sizeof(_line_buf) - 1) - _line_pos));
+						size_t curr_count = min(count, sizeof(_line_buf) - 1 - _line_pos);
 
-						for (file_size i = 0; i < curr_count; ++i) {
+						for (size_t i = 0; i < curr_count; ++i) {
 							if (src[i] == '\n') {
 								curr_count = i + 1;
 								break;
 							}
 						}
 
-						memcpy(_line_buf + _line_pos, src, (size_t)curr_count);
+						memcpy(_line_buf + _line_pos, src, curr_count);
 						_line_pos += curr_count;
 
 						if ((_line_pos == sizeof(_line_buf) - 1) ||
@@ -126,7 +135,8 @@ class Vfs::Log_file_system : public Single_file_system
 					return WRITE_OK;
 				}
 
-				bool read_ready() override { return false; }
+				bool read_ready()  const override { return false; }
+				bool write_ready() const override { return true; }
 
 				Sync_result sync() override
 				{

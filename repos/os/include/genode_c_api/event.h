@@ -73,10 +73,14 @@ struct genode_event_submit
 
 	void (*rel_motion) (struct genode_event_submit *, int x, int y);
 
+	void (*abs_motion) (struct genode_event_submit *, int x, int y);
+
 	void (*touch) (struct genode_event_submit *,
 	               struct genode_event_touch_args const *);
 
 	void (*touch_release) (struct genode_event_submit *, unsigned finger);
+
+	void (*wheel) (struct genode_event_submit *, int x, int y);
 };
 
 

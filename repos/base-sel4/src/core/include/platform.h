@@ -22,7 +22,8 @@
 #include <initial_untyped_pool.h>
 #include <assertion.h>
 
-namespace Genode {
+namespace Core {
+
 	class Platform;
 	template <auto> class Static_allocator;
 	class Address_space;
@@ -37,7 +38,7 @@ namespace Genode {
  * The size of a single ELEM must be a multiple of sizeof(long).
  */
 template <auto MAX>
-class Genode::Static_allocator : public Allocator
+class Core::Static_allocator : public Allocator
 {
 	private:
 
@@ -76,7 +77,8 @@ class Genode::Static_allocator : public Allocator
 		bool need_size_for_free() const override { return false; }
 };
 
-class Genode::Platform : public Platform_generic
+
+class Core::Platform : public Platform_generic
 {
 	private:
 
@@ -156,7 +158,7 @@ class Genode::Platform : public Platform_generic
 		 * XXX Consider making Bit_allocator::_reserve public so that we can
 		 *     turn the bit allocator into a private member of 'Core_sel_alloc'.
 		 */
-		typedef Bit_allocator<1 << Core_cspace::NUM_CORE_SEL_LOG2> Core_sel_bit_alloc;
+		using Core_sel_bit_alloc = Bit_allocator<1 << Core_cspace::NUM_CORE_SEL_LOG2>;
 
 		struct Core_sel_alloc : Cap_sel_alloc, private Core_sel_bit_alloc
 		{
@@ -222,6 +224,11 @@ class Genode::Platform : public Platform_generic
 		 * Unmap page frame provided by kernel during early bootup.
 		 */
 		long _unmap_page_frame(Cap_sel const &);
+
+		/**
+		 * Initialize I/O ports on x86
+		 */
+		void _init_io_ports();
 
 	public:
 

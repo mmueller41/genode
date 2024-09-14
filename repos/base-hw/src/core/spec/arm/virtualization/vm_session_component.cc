@@ -24,7 +24,7 @@
 #include <cpu_thread_component.h>
 #include <core_env.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 static Core_mem_allocator & cma() {
@@ -42,10 +42,10 @@ void Vm_session_component::_attach(addr_t phys_addr, addr_t vm_addr, size_t size
 		                          _table_array.alloc());
 		return;
 	} catch(Hw::Out_of_tables &) {
-		Genode::error("Translation table needs to much RAM");
+		error("Translation table needs to much RAM");
 	} catch(...) {
-		Genode::error("Invalid mapping ", Genode::Hex(phys_addr), " -> ",
-		              Genode::Hex(vm_addr), " (", size, ")");
+		error("Invalid mapping ", Hex(phys_addr), " -> ",
+		      Hex(vm_addr), " (", size, ")");
 	}
 }
 
@@ -87,7 +87,7 @@ void * Vm_session_component::_alloc_table()
 }
 
 
-using Vmid_allocator = Genode::Bit_allocator<256>;
+using Vmid_allocator = Bit_allocator<256>;
 
 static Vmid_allocator &alloc()
 {
@@ -100,6 +100,12 @@ static Vmid_allocator &alloc()
 		assert (id == 0);
 	}
 	return *allocator;
+}
+
+
+Genode::addr_t Vm_session_component::_alloc_vcpu_data(Genode::addr_t ds_addr)
+{
+	return ds_addr;
 }
 
 
@@ -138,7 +144,7 @@ Vm_session_component::~Vm_session_component()
 		if (!_map.any_block_addr(&out_addr))
 			break;
 
-		detach(out_addr);
+		detach_at(out_addr);
 	}
 
 	/* free region in allocator */

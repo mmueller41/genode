@@ -171,8 +171,7 @@ void Allocator_avl_base::_cut_from_block(Block &b, addr_t addr, size_t size, Two
 }
 
 
-template <typename FN>
-bool Allocator_avl_base::_revert_block_ranges(FN const &any_block_fn)
+bool Allocator_avl_base::_revert_block_ranges(auto const &any_block_fn)
 {
 	size_t blocks = 0;
 	for (bool loop = true; loop; blocks++) {
@@ -196,7 +195,7 @@ bool Allocator_avl_base::_revert_block_ranges(FN const &any_block_fn)
 
 bool Allocator_avl_base::_revert_unused_ranges()
 {
-	return _revert_block_ranges([&] () {
+	return _revert_block_ranges([&] {
 		return _find_any_unused_block(_addr_tree.first()); });
 }
 
@@ -219,7 +218,7 @@ void Allocator_avl_base::_revert_allocations_and_ranges()
 		        " at allocator destruction time");
 
 	/* destroy all remaining blocks */
-	_revert_block_ranges([&] () { return _addr_tree.first(); });
+	_revert_block_ranges([&] { return _addr_tree.first(); });
 }
 
 
@@ -309,10 +308,9 @@ Allocator_avl_base::Range_result Allocator_avl_base::remove_range(addr_t base, s
 }
 
 
-template <typename SEARCH_FN>
 Allocator::Alloc_result
 Allocator_avl_base::_allocate(size_t const size, unsigned align, Range range,
-                              SEARCH_FN const &search_fn)
+                              auto const &search_fn)
 {
 	return _alloc_two_blocks_metadata().convert<Alloc_result>(
 
@@ -322,7 +320,7 @@ Allocator_avl_base::_allocate(size_t const size, unsigned align, Range range,
 			Block *b_ptr = _addr_tree.first();
 			b_ptr = b_ptr ? search_fn(*b_ptr) : 0;
 
-			if (!b_ptr) {
+			if (!b_ptr || b_ptr->used()) {
 				/* range conflict */
 				_md_alloc.free(two_blocks.b1_ptr, sizeof(Block));
 				_md_alloc.free(two_blocks.b2_ptr, sizeof(Block));
@@ -362,10 +360,6 @@ Allocator_avl_base::alloc_aligned(size_t size, unsigned align, Range range)
 Range_allocator::Alloc_result Allocator_avl_base::alloc_addr(size_t size, addr_t addr)
 {
 	/* check for integer overflow */
-	if (addr + size - 1 < addr)
-		return Alloc_error::DENIED;
-
-	/* check for range conflict */
 	if (!_sum_in_range(addr, size))
 		return Alloc_error::DENIED;
 

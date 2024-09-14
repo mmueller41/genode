@@ -13,19 +13,27 @@
 #ifndef _ACPICA__UTIL_H_
 #define _ACPICA__UTIL_H_
 
+#include <base/env.h>
+#include <os/reporter.h>
+
 extern "C" {
 #include "acpi.h"
 }
 
-class Bridge;
 
 namespace Acpica {
+
+	using namespace Genode;
+
 	template<typename> class Buffer;
 	template<typename> class Callback;
-	void generate_report(Genode::Env &, Bridge *);
 
 	template <typename H, typename S, typename F, typename FSIZE>
 	void for_each_element(H const head, S *, F const &fn, FSIZE const &fn_size);
+
+	void generate_suspend_report(Reporter::Xml_generator &, String<32> const &);
+
+	void init_printf(Env &);
 }
 
 template <typename T>

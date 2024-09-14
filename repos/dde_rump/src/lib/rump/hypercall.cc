@@ -21,6 +21,7 @@
 #include <util/allocator_fap.h>
 #include <util/random.h>
 #include <util/string.h>
+#include <format/snprintf.h>
 
 enum {
 	SUPPORTED_RUMP_VERSION = 17,
@@ -193,7 +194,7 @@ int rumpuser_getparam(const char *name, void *buf, size_t buflen)
 		rump_ram  = Genode::min((unsigned long)MAX_VIRTUAL_MEMORY, rump_ram);
 
 		/* convert to string */
-		Genode::snprintf((char *)buf, buflen, "%zu", rump_ram);
+		Format::snprintf((char *)buf, buflen, "%zu", rump_ram);
 		return 0;
 	}
 
@@ -253,7 +254,7 @@ struct Allocator_policy
 };
 
 
-typedef Allocator::Fap<MAX_VIRTUAL_MEMORY, Allocator_policy> Rump_alloc;
+using Rump_alloc = Allocator::Fap<MAX_VIRTUAL_MEMORY, Allocator_policy>;
 
 static Genode::Mutex & alloc_mutex()
 {
@@ -322,6 +323,18 @@ int rumpuser_clock_sleep(int enum_rumpclock, int64_t sec, long nsec)
 
 			break;
 	}
+
+	/*
+	 * When using rump in the form of vfs_rump as file-system implementation,
+	 * this function is steadily called with sleep times in the range of 0 to
+	 * 10 ms, inducing load even when the file system is not accessed.
+	 *
+	 * This load on idle can be lowered by forcing a sleep time of at least one
+	 * second. This does not harm the operation of vfs_rump because the file
+	 * system is not driven by time.
+	 */
+	if (msec < 1000)
+		msec = 1000;
 
 	Rump::env().sleep_sem().down(true, Genode::Microseconds(msec * 1000));
 

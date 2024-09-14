@@ -100,7 +100,7 @@ class Libc::Main_job : public Monitor::Job
  * secondary stack for the application task. Context switching uses
  * setjmp/longjmp.
  */
-struct Libc::Kernel final : Vfs::Io_response_handler,
+struct Libc::Kernel final : Vfs::Read_ready_response_handler,
                             Entrypoint::Io_progress_handler,
                             Reset_malloc_heap,
                             Resume,
@@ -151,7 +151,24 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 		 */
 		void reset_malloc_heap() override;
 
-		Env_implementation _libc_env { _env, _heap };
+		/* io_progress_handler marker */
+		bool _io_progressed = false;
+
+		struct Vfs_user : Vfs::Env::User
+		{
+			bool &_io_progressed;
+
+			Vfs_user(bool &io_progressed) : _io_progressed(io_progressed) { }
+
+			void wakeup_vfs_user() override
+			{
+				_io_progressed = true;
+			}
+		};
+
+		Vfs_user _vfs_user { _io_progressed };
+
+		Env_implementation _libc_env { _env, _heap, _vfs_user };
 
 		bool const _update_mtime = _libc_env.libc_config().attribute_value("update_mtime", true);
 
@@ -178,19 +195,19 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 			     : Xml_node("<pthread/>");
 		}
 
-		typedef String<Vfs::MAX_PATH_LEN> Config_attr;
+		using Config_attr = String<Vfs::MAX_PATH_LEN>;
 
 		Config_attr const _rtc_path = _libc_env.libc_config().attribute_value("rtc", Config_attr());
 
 		Constructible<Rtc> _rtc { };
 
 		/* handler for watching the stdout's info pseudo file */
-		Constructible<Watch_handler<Kernel>> _terminal_resize_handler { };
+		Constructible<Io::Watch_handler<Kernel>> _terminal_resize_handler { };
 
 		void _handle_terminal_resize();
 
 		/* handler for watching user interrupts (control-c) */
-		Constructible<Watch_handler<Kernel>> _user_interrupt_handler { };
+		Constructible<Io::Watch_handler<Kernel>> _user_interrupt_handler { };
 
 		void _handle_user_interrupt();
 
@@ -198,15 +215,12 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 
 		Atexit _atexit { _heap };
 
-		Reconstructible<Io_signal_handler<Kernel>> _resume_main_handler {
+		Io_signal_handler<Kernel> _resume_main_handler {
 			_env.ep(), *this, &Kernel::_resume_main };
 
 		jmp_buf _kernel_context;
 		jmp_buf _user_context;
 		bool    _valid_user_context          = false;
-
-		/* io_progress_handler marker */
-		bool _io_progressed { false };
 
 		Thread &_myself { *Thread::myself() };
 
@@ -275,7 +289,7 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 
 		Monitor::Pool _monitors { *this };
 
-		Reconstructible<Io_signal_handler<Kernel>> _execute_monitors {
+		Io_signal_handler<Kernel> _execute_monitors {
 			_env.ep(), *this, &Kernel::_monitors_handler };
 
 		Monitor::Pool::State _execute_monitors_pending = Monitor::Pool::State::ALL_COMPLETE;
@@ -483,6 +497,8 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 
 				while (main_blocked_in_monitor() || main_suspended_for_io()) {
 
+					wakeup_remote_peers();
+
 					/*
 					 * Block for one I/O signal and process all pending ones
 					 * before executing the monitor functions. This avoids
@@ -517,7 +533,7 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 				if (_main_context())
 					_resume_main();
 				else
-					Signal_transmitter(*_resume_main_handler).submit();
+					_resume_main_handler.local_submit();
 			}
 
 			_pthreads.resume_all();
@@ -573,7 +589,7 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 			if (_main_context())
 				_monitors_handler();
 			else
-				_execute_monitors->local_submit();
+				_execute_monitors.local_submit();
 		}
 
 		/**
@@ -615,7 +631,7 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 			if (_main_context())
 				_resume_main();
 			else
-				Signal_transmitter(*_resume_main_handler).submit();
+				_resume_main_handler.local_submit();
 		}
 
 		/**
@@ -636,7 +652,7 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 		Vfs::Vfs_watch_handle *alloc_watch_handle(char const *path) override
 		{
 			Vfs::Vfs_watch_handle *watch_handle { nullptr };
-			typedef Vfs::Directory_service::Watch_result Result;
+			using Result = Vfs::Directory_service::Watch_result;
 			return _libc_env.vfs().watch(path, &watch_handle, _heap) == Result::WATCH_OK
 				? watch_handle : nullptr;
 		}
@@ -665,12 +681,11 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 		}
 
 
-		/****************************************
-		 ** Vfs::Io_response_handler interface **
-		 ****************************************/
+		/************************************************
+		 ** Vfs::Read_ready_response_handler interface **
+		 ************************************************/
 
 		void read_ready_response() override  { _io_progressed = true; }
-		void io_progress_response() override { _io_progressed = true; }
 
 
 		/**********************************************
@@ -692,6 +707,16 @@ struct Libc::Kernel final : Vfs::Io_response_handler,
 				throw Kernel_called_prior_initialization();
 
 			return *_kernel_ptr;
+		}
+
+
+		/******************************
+		 ** Vfs::Remote_io mechanism **
+		 ******************************/
+
+		void wakeup_remote_peers()
+		{
+			_libc_env.vfs_env().io().commit();
 		}
 };
 

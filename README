@@ -4,15 +4,17 @@
                       =================================
 
 
-This is the source tree of the reference implementation of the Genode OS
-architecture. For a general overview about the architecture, please refer to
-the project's official website:
+This is the source code of Genode, which is a framework for creating
+component-based operating systems. It combines capability-based security,
+microkernel technology, sandboxed device drivers, and virtualization with
+a novel operating system architecture. For a general overview about the
+architecture, please refer to the project's official website:
 
-:Official project website for the Genode OS Framework:
+:Website for the Genode OS Framework:
 
   [https://genode.org/documentation/general-overview]
 
-The current implementation can be compiled for 8 different kernels: Linux,
+Genode-based operating systems can be compiled for a variety of kernels: Linux,
 L4ka::Pistachio, L4/Fiasco, OKL4, NOVA, Fiasco.OC, seL4, and a custom "hw"
 microkernel for running Genode without a 3rd-party kernel. Whereas the Linux
 version serves us as development vehicle and enables us to rapidly develop the
@@ -22,7 +24,7 @@ one. If a microkernel pretended to be fit for all use cases, it wouldn't be
 "micro". Hence, all microkernels differ in terms of their respective features,
 complexity, and supported hardware architectures.
 
-Genode allows the use of each of the kernels listed above with a rich set of
+Genode allows for the use of each of the supported kernels with a rich set of
 device drivers, protocol stacks, libraries, and applications in a uniform way.
 For developers, the framework provides an easy way to target multiple different
 kernels instead of tying the development to a particular kernel technology. For
@@ -37,7 +39,7 @@ Documentation
 #############
 
 The primary documentation is the book "Genode Foundations", which is available
-on the front page of Genode website:
+on the front page of the Genode website:
 
 :Download the book "Genode Foundations":
 
@@ -79,11 +81,6 @@ The source tree is composed of the following subdirectories:
   Source-code management tools and scripts. Please refer to the README file
   contained in the directory.
 
-:'depot':
-
-  Directory used by Genode's package-management tools. It contains the public
-  keys and download locations of software providers.
-
 
 Additional hardware support
 ###########################
@@ -108,13 +105,32 @@ system scenarios.
   [https://github.com/genodelabs/genode-world]
 
 
+Community blog
+##############
+
+Genodians.org presents ideas, announcements, experience stories, and tutorials
+around Genode, informally written by Genode users and developers.
+
+:Genodians.org:
+
+  [https://genodians.org]
+
+
 Contact
 #######
 
-The best way to get in touch with Genode developers and users is the project's
-mailing list. Please feel welcome to join in!
+The community forum is organized by Genode users to help newcomers, share ideas
+and experiences, and discuss Genode-related projects.
 
-:Genode Mailing Lists:
+:Community forum:
+
+  [https://genode.discourse.group]
+
+The mailing list is the primary way for reaching out to Genode's core
+developers, for receiving announcements, and for the project's annual road-map
+discussion.
+
+:Genode Mailing List:
 
   [https://genode.org/community/mailing-lists]
 

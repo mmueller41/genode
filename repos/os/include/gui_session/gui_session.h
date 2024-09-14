@@ -14,28 +14,36 @@
 #ifndef _INCLUDE__GUI_SESSION__GUI_SESSION_H_
 #define _INCLUDE__GUI_SESSION__GUI_SESSION_H_
 
+#include <base/id_space.h>
 #include <session/session.h>
 #include <os/surface.h>
-#include <os/handle_registry.h>
 #include <framebuffer_session/capability.h>
 #include <input_session/capability.h>
 
 namespace Gui {
 
-	using Genode::size_t;
+	using namespace Genode;
 
 	struct Session_client;
 	struct View;
 	struct Session;
 
-	typedef Genode::Capability<View> View_capability;
+	/*
+	 * View capabilities are used as tokens to share views between sessions.
+	 * There is no RPC interface associated with a view. View operations refer
+	 * to views via session-local IDs.
+	 */
+	struct View     : Interface { GENODE_RPC_INTERFACE(); };
+	struct View_ref : Interface { };
 
-	typedef Genode::Surface_base::Rect  Rect;
-	typedef Genode::Surface_base::Point Point;
-	typedef Genode::Surface_base::Area  Area;
+	using View_capability = Capability<View>;
+	using View_ids        = Id_space<View_ref>;
+	using View_id         = Id_space<View_ref>::Id;
 
-	typedef Genode::Out_of_ram  Out_of_ram;
-	typedef Genode::Out_of_caps Out_of_caps;
+	using Title = String<64>;
+	using Rect  = Surface_base::Rect;
+	using Point = Surface_base::Point;
+	using Area  = Surface_base::Area;
 }
 
 
@@ -52,72 +60,34 @@ struct Gui::Session : Genode::Session
 	 * for the command buffer, and the capabilities needed for the aggregated
 	 * 'Framebuffer' and 'Input' sessions.
 	 */
-	enum { CAP_QUOTA = Framebuffer::Session::CAP_QUOTA
-	                 + Input::Session::CAP_QUOTA + 3 };
-
-	typedef Session_client Client;
-
-	/**
-	 * Session-local view handle
-	 *
-	 * When issuing commands to nitpicker via the 'execute' method, views
-	 * are referenced by session-local handles.
-	 */
-	typedef Genode::Handle<View> View_handle;
-
+	static constexpr unsigned CAP_QUOTA = Framebuffer::Session::CAP_QUOTA
+	                                    + Input::Session::CAP_QUOTA + 3;
 
 	struct Command
 	{
-		enum Opcode { OP_GEOMETRY, OP_OFFSET,
-		              OP_TO_FRONT, OP_TO_BACK, OP_BACKGROUND,
-		              OP_TITLE, OP_NOP };
+		enum Opcode { GEOMETRY, OFFSET, FRONT, BACK, FRONT_OF, BEHIND_OF,
+		              BACKGROUND, TITLE, NOP };
 
-		/*
-		 * Argument structures for nitpicker's command interface
+		struct Nop { static constexpr Opcode opcode = NOP; };
+
+		/**
+		 * Operation that takes a view as first argument
 		 */
-
-		struct Nop { static Opcode opcode() { return OP_NOP; } };
-
-		struct Geometry
+		template <Opcode OPCODE>
+		struct View_op
 		{
-			static Opcode opcode() { return OP_GEOMETRY; }
-			View_handle view;
-			Rect        rect;
+			static constexpr Opcode opcode = OPCODE;
+			View_id view;
 		};
 
-		struct Offset
-		{
-			static Opcode opcode() { return OP_OFFSET; }
-			View_handle view;
-			Point       offset;
-		};
-
-		struct To_front
-		{
-			static Opcode opcode() { return OP_TO_FRONT; }
-			View_handle view;
-			View_handle neighbor;
-		};
-
-		struct To_back
-		{
-			static Opcode opcode() { return OP_TO_BACK; }
-			View_handle view;
-			View_handle neighbor;
-		};
-
-		struct Background
-		{
-			static Opcode opcode() { return OP_BACKGROUND; }
-			View_handle view;
-		};
-
-		struct Title
-		{
-			static Opcode opcode() { return OP_TITLE; }
-			View_handle view;
-			Genode::String<64> title;
-		};
+		struct Geometry   : View_op<GEOMETRY>   { Rect rect; };
+		struct Offset     : View_op<OFFSET>     { Point offset; };
+		struct Front      : View_op<FRONT>      { };
+		struct Back       : View_op<BACK>       { };
+		struct Front_of   : View_op<FRONT_OF>   { View_id neighbor; };
+		struct Behind_of  : View_op<BEHIND_OF>  { View_id neighbor; };
+		struct Background : View_op<BACKGROUND> { };
+		struct Title      : View_op<TITLE>      { Gui::Title title; };
 
 		Opcode opcode;
 		union
@@ -125,16 +95,18 @@ struct Gui::Session : Genode::Session
 			Nop        nop;
 			Geometry   geometry;
 			Offset     offset;
-			To_front   to_front;
-			To_back    to_back;
+			Front      front;
+			Back       back;
+			Front_of   front_of;
+			Behind_of  behind_of;
 			Background background;
 			Title      title;
 		};
 
-		Command() : opcode(OP_NOP) { }
+		Command() : opcode(Opcode::NOP) { }
 
 		template <typename ARGS>
-		Command(ARGS args) : opcode(ARGS::opcode())
+		Command(ARGS args) : opcode(ARGS::opcode)
 		{
 			reinterpret_cast<ARGS &>(nop) = args;
 		}
@@ -183,82 +155,78 @@ struct Gui::Session : Genode::Session
 
 			Command get(unsigned i)
 			{
-				if (i >= MAX_COMMANDS) return Command(Command::Nop());
-
-				return _commands[i];
+				return (i < MAX_COMMANDS) ? _commands[i] : Command(Command::Nop());
 			}
-
 	};
-
-	/**
-	 * Exception types
-	 */
-	struct Invalid_handle  : Genode::Exception { };
 
 	virtual ~Session() { }
 
 	/**
-	 * Request framebuffer sub-session
+	 * Request framebuffer RPC interface
 	 */
-	virtual Framebuffer::Session_capability framebuffer_session() = 0;
+	virtual Framebuffer::Session_capability framebuffer() = 0;
 
 	/**
-	 * Request input sub-session
+	 * Request input RPC interface
 	 */
-	virtual Input::Session_capability input_session() = 0;
+	virtual Input::Session_capability input() = 0;
+
+	struct View_attr
+	{
+		Title title;
+		Rect  rect;
+		bool  front;
+	};
+
+	enum class View_result { OK, OUT_OF_RAM, OUT_OF_CAPS };
 
 	/**
-	 * Create a new view at the buffer
-	 *
-	 * \param parent  parent view
-	 *
-	 * \throw   Invalid_handle
-	 * \return  handle for new view
+	 * Create a new top-level view at the buffer
+	 */
+	virtual View_result view(View_id, View_attr const &) = 0;
+
+	enum class Child_view_result { OK, OUT_OF_RAM, OUT_OF_CAPS, INVALID };
+
+	/**
+	 * Create a new child view at the buffer
 	 *
 	 * The 'parent' argument allows the client to use the location of an
 	 * existing view as the coordinate origin for the to-be-created view.
-	 * If an invalid handle is specified (default), the view will be a
-	 * top-level view.
 	 */
-	virtual View_handle create_view(View_handle parent = View_handle()) = 0;
+	virtual Child_view_result child_view(View_id, View_id parent, View_attr const &) = 0;
 
 	/**
 	 * Destroy view
 	 */
-	virtual void destroy_view(View_handle) = 0;
+	virtual void destroy_view(View_id) = 0;
+
+	enum class Associate_result { OK, OUT_OF_RAM, OUT_OF_CAPS, INVALID };
 
 	/**
-	 * Return session-local handle for the specified view
-	 *
-	 * The handle returned by this method can be used to issue commands
-	 * via the 'execute' method.
-	 *
-	 * \param handle  designated view handle to be assigned to the imported
-	 *                view. By default, a new handle will be allocated.
-	 *
-	 * \throw Out_of_ram
-	 * \throw Out_of_caps
+	 * Associate existing view with the specified ID
 	 */
-	virtual View_handle view_handle(View_capability,
-	                                View_handle handle = View_handle()) = 0;
+	virtual Associate_result associate(View_id, View_capability) = 0;
+
+	enum class View_capability_error { OUT_OF_RAM, OUT_OF_CAPS };
+	using View_capability_result = Attempt<View_capability, View_capability_error>;
 
 	/**
-	 * Request view capability for a given handle
+	 * Request view capability for a given ID
 	 *
 	 * The returned view capability can be used to share the view with another
 	 * session.
 	 */
-	virtual View_capability view_capability(View_handle) = 0;
+	virtual View_capability_result view_capability(View_id) = 0;
 
 	/**
-	 * Release session-local view handle
+	 * Release session-local view ID
 	 */
-	virtual void release_view_handle(View_handle) = 0;
+	virtual void release_view_id(View_id) = 0;
 
 	/**
 	 * Request dataspace used for issuing view commands to nitpicker
 	 */
-	virtual Genode::Dataspace_capability command_dataspace() = 0;
+	virtual Dataspace_capability command_dataspace() = 0;
 
 	/**
 	 * Execution batch of commands contained in the command dataspace
@@ -273,16 +241,14 @@ struct Gui::Session : Genode::Session
 	/**
 	 * Register signal handler to be notified about mode changes
 	 */
-	virtual void mode_sigh(Genode::Signal_context_capability) = 0;
+	virtual void mode_sigh(Signal_context_capability) = 0;
+
+	enum class Buffer_result { OK, OUT_OF_RAM, OUT_OF_CAPS };
 
 	/**
 	 * Define dimensions of virtual framebuffer
-	 *
-	 * \throw Out_of_ram  session quota does not suffice for specified
-	 *                    buffer dimensions
-	 * \throw Out_of_caps
 	 */
-	virtual void buffer(Framebuffer::Mode mode, bool use_alpha) = 0;
+	virtual Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) = 0;
 
 	/**
 	 * Set focused session
@@ -297,24 +263,7 @@ struct Gui::Session : Genode::Session
 	 * referred to by its session capability, a common parent can manage the
 	 * focus among its children. But unrelated sessions cannot interfere.
 	 */
-	virtual void focus(Genode::Capability<Session> focused) = 0;
-
-	typedef Genode::String<160> Label;
-
-	enum Session_control { SESSION_CONTROL_HIDE, SESSION_CONTROL_SHOW,
-	                       SESSION_CONTROL_TO_FRONT };
-
-	/**
-	 * Perform control operation on one or multiple sessions
-	 *
-	 * The 'label' is used to select the sessions, on which the 'operation' is
-	 * performed. The GUI server creates a selector string by concatenating the
-	 * caller's session label with the supplied 'label' argument. A session is
-	 * selected if its label starts with the selector string. Thereby, the
-	 * operation is limited to the caller session or any child session of the
-	 * caller.
-	 */
-	virtual void session_control(Label, Session_control) { }
+	virtual void focus(Capability<Session> focused) = 0;
 
 	/**
 	 * Return number of bytes needed for virtual framebuffer of specified size
@@ -333,30 +282,27 @@ struct Gui::Session : Genode::Session
 	 ** RPC declaration **
 	 *********************/
 
-	GENODE_RPC(Rpc_framebuffer_session, Framebuffer::Session_capability, framebuffer_session);
-	GENODE_RPC(Rpc_input_session, Input::Session_capability, input_session);
-	GENODE_RPC_THROW(Rpc_create_view, View_handle, create_view,
-	                 GENODE_TYPE_LIST(Out_of_ram, Out_of_caps, Invalid_handle), View_handle);
-	GENODE_RPC(Rpc_destroy_view, void, destroy_view, View_handle);
-	GENODE_RPC_THROW(Rpc_view_handle, View_handle, view_handle,
-	                 GENODE_TYPE_LIST(Out_of_ram, Out_of_caps), View_capability, View_handle);
-	GENODE_RPC(Rpc_view_capability, View_capability, view_capability, View_handle);
-	GENODE_RPC(Rpc_release_view_handle, void, release_view_handle, View_handle);
-	GENODE_RPC(Rpc_command_dataspace, Genode::Dataspace_capability, command_dataspace);
+	GENODE_RPC(Rpc_framebuffer, Framebuffer::Session_capability, framebuffer);
+	GENODE_RPC(Rpc_input, Input::Session_capability, input);
+	GENODE_RPC(Rpc_view, View_result, view, View_id, View_attr const &);
+	GENODE_RPC(Rpc_child_view, Child_view_result, child_view, View_id, View_id, View_attr const &);
+	GENODE_RPC(Rpc_destroy_view, void, destroy_view, View_id);
+	GENODE_RPC(Rpc_associate, Associate_result, associate, View_id, View_capability);
+	GENODE_RPC(Rpc_view_capability, View_capability_result, view_capability, View_id);
+	GENODE_RPC(Rpc_release_view_id, void, release_view_id, View_id);
+	GENODE_RPC(Rpc_command_dataspace, Dataspace_capability, command_dataspace);
 	GENODE_RPC(Rpc_execute, void, execute);
 	GENODE_RPC(Rpc_background, int, background, View_capability);
 	GENODE_RPC(Rpc_mode, Framebuffer::Mode, mode);
-	GENODE_RPC(Rpc_mode_sigh, void, mode_sigh, Genode::Signal_context_capability);
-	GENODE_RPC(Rpc_focus, void, focus, Genode::Capability<Session>);
-	GENODE_RPC(Rpc_session_control, void, session_control, Label, Session_control);
-	GENODE_RPC_THROW(Rpc_buffer, void, buffer, GENODE_TYPE_LIST(Out_of_ram, Out_of_caps),
-	                 Framebuffer::Mode, bool);
+	GENODE_RPC(Rpc_mode_sigh, void, mode_sigh, Signal_context_capability);
+	GENODE_RPC(Rpc_focus, void, focus, Capability<Session>);
+	GENODE_RPC(Rpc_buffer, Buffer_result, buffer, Framebuffer::Mode, bool);
 
-	GENODE_RPC_INTERFACE(Rpc_framebuffer_session, Rpc_input_session,
-	                     Rpc_create_view, Rpc_destroy_view, Rpc_view_handle,
-	                     Rpc_view_capability, Rpc_release_view_handle,
+	GENODE_RPC_INTERFACE(Rpc_framebuffer, Rpc_input,
+	                     Rpc_view, Rpc_child_view, Rpc_destroy_view, Rpc_associate,
+	                     Rpc_view_capability, Rpc_release_view_id,
 	                     Rpc_command_dataspace, Rpc_execute, Rpc_mode,
-	                     Rpc_mode_sigh, Rpc_buffer, Rpc_focus, Rpc_session_control);
+	                     Rpc_mode_sigh, Rpc_buffer, Rpc_focus);
 };
 
 #endif /* _INCLUDE__GUI_SESSION__GUI_SESSION_H_ */

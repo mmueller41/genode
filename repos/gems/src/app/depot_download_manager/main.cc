@@ -34,7 +34,7 @@ struct Depot_download_manager::Child_exit_state
 	bool exited = false;
 	int  code   = 0;
 
-	typedef String<64> Name;
+	using Name = String<64>;
 
 	Child_exit_state(Xml_node init_state, Name const &name)
 	{
@@ -51,7 +51,7 @@ struct Depot_download_manager::Child_exit_state
 };
 
 
-struct Depot_download_manager::Main : Import::Download_progress
+struct Depot_download_manager::Main
 {
 	Env &_env;
 
@@ -60,6 +60,8 @@ struct Depot_download_manager::Main : Import::Download_progress
 	Attached_rom_dataspace _installation      { _env, "installation"      };
 	Attached_rom_dataspace _dependencies      { _env, "dependencies"      };
 	Attached_rom_dataspace _index             { _env, "index"             };
+	Attached_rom_dataspace _image             { _env, "image"             };
+	Attached_rom_dataspace _image_index       { _env, "image_index"       };
 	Attached_rom_dataspace _init_state        { _env, "init_state"        };
 	Attached_rom_dataspace _fetchurl_progress { _env, "fetchurl_progress" };
 
@@ -83,6 +85,11 @@ struct Depot_download_manager::Main : Import::Download_progress
 	Archive::User _current_user_name() const
 	{
 		return _current_user.xml().attribute_value("name", Archive::User());
+	}
+
+	Pubkey_known _current_user_has_pubkey() const
+	{
+		return Pubkey_known { _current_user.xml().has_sub_node("pubkey") };
 	}
 
 	Path _current_user_path() const
@@ -110,25 +117,6 @@ struct Depot_download_manager::Main : Import::Download_progress
 
 	Constructible<Import> _import { };
 
-	/**
-	 * Download_progress interface
-	 */
-	Info download_progress(Archive::Path const &path) const override
-	{
-		Info result { Info::Bytes(), Info::Bytes() };
-		try {
-			Url const url_path(_current_user_url(), "/", Archive::download_file_path(path));
-
-			/* search fetchurl progress report for matching 'url_path' */
-			_fetchurl_progress.xml().for_each_sub_node("fetch", [&] (Xml_node fetch) {
-				if (fetch.attribute_value("url", Url()) == url_path)
-					result = { .total = fetch.attribute_value("total", Info::Bytes()),
-					           .now   = fetch.attribute_value("now",   Info::Bytes()) }; });
-
-		} catch (Invalid_download_url) { }
-		return result;
-	}
-
 	void _update_state_report()
 	{
 		_state_reporter.generate([&] (Xml_generator &xml) {
@@ -136,22 +124,25 @@ struct Depot_download_manager::Main : Import::Download_progress
 			/* produce detailed reports while the installation is in progress */
 			if (_import.constructed()) {
 				xml.attribute("progress", "yes");
-				_import->report(xml, *this);
+				_import->report(xml);
 			}
 
 			/* once all imports have settled, present the final results */
 			else {
 				_jobs.for_each([&] (Job const &job) {
 
-					if (!job.started)
+					if (!job.started && !job.done)
 						return;
 
-					/*
-					 * If a job has been started and has not failed, it must
-					 * have succeeded at the time when the import is finished.
-					 */
-					char const *type = Archive::index(job.path) ? "index" : "archive";
-					xml.node(type, [&] () {
+					auto type = [] (Archive::Path const &path)
+					{
+						if (Archive::index(path))       return "index";
+						if (Archive::image(path))       return "image";
+						if (Archive::image_index(path)) return "image_index";
+						return "archive";
+					};
+
+					xml.node(type(job.path), [&] () {
 						xml.attribute("path",  job.path);
 						xml.attribute("state", job.failed ? "failed" : "done");
 					});
@@ -172,8 +163,19 @@ struct Depot_download_manager::Main : Import::Download_progress
 	{
 		_installation.update();
 
-		Job::Update_policy policy(_heap);
-		_jobs.update_from_xml(policy, _installation.xml());
+		_jobs.update_from_xml(_installation.xml(),
+
+			/* create */
+			[&] (Xml_node const &node) -> Job & {
+				return *new (_heap)
+					Job(node.attribute_value("path", Archive::Path())); },
+
+			/* destroy */
+			[&] (Job &job) { destroy(_heap, &job); },
+
+			/* update */
+			[&] (Job &, Xml_node const &) { }
+		);
 
 		_depot_query_count.value++;
 
@@ -199,22 +201,67 @@ struct Depot_download_manager::Main : Import::Download_progress
 	/* number of bytes downloaded by current fetchurl instance */
 	uint64_t _downloaded_bytes { };
 
+	using Download = Import::Download;
+
+	List_model<Download> _fetchurl_downloads { };
+
 	void _handle_fetchurl_progress()
 	{
 		_fetchurl_progress.update();
 
+		bool visible_progress = false;
+
+		_fetchurl_downloads.update_from_xml(_fetchurl_progress.xml(),
+
+			/* create */
+			[&] (Xml_node const &node) -> Download & {
+				visible_progress = true;
+				return *new (_heap) Download(Download::url_from_xml(node));
+			},
+
+			/* destroy */
+			[&] (Download &e) {
+				visible_progress = true;
+				destroy(_heap, &e);
+			},
+
+			/* update */
+			[&] (Download &download, Xml_node const &node)
+			{
+				unsigned const orig_percent  = download.progress.percent();
+				bool     const orig_complete = download.complete;
+
+				download.update(node);
+
+				bool const progress = (orig_percent  != download.progress.percent())
+				                   || (orig_complete != download.complete);
+
+				visible_progress |= progress;
+
+				if (_import.constructed()) {
+					try {
+						if (progress)
+							_import->download_progress(_current_user_url(),
+							                          download.url, download.progress);
+						if (download.complete)
+							_import->download_complete(_current_user_url(), download.url);
+
+					} catch (Invalid_download_url) { }
+				}
+			}
+		);
+
 		/* count sum of bytes downloaded by current fetchurl instance */
 		_downloaded_bytes = 0;
-		_fetchurl_progress.xml().for_each_sub_node("fetch", [&] (Xml_node fetch) {
-			_downloaded_bytes += fetch.attribute_value("now", 0ULL); });
+		_fetchurl_downloads.for_each([&] (Download const &download) {
+			_downloaded_bytes += download.progress.downloaded_bytes; });
 
-		if (_import.constructed()) {
-			_import->apply_download_progress(*this);
+		if (!visible_progress)
+			return;
 
-			/* proceed with next import step if all downloads are done or failed */
-			if (!_import->downloads_in_progress())
-				_generate_init_config();
-		}
+		/* proceed with next import step if all downloads are done or failed */
+		if (_import.constructed() && !_import->downloads_in_progress())
+			_generate_init_config();
 
 		_update_state_report();
 	}
@@ -230,21 +277,27 @@ struct Depot_download_manager::Main : Import::Download_progress
 
 		uint64_t _observed_downloaded_bytes = _main._downloaded_bytes;
 
+		uint64_t _started_ms = _timer.elapsed_ms();
+
+		enum { PERIOD_SECONDS = 5UL };
+
 		void _handle()
 		{
-			if (_main._downloaded_bytes != _observed_downloaded_bytes) {
-				_observed_downloaded_bytes = _main._downloaded_bytes;
+			uint64_t const now_ms = _timer.elapsed_ms();
+
+			bool starting_up   = (now_ms - _started_ms < PERIOD_SECONDS*1000);
+			bool made_progress = (_main._downloaded_bytes != _observed_downloaded_bytes);
+
+			if (starting_up || made_progress)
 				return;
-			}
 
 			warning("fetchurl got stuck, respawning");
 
 			/* downloads got stuck, try replacing fetchurl with new instance */
 			_main._fetchurl_count.value++;
 			_main._generate_init_config();
+			_started_ms = now_ms;
 		}
-
-		enum { PERIOD_SECONDS = 5UL };
 
 		Fetchurl_watchdog(Main &main) : _main(main)
 		{
@@ -259,6 +312,8 @@ struct Depot_download_manager::Main : Import::Download_progress
 	{
 		_dependencies     .sigh(_query_result_handler);
 		_index            .sigh(_query_result_handler);
+		_image            .sigh(_query_result_handler);
+		_image_index      .sigh(_query_result_handler);
 		_current_user     .sigh(_query_result_handler);
 		_init_state       .sigh(_init_state_handler);
 		_verified         .sigh(_init_state_handler);
@@ -319,7 +374,9 @@ void Depot_download_manager::Main::_generate_init_config(Xml_generator &xml)
 	if (fetchurl_running) {
 		try {
 			xml.node("start", [&] () {
-				gen_fetchurl_start_content(xml, *_import, _current_user_url(),
+				gen_fetchurl_start_content(xml, *_import,
+				                           _current_user_url(),
+				                           _current_user_has_pubkey(),
 				                           _fetchurl_count); });
 		}
 		catch (Invalid_download_url) {
@@ -331,7 +388,7 @@ void Depot_download_manager::Main::_generate_init_config(Xml_generator &xml)
 		xml.node("start", [&] () {
 			gen_verify_start_content(xml, *_import, _current_user_path()); });
 
-	if (_import.constructed() && _import->verified_archives_available()) {
+	if (_import.constructed() && _import->verified_or_blessed_archives_available()) {
 
 		xml.node("start", [&] () {
 			gen_chroot_start_content(xml, _current_user_name());  });
@@ -353,6 +410,8 @@ void Depot_download_manager::Main::_handle_query_result()
 
 	_dependencies.update();
 	_index.update();
+	_image.update();
+	_image_index.update();
 	_current_user.update();
 
 	/* validate completeness of depot-user info */
@@ -361,8 +420,7 @@ void Depot_download_manager::Main::_handle_query_result()
 
 		Archive::User const name = user.attribute_value("name", Archive::User());
 
-		bool const user_info_complete = user.has_sub_node("url")
-		                             && user.has_sub_node("pubkey");
+		bool const user_info_complete = user.has_sub_node("url");
 
 		if (name.valid() && !user_info_complete) {
 
@@ -385,14 +443,21 @@ void Depot_download_manager::Main::_handle_query_result()
 
 	Xml_node const dependencies = _dependencies.xml();
 	Xml_node const index        = _index.xml();
+	Xml_node const image        = _image.xml();
+	Xml_node const image_index  = _image_index.xml();
 
-	if (dependencies.num_sub_nodes() == 0 && index.num_sub_nodes() == 0)
-		return;
+	/* mark jobs referring to existing depot content as unneccessary */
+	Import::for_each_present_depot_path(dependencies, index, image, image_index,
+		[&] (Archive::Path const &path) {
+			_jobs.for_each([&] (Job &job) {
+				if (job.path == path)
+					job.done = true; }); });
 
-	bool const missing_dependencies = dependencies.has_sub_node("missing");
-	bool const missing_index_files  = index.has_sub_node("missing");
-
-	if (!missing_dependencies && !missing_index_files) {
+	bool const complete = !dependencies.has_sub_node("missing")
+	                   && !index       .has_sub_node("missing")
+	                   && !image       .has_sub_node("missing")
+	                   && !image_index .has_sub_node("missing");
+	if (complete) {
 		log("installation complete.");
 		_update_state_report();
 		return;
@@ -408,9 +473,16 @@ void Depot_download_manager::Main::_handle_query_result()
 	{
 		Archive::User user { };
 
-		if (missing_index_files)
-			index.with_optional_sub_node("missing", [&] (Xml_node missing) {
-				user = missing.attribute_value("user", Archive::User()); });
+		auto assign_user_from_missing_xml_sub_node = [&] (Xml_node const node)
+		{
+			if (!user.valid())
+				node.with_optional_sub_node("missing", [&] (Xml_node missing) {
+					user = missing.attribute_value("user", Archive::User()); });
+		};
+
+		assign_user_from_missing_xml_sub_node(index);
+		assign_user_from_missing_xml_sub_node(image);
+		assign_user_from_missing_xml_sub_node(image_index);
 
 		if (user.valid())
 			return user;
@@ -435,7 +507,8 @@ void Depot_download_manager::Main::_handle_query_result()
 	}
 
 	/* start new import */
-	_import.construct(_heap, _current_user_name(), dependencies, index);
+	_import.construct(_heap, _current_user_name(), _current_user_has_pubkey(),
+	                  dependencies, index, image, image_index);
 
 	/* mark imported jobs as started */
 	_import->for_each_download([&] (Archive::Path const &path) {
@@ -490,7 +563,7 @@ void Depot_download_manager::Main::_handle_init_state()
 	}
 
 	if (!import.downloads_in_progress() && import.completed_downloads_available()) {
-		import.verify_all_downloaded_archives();
+		import.verify_or_bless_all_downloaded_archives();
 		reconfigure_init = true;
 	}
 
@@ -521,7 +594,7 @@ void Depot_download_manager::Main::_handle_init_state()
 		});
 	}
 
-	if (import.verified_archives_available()) {
+	if (import.verified_or_blessed_archives_available()) {
 
 		Child_exit_state const extract_state(_init_state.xml(), "extract");
 
@@ -529,7 +602,7 @@ void Depot_download_manager::Main::_handle_init_state()
 			error("extract failed with exit code ", extract_state.code);
 
 		if (extract_state.exited && extract_state.code == 0)
-			import.all_verified_archives_extracted();
+			import.all_verified_or_blessed_archives_extracted();
 	}
 
 	/* flag failed jobs to prevent re-attempts in subsequent import iterations */

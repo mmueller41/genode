@@ -49,6 +49,11 @@ struct Genode::Irq_session : Session
 	enum Polarity { POLARITY_UNCHANGED = 0, POLARITY_HIGH, POLARITY_LOW };
 
 	/**
+	 * Interrupt type
+	 */
+	enum Type { TYPE_LEGACY = 0, TYPE_MSI, TYPE_MSIX };
+
+	/**
 	 * Destructor
 	 */
 	virtual ~Irq_session() { }
@@ -78,7 +83,8 @@ struct Genode::Irq_session : Session
 	 */
 	static const char * service_name() { return "IRQ"; }
 
-	enum { CAP_QUOTA = 3, RAM_QUOTA = 6 * 1024 };
+	static constexpr unsigned CAP_QUOTA = 3;
+	static constexpr size_t   RAM_QUOTA = 6*1024;
 
 
 	/*********************

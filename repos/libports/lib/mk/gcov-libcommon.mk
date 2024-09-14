@@ -14,19 +14,18 @@ SRC_CC = diagnostic.cc \
          memory-block.cc \
          pretty-print.cc \
          sort.cc \
-         vec.cc \
-         version.cc
+         vec.cc
 
 CC_OPT += -DIN_GCC
 
-CC_OPT_version += -DBASEVER="\"10.3.0\"" \
+CC_OPT_version += -DBASEVER="\"12.3.0\"" \
                   -DDATESTAMP="\"\"" \
                   -DREVISION="\"\"" \
                   -DDEVPHASE="\"\"" \
                   -DPKGVERSION="\"(GCC) \"" \
                   -DBUGURL="\"<http://gcc.gnu.org/bugs.html>\""
 
-LIBS += libc gmp stdcxx
+LIBS += libc gmp stdcxx format
 
 INC_DIR += $(GCOV_DIR)/include \
            $(GCOV_DIR)/libcpp/include

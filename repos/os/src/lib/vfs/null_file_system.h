@@ -36,24 +36,26 @@ struct Vfs::Null_file_system : Single_file_system
 		Null_vfs_handle(Directory_service &ds,
 		                File_io_service   &fs,
 		                Genode::Allocator &alloc)
-		: Single_vfs_handle(ds, fs, alloc, 0) { }
+		:
+			Single_vfs_handle(ds, fs, alloc, 0)
+		{ }
 
-		Read_result read(char *, file_size, file_size &out_count) override
+		Read_result read(Byte_range_ptr const &, size_t &out_count) override
 		{
 			out_count = 0;
 
 			return READ_OK;
 		}
 
-		Write_result write(char const *, file_size count,
-		                   file_size &out_count) override
+		Write_result write(Const_byte_range_ptr const &src, size_t &out_count) override
 		{
-			out_count = count;
+			out_count = src.num_bytes;
 
 			return WRITE_OK;
 		}
 
-		bool read_ready() override { return false; }
+		bool read_ready()  const override { return false; }
+		bool write_ready() const override { return true; }
 	};
 
 	/*********************************
@@ -61,8 +63,8 @@ struct Vfs::Null_file_system : Single_file_system
 	 *********************************/
 
 	Open_result open(char const  *path, unsigned,
-		             Vfs_handle **out_handle,
-		             Allocator   &alloc) override
+	                 Vfs_handle **out_handle,
+	                 Allocator   &alloc) override
 	{
 		if (!_single_file(path))
 			return OPEN_ERR_UNACCESSIBLE;

@@ -14,7 +14,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <util/arg_string.h>
 #include <util/bit_array.h>
 
@@ -28,15 +27,15 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-namespace Genode { class Interrupt_handler; }
+namespace Core { class Interrupt_handler; }
 
-using namespace Genode;
+using namespace Core;
 
 
 /**
  * Dispatches interrupts from kernel
  */
-class Genode::Interrupt_handler : public Thread
+class Core::Interrupt_handler : public Thread
 {
 	private:
 
@@ -53,7 +52,7 @@ class Genode::Interrupt_handler : public Thread
 		static Foc::l4_cap_idx_t handler_cap()
 		{
 			static Interrupt_handler handler;
-			return handler._thread_cap.data()->kcap();
+			return handler.cap().data()->kcap();
 		}
 
 };
@@ -62,7 +61,7 @@ class Genode::Interrupt_handler : public Thread
 enum { MAX_MSIS = 256 };
 
 
-static struct Msi_allocator : Bit_array<MAX_MSIS>
+struct Msi_allocator : Bit_array<MAX_MSIS>
 {
 	Msi_allocator()
 	{
@@ -79,7 +78,14 @@ static struct Msi_allocator : Bit_array<MAX_MSIS>
 				set(info.nr_msis, MAX_MSIS - info.nr_msis);
 	}
 
-} msi_alloc;
+};
+
+
+static Msi_allocator & msi_alloc()
+{
+	static Msi_allocator instance;
+	return instance;
+}
 
 
 bool Irq_object::associate(unsigned irq, bool msi,
@@ -187,14 +193,15 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 	_irq_number((unsigned)Arg_string::find_arg(args, "irq_number").long_value(-1)),
 	_irq_alloc(irq_alloc), _irq_object()
 {
-	long const msi = Arg_string::find_arg(args, "device_config_phys").long_value(0);
+	Irq_args const irq_args(args);
+	bool msi { irq_args.type() != TYPE_LEGACY };
 
 	if (msi) {
-		if (msi_alloc.get(_irq_number, 1)) {
+		if (msi_alloc().get(_irq_number, 1)) {
 			error("unavailable MSI ", _irq_number, " requested");
 			throw Service_denied();
 		}
-		msi_alloc.set(_irq_number, 1);
+		msi_alloc().set(_irq_number, 1);
 	} else {
 		if (irq_alloc.alloc_addr(1, _irq_number).failed()) {
 			error("unavailable IRQ ", _irq_number, " requested");
@@ -202,15 +209,13 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 		}
 	}
 
-	Irq_args const irq_args(args);
-
 	if (_irq_object.associate(_irq_number, msi, irq_args.trigger(),
 	                          irq_args.polarity()))
 		return;
 
 	/* cleanup */
 	if (msi)
-		msi_alloc.clear(_irq_number, 1);
+		msi_alloc().clear(_irq_number, 1);
 	else {
 		addr_t const free_irq = _irq_number;
 		_irq_alloc.free((void *)free_irq);
@@ -225,7 +230,7 @@ Irq_session_component::~Irq_session_component()
 		return;
 
 	if (_irq_object.msi_address()) {
-		msi_alloc.clear(_irq_number, 1);
+		msi_alloc().clear(_irq_number, 1);
 	} else {
 		addr_t const free_irq = _irq_number;
 		_irq_alloc.free((void *)free_irq);
@@ -239,7 +244,7 @@ void Irq_session_component::ack_irq()
 }
 
 
-void Irq_session_component::sigh(Genode::Signal_context_capability cap)
+void Irq_session_component::sigh(Signal_context_capability cap)
 {
 	_irq_object.sigh(cap);
 }
@@ -251,7 +256,7 @@ Irq_session::Info Irq_session_component::info()
 		return { .type = Info::Type::INVALID, .address = 0, .value = 0 };
 
 	return {
-		.type    = Genode::Irq_session::Info::Type::MSI,
+		.type    = Irq_session::Info::Type::MSI,
 		.address = (addr_t)_irq_object.msi_address(),
 		.value   = _irq_object.msi_value()
 	};

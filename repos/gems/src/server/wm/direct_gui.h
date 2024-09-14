@@ -25,24 +25,32 @@ class Wm::Direct_gui_session : public Genode::Rpc_object<Gui::Session>
 {
 	private:
 
-		Genode::Session_label _session_label;
-		Gui::Connection       _session;
+		Genode::Env &_env;
+
+		Genode::Session_label _label;
+
+		Genode::Connection<Gui::Session> _connection {
+			_env, _label, Genode::Ram_quota { 36*1024 }, /* Args */ { } };
+
+		Gui::Session_client _session { _connection.cap() };
+
+		using View_capability = Gui::View_capability;
+		using View_id         = Gui::View_id;
 
 	public:
 
 		/**
 		 * Constructor
 		 */
-		Direct_gui_session(Genode::Env &env, Genode::Session_label const &session_label)
+		Direct_gui_session(Genode::Env &env, Genode::Session_label const &label)
 		:
-			_session_label(session_label),
-			_session(env, _session_label.string())
+			_env(env), _label(label)
 		{ }
 
 		void upgrade(char const *args)
 		{
 			size_t const ram_quota = Arg_string::find_arg(args, "ram_quota").ulong_value(0);
-			_session.upgrade_ram(ram_quota);
+			_connection.upgrade_ram(ram_quota);
 		}
 
 
@@ -50,39 +58,44 @@ class Wm::Direct_gui_session : public Genode::Rpc_object<Gui::Session>
 		 ** GUI session interface **
 		 ***************************/
 		
-		Framebuffer::Session_capability framebuffer_session() override
+		Framebuffer::Session_capability framebuffer() override
 		{
-			return _session.framebuffer_session();
+			return _session.framebuffer();
 		}
 
-		Input::Session_capability input_session() override
+		Input::Session_capability input() override
 		{
-			return _session.input_session();
+			return _session.input();
 		}
 
-		View_handle create_view(View_handle parent) override
+		View_result view(View_id id, View_attr const &attr) override
 		{
-			return _session.create_view(parent);
+			return _session.view(id, attr);
 		}
 
-		void destroy_view(View_handle view) override
+		Child_view_result child_view(View_id id, View_id parent, View_attr const &attr) override
+		{
+			return _session.child_view(id, parent, attr);
+		}
+
+		void destroy_view(View_id view) override
 		{
 			_session.destroy_view(view);
 		}
 
-		View_handle view_handle(Gui::View_capability view_cap, View_handle handle) override
+		Associate_result associate(View_id id, View_capability view_cap) override
 		{
-			return _session.view_handle(view_cap, handle);
+			return _session.associate(id, view_cap);
 		}
 
-		Gui::View_capability view_capability(View_handle view) override
+		View_capability_result view_capability(View_id view) override
 		{
 			return _session.view_capability(view);
 		}
 
-		void release_view_handle(View_handle view) override
+		void release_view_id(View_id view) override
 		{
-			_session.release_view_handle(view);
+			_session.release_view_id(view);
 		}
 
 		Genode::Dataspace_capability command_dataspace() override
@@ -105,9 +118,9 @@ class Wm::Direct_gui_session : public Genode::Rpc_object<Gui::Session>
 			_session.mode_sigh(sigh);
 		}
 
-		void buffer(Framebuffer::Mode mode, bool use_alpha) override
+		Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) override
 		{
-			_session.buffer(mode, use_alpha);
+			return _session.buffer(mode, use_alpha);
 		}
 
 		void focus(Genode::Capability<Gui::Session> session) override

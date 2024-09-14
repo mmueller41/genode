@@ -455,8 +455,16 @@ Open_socket::Open_socket(char const * ip_addr, int tcp_port)
 
 Open_socket::~Open_socket()
 {
-	if (_sd != -1) close(_sd);
-	open_socket_pool()->remove(this);
+	Libc::with_libc([&] () {
+
+		if (_sd != -1)
+			close(_sd);
+
+		if (_listen_sd != -1)
+			close(_listen_sd);
+
+		open_socket_pool()->remove(this);
+	});
 }
 
 
@@ -592,7 +600,7 @@ class Terminal::Root_component : public Genode::Root_component<Session_component
 			Session_component *session = nullptr;
 
 			if (policy.has_attribute("ip")) {
-				typedef Genode::String<16> Ip;
+				using Ip = Genode::String<16>;
 				Ip ip_addr = policy.attribute_value("ip", Ip());
 				Libc::with_libc([&] () {
 					session = new (md_alloc())

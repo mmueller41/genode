@@ -1,6 +1,6 @@
-proc binary_name_ld_lib_so { } { return "ld-foc.lib.so" }
+proc binary_name_ld_lib_so { } { return "ld-foc.lib.so"      }
 proc binary_name_core_a    { } { return "core-foc-[board].a" }
-proc binary_name_timer     { } { return "foc_timer_drv" }
+proc binary_name_timer     { } { return "foc_timer"          }
 
 proc kernel_files { } { return { foc sigma0-foc bootstrap-foc } }
 
@@ -23,6 +23,8 @@ proc core_link_address { } {
 
 
 proc fiasco_serial_esc_arg { } { return "-serial_esc " }
+
+proc boot_output { } { return "serial" }
 
 
 ##
@@ -93,8 +95,7 @@ proc run_boot_dir_x86 {binaries} {
 	if {[have_include "image/iso"] || [have_include "image/disk"]} {
 
 		if {[have_include "image/disk"]} {
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
+			install_disk_bootloader_to_run_dir
 		}
 
 		if {[have_include "image/iso"]} {
@@ -102,16 +103,16 @@ proc run_boot_dir_x86 {binaries} {
 		}
 
 		#
-		# Generate grub config file
+		# Generate GRUB2 config file
 		#
+		set fh [create_header_grub2_config]
+
 		# The core binary is part of the 'binaries' list but it must
 		# appear right after 'sigma0' as boot module. Hence the special case.
 		#
-		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
-		puts $fh "set timeout=0"
 		puts $fh "menuentry 'Genode on Fiasco.OC' {"
 		puts $fh " insmod multiboot"
-		puts $fh " multiboot /boot/bender"
+		puts $fh " multiboot /boot/bender [boot_output]"
 		puts $fh " module /boot/bootstrap"
 		puts $fh " module /boot/kernel fiasco [fiasco_serial_esc_arg]"
 		puts $fh " module /boot/sigma0"
@@ -135,7 +136,7 @@ proc run_boot_dir_x86 {binaries} {
 		# Generate pulsar config file
 		#
 		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
-		puts $fh " exec /boot/bender"
+		puts $fh " exec /boot/bender [boot_output]"
 		puts $fh " load /boot/bootstrap"
 		puts $fh " load /boot/kernel -serial_esc"
 		puts $fh " load /boot/sigma0"
@@ -187,7 +188,7 @@ proc run_boot_dir_arm { binaries } {
 	exec mkdir -p [run_dir]/boot
 	exec mv [run_dir]/image.elf [run_dir]/boot/core.elf
 	exec cp [l4_bin_dir]/bootstrap.elf [run_dir]/boot/image.elf
-	run_image [run_dir]/boot/image.elf
+	run_image
 
 	puts "\nboot image: [run_dir]/image.elf\n"
 
@@ -199,7 +200,9 @@ proc run_boot_dir_arm { binaries } {
 		exec mkdir -p $tftp_base_dir$tftp_offset_dir
 		exec {*}[load_tftp_inst_cmd] [pwd]/[run_dir]/boot/image.elf $tftp_base_dir$tftp_offset_dir
 		if {[have_include "image/uboot"]} {
-			exec {*}[load_tftp_inst_cmd] [pwd]/[run_dir]/uImage $tftp_base_dir$tftp_offset_dir/uImage
+			exec {*}[load_tftp_inst_cmd] \
+				[file join [pwd] [run_dir] boot uImage] \
+				[file join $tftp_base_dir$tftp_offset_dir uImage]
 		}
 	}
 }

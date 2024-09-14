@@ -91,7 +91,7 @@ struct Menu_view::Depgraph_widget : Widget
 		void apply_layout_to_widget()
 		{
 			_widget.position(_widget_geometry.p1());
-			_widget.size(_widget_geometry.area());
+			_widget.size(_widget_geometry.area);
 		}
 
 		struct Dependency : Animator::Item
@@ -240,7 +240,7 @@ struct Menu_view::Depgraph_widget : Widget
 
 		unsigned depth_size(Depth_direction dir) const
 		{
-			return dir.horizontal() ? _widget.min_size().w() : _widget.min_size().h();
+			return dir.horizontal() ? _widget.min_size().w : _widget.min_size().h;
 		}
 
 		/**
@@ -263,7 +263,7 @@ struct Menu_view::Depgraph_widget : Widget
 		unsigned breadth_size(Depth_direction dir) const
 		{
 			unsigned const widget_size =
-				dir.horizontal() ? _widget.min_size().h() : _widget.min_size().w();
+				dir.horizontal() ? _widget.min_size().h : _widget.min_size().w;
 
 			unsigned const breadth_padding = 10;
 
@@ -420,8 +420,8 @@ struct Menu_view::Depgraph_widget : Widget
 		}
 	};
 
-	typedef Registered<Node>          Registered_node;
-	typedef Registry<Registered_node> Node_registry;
+	using Registered_node = Registered<Node>;
+	using Node_registry   = Registry<Registered_node>;
 
 	Node_registry _nodes { };
 
@@ -442,85 +442,18 @@ struct Menu_view::Depgraph_widget : Widget
 		fn(_root_node);
 	}
 
-	/**
-	 * Customized model-update policy that augments the list of child widgets
-	 * with their graph-node topology
-	 */
-	struct Model_update_policy : List_model<Widget>::Update_policy
-	{
-		Widget::Model_update_policy &_generic_model_update_policy;
-		Allocator                   &_alloc;
-		Animator                    &_animator;
-		Node_registry               &_nodes;
-
-		Model_update_policy(Widget::Model_update_policy &policy,
-		                    Allocator &alloc, Animator &animator,
-		                    Node_registry &nodes)
-		:
-			_generic_model_update_policy(policy),
-			_alloc(alloc), _animator(animator), _nodes(nodes)
-		{ }
-
-		void _destroy_node(Registered_node &node)
-		{
-			/*
-			 * If a server node vanishes, disconnect all client nodes. The
-			 * nodes will be reconnected - if possible - after the model
-			 * update.
-			 */
-			node.for_each_dependent_node([&] (Node &dependent) {
-				dependent.cut_dependencies(); });
-
-			Widget &w = node._widget;
-			destroy(_alloc, &node);
-			_generic_model_update_policy.destroy_element(w);
-		}
-
-		void destroy_element(Widget &w)
-		{
-			_nodes.for_each([&] (Registered_node &node) {
-				if (node.belongs_to(w))
-					_destroy_node(node); });
-		}
-
-		/* do not import <dep> nodes as widgets */
-		bool node_is_element(Xml_node node) { return !node.has_type("dep"); }
-
-		Widget &create_element(Xml_node elem_node)
-		{
-			Widget &w = _generic_model_update_policy.create_element(elem_node);
-			new (_alloc) Registered_node(_nodes, _alloc, w, _animator);
-			return w;
-		}
-
-		void update_element(Widget &w, Xml_node elem_node)
-		{
-			_generic_model_update_policy.update_element(w, elem_node);
-		}
-
-		static bool element_matches_xml_node(Widget const &w, Xml_node node)
-		{
-			return Widget::Model_update_policy::element_matches_xml_node(w, node);
-		}
-
-	} _model_update_policy { Widget::_model_update_policy,
-	                         _factory.alloc, _factory.animator, _nodes };
-
 	Depgraph_widget(Widget_factory &factory, Xml_node node, Unique_id unique_id)
 	:
 		Widget(factory, node, unique_id)
 	{ }
 
-	~Depgraph_widget()
-	{
-		_children.destroy_all_elements(_model_update_policy);
-	}
+	~Depgraph_widget() { _update_children(Xml_node("<empty/>")); }
 
 	void update(Xml_node node) override
 	{
 		/* update depth direction */
 		{
-			typedef String<10> Dir_name;
+			using Dir_name = String<10>;
 			Dir_name dir_name = node.attribute_value("direction", Dir_name());
 			_depth_direction = { Depth_direction::EAST };
 			if (dir_name == "north") _depth_direction = { Depth_direction::NORTH };
@@ -529,7 +462,49 @@ struct Menu_view::Depgraph_widget : Widget
 			if (dir_name == "west")  _depth_direction = { Depth_direction::WEST  };
 		}
 
-		_children.update_from_xml(_model_update_policy, node);
+		_update_children(node);
+	}
+
+	void _update_children(Xml_node const &node)
+	{
+		Allocator &alloc = _factory.alloc;
+
+		_children.update_from_xml(node,
+
+			/* create */
+			[&] (Xml_node const &node) -> Widget &
+			{
+				Widget &w = _factory.create(node);
+				new (alloc) Registered_node(_nodes, alloc, w, _factory.animator);
+				return w;
+			},
+
+			/* destroy */
+			[&] (Widget &w)
+			{
+				auto destroy_node = [&] (Registered_node &node)
+				{
+					/*
+					 * If a server node vanishes, disconnect all client nodes. The
+					 * nodes will be reconnected - if possible - after the model
+					 * update.
+					 */
+					node.for_each_dependent_node([&] (Node &dependent) {
+						dependent.cut_dependencies(); });
+
+					Widget &w = node._widget;
+					destroy(alloc, &node);
+					_factory.destroy(&w);
+				};
+
+				_nodes.for_each([&] (Registered_node &node) {
+					if (node.belongs_to(w))
+						destroy_node(node); });
+			},
+
+			/* update */
+			[&] (Widget &w, Xml_node const &node) { w.update(node); }
+		);
 
 		/*
 		 * Import dependencies
@@ -541,7 +516,7 @@ struct Menu_view::Depgraph_widget : Widget
 
 			bool const primary = !node.has_type("dep");
 
-			typedef String<64> Node_name;
+			using Node_name = String<64>;
 			Node_name client_name, server_name;
 			bool dep_visible = true;
 			if (primary) {
@@ -641,7 +616,7 @@ struct Menu_view::Depgraph_widget : Widget
 		});
 	}
 
-	Area min_size() const override { return _bounding_box.area(); }
+	Area min_size() const override { return _bounding_box.area; }
 
 	void _draw_connect(Surface<Pixel_rgb888> &pixel_surface,
 	                   Surface<Pixel_alpha8> &alpha_surface,
@@ -660,17 +635,19 @@ struct Menu_view::Depgraph_widget : Widget
 			line_painter.paint(alpha_surface, fx1, fy1, fx2, fy2, color);
 		};
 
-		long const mid_x = (p1.x() + p2.x()) / 2,
-		           mid_y = (p1.y() + p2.y()) / 2;
+		long const mid_x = (p1.x + p2.x) / 2,
+		           mid_y = (p1.y + p2.y) / 2;
 
-		long const x1 = p1.x(),
-		           y1 = p1.y(),
-		           x2 = horizontal ? mid_x  : p1.x(),
-		           y2 = horizontal ? p1.y() : mid_y,
-		           x3 = horizontal ? mid_x  : p2.x(),
-		           y3 = horizontal ? p2.y() : mid_y,
-		           x4 = p2.x(),
-		           y4 = p2.y();
+		long const x1 = p1.x,
+		           y1 = p1.y,
+		           x2 = horizontal ? mid_x : p1.x,
+		           y2 = horizontal ? p1.y  : mid_y,
+		           x3 = horizontal ? mid_x : p2.x,
+		           y3 = horizontal ? p2.y  : mid_y,
+		           x4 = p2.x,
+		           y4 = p2.y;
+
+		auto abs = [] (auto v) { return v >= 0 ? v : -v; };
 
 		/* subdivide the curve depending on the size of its bounding box */
 		unsigned const levels = (unsigned)max(log2(max(abs(x4 - x1), abs(y4 - y1)) >> 2), 3);
@@ -693,12 +670,14 @@ struct Menu_view::Depgraph_widget : Widget
 
 				Color color;
 
+				auto dimmed_alpha = [&] (uint8_t s) { return uint8_t((s*alpha) >> 8); };
+
 				if (shadow) {
-					color = dep.primary() ? Color(0, 0, 0, (150*alpha)>>8)
-					                      : Color(0, 0, 0,  (50*alpha)>>8);
+					color = dep.primary() ? Color { 0, 0, 0, dimmed_alpha(150) }
+					                      : Color { 0, 0, 0, dimmed_alpha(50) };
 				} else {
-					color = dep.primary() ? Color(255, 255, 255, (190*alpha)>>8)
-					                      : Color(255, 255, 255, (120*alpha)>>8);
+					color = dep.primary() ? Color { 255, 255, 255, dimmed_alpha(190) }
+					                      : Color { 255, 255, 255, dimmed_alpha(120) };
 				}
 
 				dep.apply_to_server([&] (Node const &server) {
@@ -757,7 +736,7 @@ struct Menu_view::Depgraph_widget : Widget
 		 * Prompt each child to update its layout
 		 */
 		_children.for_each([&] (Widget &w) {
-			w.size(w.geometry().area()); });
+			w.size(w.geometry().area); });
 	}
 };
 

@@ -68,7 +68,8 @@ struct Net::Interface_object_stats
 	Genode::size_t alive     { 0 };
 	Genode::size_t destroyed { 0 };
 
-	void report(Genode::Xml_generator &xml);
+	bool report_empty() const;
+	void report(Genode::Xml_generator &xml) const;
 
 	~Interface_object_stats();
 };
@@ -89,13 +90,14 @@ struct Net::Interface_link_stats
 	Genode::size_t dissolved_no_timeout      { 0 };
 	Genode::size_t destroyed                 { 0 };
 
-	void report(Genode::Xml_generator &xml);
+	bool report_empty() const;
+	void report(Genode::Xml_generator &xml) const;
 
 	~Interface_link_stats();
 };
 
 
-struct Net::Interface_policy
+struct Net::Interface_policy : Genode::Interface
 {
 	virtual Domain_name determine_domain_name() const = 0;
 
@@ -107,7 +109,9 @@ struct Net::Interface_policy
 
 	virtual bool interface_link_state() const = 0;
 
-	virtual void report(Genode::Xml_generator &) const { throw Report::Empty(); }
+	virtual bool report_empty() const = 0;
+
+	virtual void report(Genode::Xml_generator &) const = 0;
 
 	virtual ~Interface_policy() { }
 };
@@ -124,10 +128,7 @@ class Net::Interface : private Interface_list::Element
 		using Signal_context_capability = Genode::Signal_context_capability;
 
 		enum { IPV4_TIME_TO_LIVE          = 64 };
-		enum { MAX_FREE_OPS_PER_EMERGENCY = 1024 };
-
-		struct Dismiss_link       : Genode::Exception { };
-		struct Dismiss_arp_waiter : Genode::Exception { };
+		enum { MAX_FREE_OPS_PER_EMERGENCY = 100 };
 
 		struct Update_domain
 		{
@@ -147,12 +148,13 @@ class Net::Interface : private Interface_list::Element
 		Signal_handler                        _pkt_stream_signal_handler;
 		Mac_address                    const  _router_mac;
 		Mac_address                    const  _mac;
-		Reference<Configuration>              _config;
+		Configuration                        *_config_ptr;
 		Interface_policy                     &_policy;
 		Cached_timer                         &_timer;
 		Genode::Allocator                    &_alloc;
-		Pointer<Domain>                       _domain                    { };
+		Domain                               *_domain_ptr                { };
 		Arp_waiter_list                       _own_arp_waiters           { };
+		Arp_waiter_list                       _timed_out_arp_waiters     { };
 		Link_list                             _tcp_links                 { };
 		Link_list                             _udp_links                 { };
 		Link_list                             _icmp_links                { };
@@ -171,11 +173,19 @@ class Net::Interface : private Interface_list::Element
 		Interface_object_stats                _dhcp_stats                { };
 		unsigned long                         _dropped_fragm_ipv4        { 0 };
 
-		void _new_link(L3_protocol             const  protocol,
-		               Link_side_id            const &local_id,
-		               Pointer<Port_allocator_guard>  remote_port_alloc,
-		               Domain                        &remote_domain,
-		               Link_side_id            const &remote_id);
+		/*
+		 * Noncopyable
+		 */
+		Interface(Interface const &);
+		Interface &operator = (Interface const &);
+
+		[[nodiscard]] Packet_result _new_link(L3_protocol         const  protocol,
+		                                     void                *const  prot_base,
+		                                     Domain                     &local_domain,
+		                                     Link_side_id         const &local_id,
+		                                     Port_allocator_guard       *remote_port_alloc_ptr,
+		                                     Domain                     &remote_domain,
+		                                     Link_side_id         const &remote_id);
 
 		void _destroy_released_dhcp_allocations(Domain &local_domain);
 
@@ -185,10 +195,14 @@ class Net::Interface : private Interface_list::Element
 		void _release_dhcp_allocation(Dhcp_allocation &allocation,
 		                              Domain          &local_domain);
 
-		void _new_dhcp_allocation(Ethernet_frame &eth,
-		                          Dhcp_packet    &dhcp,
-		                          Dhcp_server    &dhcp_srv,
-		                          Domain         &local_domain);
+		void _try_emergency_free_quota();
+
+		void _destroy_timed_out_arp_waiters();
+
+		[[nodiscard]] Packet_result _new_dhcp_allocation(Ethernet_frame &eth,
+		                                                Dhcp_packet    &dhcp,
+		                                                Dhcp_server    &dhcp_srv,
+		                                                Domain         &local_domain);
 
 		void _send_dhcp_reply(Dhcp_server               const &dhcp_srv,
 		                      Mac_address               const &eth_dst,
@@ -204,84 +218,79 @@ class Net::Interface : private Interface_list::Element
 		                           Genode::size_t  icmp_sz,
 		                           Size_guard     &size_guard);
 
-		Forward_rule_tree &_forward_rules(Domain            &local_domain,
-		                                  L3_protocol const  prot) const;
-
-		Transport_rule_list &_transport_rules(Domain            &local_domain,
-		                                      L3_protocol const  prot) const;
-
-		void _handle_arp(Ethernet_frame       &eth,
-		                 Size_guard           &size_guard,
-		                 Domain               &local_domain);
+		[[nodiscard]] Packet_result _handle_arp(Ethernet_frame       &eth,
+		                                       Size_guard           &size_guard,
+		                                       Domain               &local_domain);
 
 		void _handle_arp_reply(Ethernet_frame       &eth,
 		                       Size_guard           &size_guard,
 		                       Arp_packet           &arp,
 		                       Domain               &local_domain);
 
-		void _handle_arp_request(Ethernet_frame       &eth,
-		                         Size_guard           &size_guard,
-		                         Arp_packet           &arp,
-		                         Domain               &local_domain);
+		[[nodiscard]] Packet_result _handle_arp_request(Ethernet_frame       &eth,
+		                                               Size_guard           &size_guard,
+		                                               Arp_packet           &arp,
+		                                               Domain               &local_domain);
 
 		void _send_arp_reply(Ethernet_frame &request_eth,
 		                     Arp_packet     &request_arp);
 
-		void _handle_dhcp_request(Ethernet_frame            &eth,
-		                          Dhcp_packet               &dhcp,
-		                          Domain                    &local_domain,
-		                          Ipv4_address_prefix const &local_intf);
+		[[nodiscard]] Packet_result _handle_dhcp_request(Ethernet_frame            &eth,
+		                                                Dhcp_server               &dhcp_srv,
+		                                                Dhcp_packet               &dhcp,
+		                                                Domain                    &local_domain,
+		                                                Ipv4_address_prefix const &local_intf);
 
-		void _handle_ip(Ethernet_frame          &eth,
-		                Size_guard              &size_guard,
-		                Packet_descriptor const &pkt,
-		                Domain                  &local_domain);
+		[[nodiscard]] Packet_result _handle_ip(Ethernet_frame          &eth,
+		                                      Size_guard              &size_guard,
+		                                      Packet_descriptor const &pkt,
+		                                      Domain                  &local_domain);
 
-		void _handle_icmp_query(Ethernet_frame          &eth,
-		                        Size_guard              &size_guard,
-		                        Ipv4_packet             &ip,
-		                        Internet_checksum_diff  &ip_icd,
-		                        Packet_descriptor const &pkt,
-		                        L3_protocol              prot,
-		                        void                    *prot_base,
-		                        Genode::size_t           prot_size,
-		                        Domain                  &local_domain);
+		[[nodiscard]] Packet_result _handle_icmp_query(Ethernet_frame          &eth,
+		                                Size_guard              &size_guard,
+		                                Ipv4_packet             &ip,
+		                                Internet_checksum_diff  &ip_icd,
+		                                Packet_descriptor const &pkt,
+		                                L3_protocol              prot,
+		                                void                    *prot_base,
+		                                Genode::size_t           prot_size,
+		                                Domain                  &local_domain);
 
-		void _handle_icmp_error(Ethernet_frame          &eth,
-		                        Size_guard              &size_guard,
-		                        Ipv4_packet             &ip,
-		                        Internet_checksum_diff  &ip_icd,
-		                        Packet_descriptor const &pkt,
-		                        Domain                  &local_domain,
-		                        Icmp_packet             &icmp,
-		                        Genode::size_t           icmp_sz);
+		[[nodiscard]] Packet_result _handle_icmp_error(Ethernet_frame          &eth,
+		                                              Size_guard              &size_guard,
+		                                              Ipv4_packet             &ip,
+		                                              Internet_checksum_diff  &ip_icd,
+		                                              Packet_descriptor const &pkt,
+		                                              Domain                  &local_domain,
+		                                              Icmp_packet             &icmp,
+		                                              Genode::size_t           icmp_sz);
 
-		void _handle_icmp(Ethernet_frame            &eth,
-		                  Size_guard                &size_guard,
-		                  Ipv4_packet               &ip,
-		                  Internet_checksum_diff    &ip_icd,
-		                  Packet_descriptor   const &pkt,
-		                  L3_protocol                prot,
-		                  void                      *prot_base,
-		                  Genode::size_t             prot_size,
-		                  Domain                    &local_domain,
-		                  Ipv4_address_prefix const &local_intf);
+		[[nodiscard]] Packet_result _handle_icmp(Ethernet_frame            &eth,
+		                                        Size_guard                &size_guard,
+		                                        Ipv4_packet               &ip,
+		                                        Internet_checksum_diff    &ip_icd,
+		                                        Packet_descriptor   const &pkt,
+		                                        L3_protocol                prot,
+		                                        void                      *prot_base,
+		                                        Genode::size_t             prot_size,
+		                                        Domain                    &local_domain,
+		                                        Ipv4_address_prefix const &local_intf);
 
-		void _adapt_eth(Ethernet_frame          &eth,
-		                Ipv4_address      const &dst_ip,
-		                Packet_descriptor const &pkt,
-		                Domain                  &remote_domain);
+		[[nodiscard]] Packet_result _adapt_eth(Ethernet_frame          &eth,
+		                                      Ipv4_address      const &dst_ip,
+		                                      Packet_descriptor const &pkt,
+		                                      Domain                  &remote_domain);
 
-		void _nat_link_and_pass(Ethernet_frame         &eth,
-		                        Size_guard             &size_guard,
-		                        Ipv4_packet            &ip,
-		                        Internet_checksum_diff &ip_icd,
-		                        L3_protocol      const  prot,
-		                        void            *const  prot_base,
-		                        Genode::size_t   const  prot_size,
-		                        Link_side_id     const &local_id,
-		                        Domain                 &local_domain,
-		                        Domain                 &remote_domain);
+		[[nodiscard]] Packet_result _nat_link_and_pass(Ethernet_frame         &eth,
+		                                              Size_guard             &size_guard,
+		                                              Ipv4_packet            &ip,
+		                                              Internet_checksum_diff &ip_icd,
+		                                              L3_protocol      const  prot,
+		                                              void            *const  prot_base,
+		                                              Genode::size_t   const  prot_size,
+		                                              Link_side_id     const &local_id,
+		                                              Domain                 &local_domain,
+		                                              Domain                 &remote_domain);
 
 		void _broadcast_arp_request(Ipv4_address const &src_ip,
 		                            Ipv4_address const &dst_ip);
@@ -301,19 +310,20 @@ class Net::Interface : private Interface_list::Element
 
 		void _handle_pkt();
 
-		void _continue_handle_eth(Domain            const &domain,
-		                          Packet_descriptor const &pkt);
+		void _continue_handle_eth(Packet_descriptor const &pkt);
 
 		Ipv4_address const &_router_ip() const;
 
-		void _handle_eth(void              *const  eth_base,
-		                 Size_guard               &size_guard,
-		                 Packet_descriptor  const &pkt);
+		void _drop_packet(Packet_descriptor const &pkt, char const *reason);
 
-		void _handle_eth(Ethernet_frame           &eth,
-		                 Size_guard               &size_guard,
-		                 Packet_descriptor  const &pkt,
-		                 Domain                   &local_domain);
+		[[nodiscard]] Packet_result _handle_eth(void              *const  eth_base,
+		                                       Size_guard               &size_guard,
+		                                       Packet_descriptor  const &pkt);
+
+		[[nodiscard]] Packet_result _handle_eth(Ethernet_frame           &eth,
+		                                       Size_guard               &size_guard,
+		                                       Packet_descriptor  const &pkt,
+		                                       Domain                   &local_domain);
 
 		void _ack_packet(Packet_descriptor const &pkt);
 
@@ -331,15 +341,12 @@ class Net::Interface : private Interface_list::Element
 
 		void _update_icmp_links(Domain &cln_dom);
 
-		void _update_link_check_nat(Link        &link,
-		                            Domain      &new_srv_dom,
-		                            L3_protocol  prot,
-		                            Domain      &cln_dom);
+		bool _try_update_link(Link        &link,
+		                      Domain      &new_srv_dom,
+		                      L3_protocol  prot,
+		                      Domain      &cln_dom);
 
-		void _dismiss_link_log(Link       &link,
-		                       char const *reason);
-
-		void _destroy_link(Link &link);
+		void _dismiss_link(Link &link);
 
 		void _update_domain_object(Domain &new_domain);
 
@@ -372,20 +379,6 @@ class Net::Interface : private Interface_list::Element
 
 	public:
 
-		struct Free_resources_and_retry_handle_eth : Genode::Exception { L3_protocol prot; Free_resources_and_retry_handle_eth(L3_protocol prot = (L3_protocol)0) : prot(prot) { } };
-		struct Bad_send_dhcp_args                  : Genode::Exception { };
-		struct Bad_transport_protocol              : Genode::Exception { };
-		struct Bad_network_protocol                : Genode::Exception { };
-		struct Packet_postponed                    : Genode::Exception { };
-		struct Alloc_dhcp_msg_buffer_failed        : Genode::Exception { };
-
-		struct Drop_packet : Genode::Exception
-		{
-			char const *reason;
-
-			Drop_packet(char const *reason) : reason(reason) { }
-		};
-
 		Interface(Genode::Entrypoint     &ep,
 		          Cached_timer           &timer,
 		          Mac_address      const  router_mac,
@@ -401,8 +394,7 @@ class Net::Interface : private Interface_list::Element
 
 		void dhcp_allocation_expired(Dhcp_allocation &allocation);
 
-		template <typename FUNC>
-		void send(Genode::size_t pkt_size, FUNC && write_to_pkt)
+		void send(Genode::size_t pkt_size, auto const &write_to_pkt)
 		{
 			if (!link_state()) {
 				_failed_to_send_packet_link();
@@ -457,20 +449,34 @@ class Net::Interface : private Interface_list::Element
 
 		void handle_interface_link_state();
 
-		void report(Genode::Xml_generator &xml);
+		bool report_empty(Report const &report_cfg) const;
+
+		void report(Genode::Xml_generator &xml, Report const &report_cfg) const;
 
 		void handle_domain_ready_state(bool state);
+
+		void destroy_link(Link &link);
+
+		void with_domain(auto const &domain_fn, auto const &no_domain_fn)
+		{
+			if (_domain_ptr)
+				domain_fn(*_domain_ptr);
+			else
+				no_domain_fn();
+		}
+
+		void with_domain(auto const &fn) { with_domain(fn, []{}); }
 
 
 		/***************
 		 ** Accessors **
 		 ***************/
 
-		Configuration       const &config()                    const { return _config(); }
-		Domain                    &domain()                          { return _domain(); }
+		Configuration       const &config()                    const { return *_config_ptr; }
 		Mac_address         const &router_mac()                const { return _router_mac; }
 		Mac_address         const &mac()                       const { return _mac; }
 		Arp_waiter_list           &own_arp_waiters()                 { return _own_arp_waiters; }
+		Arp_waiter_list           &timed_out_arp_waiters()           { return _timed_out_arp_waiters; }
 		Signal_context_capability  pkt_stream_signal_handler() const { return _pkt_stream_signal_handler; }
 		Interface_link_stats      &udp_stats()                       { return _udp_stats; }
 		Interface_link_stats      &tcp_stats()                       { return _tcp_stats; }

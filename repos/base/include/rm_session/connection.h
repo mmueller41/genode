@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2008-2018 Genode Labs GmbH
+ * Copyright (C) 2008-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -21,38 +21,35 @@
 namespace Genode { struct Rm_connection; }
 
 
-struct Genode::Rm_connection : Connection<Rm_session>, Rm_session_client
+struct Genode::Rm_connection : Connection<Rm_session>
 {
-	enum { RAM_QUOTA = 64*1024 };
+	Rm_session_client _client { cap() };
 
-	/**
-	 * Constructor
-	 */
 	Rm_connection(Env &env)
 	:
-		Connection<Rm_session>(env, session(env.parent(), "ram_quota=%u, cap_quota=%u",
-		                       RAM_QUOTA, CAP_QUOTA)),
-		Rm_session_client(cap())
+		Connection<Rm_session>(env, {}, Ram_quota { 64*1024 }, Args())
 	{ }
 
 	/**
-	 * Wrapper over 'create' that handles resource requests
-	 * from the server.
+	 * Wrapper of 'create' that handles session-quota upgrades on demand
 	 */
-	Capability<Region_map> create(size_t size) override
+	Capability<Region_map> create(size_t size)
 	{
-		enum { UPGRADE_ATTEMPTS = 16U };
-
-		return Genode::retry<Out_of_ram>(
-			[&] () {
-				return Genode::retry<Out_of_caps>(
-					[&] () { return Rm_session_client::create(size); },
-					[&] () { upgrade_caps(2); },
-					UPGRADE_ATTEMPTS);
-			},
-			[&] () { upgrade_ram(8*1024); },
-			UPGRADE_ATTEMPTS);
+		Capability<Region_map> result { };
+		using Error = Rm_session::Create_error;
+		while (!result.valid())
+			_client.create(size).with_result(
+				[&] (Capability<Region_map> cap) { result = cap; },
+				[&] (Error e) {
+					switch (e) {
+					case Error::OUT_OF_RAM:  upgrade_ram(8*1024); break;
+					case Error::OUT_OF_CAPS: upgrade_caps(2);     break;
+					}
+				});
+		return result;
 	}
+
+	void destroy(Capability<Region_map> cap) { _client.destroy(cap); }
 };
 
 #endif /* _INCLUDE__RM_SESSION__CONNECTION_H_ */

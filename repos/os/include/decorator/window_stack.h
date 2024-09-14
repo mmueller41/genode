@@ -79,14 +79,13 @@ class Decorator::Window_stack : public Window_base::Draw_behind_fn
 			Dirty_rect result = _dirty_rect;
 
 			_dirty_rect.flush([&] (Rect const &rect) {
-				_windows.apply_first([&] (Window_base const &first) {
+				_windows.with_first([&] (Window_base const &first) {
 					_draw_rec(canvas, &first, rect); }); });
 
 			return result;
 		}
 
-		template <typename FN>
-		inline void update_model(Xml_node root_node, FN const &flush);
+		inline void update_model(Xml_node root_node, auto const &flush_fn);
 
 		bool schedule_animated_windows()
 		{
@@ -107,8 +106,7 @@ class Decorator::Window_stack : public Window_base::Draw_behind_fn
 		 *
 		 * The functor is called with 'Window_base &' as argument.
 		 */
-		template <typename FUNC>
-		void for_each_window(FUNC const &func) { _windows.for_each(func); }
+		void for_each_window(auto const &fn) { _windows.for_each(fn); }
 
 		void update_gui_views()
 		{
@@ -172,13 +170,13 @@ void Decorator::Window_stack::_draw_rec(Decorator::Canvas_base       &canvas,
 
 	/* draw areas around the current window */
 	if (Window_base const * const next = win->next()) {
-		Rect top, left, right, bottom;
-		rect.cut(clipped, &top, &left, &right, &bottom);
 
-		if (top.valid())    _draw_rec(canvas, next, top);
-		if (left.valid())   _draw_rec(canvas, next, left);
-		if (right.valid())  _draw_rec(canvas, next, right);
-		if (bottom.valid()) _draw_rec(canvas, next, bottom);
+		Rect::Cut_remainder const r = rect.cut(clipped);
+
+		if (r.top.valid())    _draw_rec(canvas, next, r.top);
+		if (r.left.valid())   _draw_rec(canvas, next, r.left);
+		if (r.right.valid())  _draw_rec(canvas, next, r.right);
+		if (r.bottom.valid()) _draw_rec(canvas, next, r.bottom);
 	}
 
 	/* draw current window */
@@ -186,38 +184,19 @@ void Decorator::Window_stack::_draw_rec(Decorator::Canvas_base       &canvas,
 }
 
 
-template <typename FN>
 void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
-                                           FN const &flush_window_stack_changes)
+                                           auto const &flush_window_stack_changes_fn)
 {
 	Abandoned_windows _abandoned_windows { };
 
-	struct Update_policy : List_model<Window_base>::Update_policy
-	{
-		Abandoned_windows   &_abandoned_windows;
-		Window_factory_base &_window_factory;
-		Dirty_rect          &_dirty_rect;
+	_windows.update_from_xml(root_node,
 
-		Update_policy(Abandoned_windows   &abandoned_windows,
-		              Window_factory_base &window_factory,
-		              Dirty_rect          &dirty_rect)
-		:
-			_abandoned_windows(abandoned_windows),
-			_window_factory(window_factory),
-			_dirty_rect(dirty_rect)
-		{ }
+		[&] (Xml_node const &node) -> Window_base & {
+			return *_window_factory.create(node); },
 
-		void destroy_element(Window_base &window)
-		{
-			window.abandon(_abandoned_windows);
-		}
+		[&] (Window_base &window) { window.abandon(_abandoned_windows); },
 
-		Window_base &create_element(Xml_node node)
-		{
-			return *_window_factory.create(node);
-		}
-
-		void update_element(Window_base &window, Xml_node node)
+		[&] (Window_base &window, Xml_node const &node)
 		{
 			Rect const orig_geometry = window.outer_geometry();
 
@@ -226,18 +205,7 @@ void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
 				_dirty_rect.mark_as_dirty(window.outer_geometry());
 			}
 		}
-
-		static bool element_matches_xml_node(Window_base const &elem, Xml_node node)
-		{
-			return elem.id() == node.attribute_value("id", ~0UL);
-		}
-
-		static bool node_is_element(Xml_node) { return true; }
-	};
-
-	Update_policy policy { _abandoned_windows, _window_factory, _dirty_rect };
-
-	_windows.update_from_xml(policy, root_node);
+	);
 
 	unsigned long new_front_most_id = ~0UL;
 	if (root_node.has_sub_node("window"))
@@ -259,7 +227,7 @@ void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
 
 	auto stack_back_most_window = [&] (Window_base &window) {
 
-		if (window.stacked())
+		if (window.back_most())
 			return;
 
 		if (new_front_most_window(window))
@@ -272,7 +240,7 @@ void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
 
 	auto stack_window = [&] (Window_base &window, Window_base &neighbor) {
 
-		if (window.stacked() && window.in_front_of(neighbor))
+		if (window.in_front_of(neighbor))
 			return;
 
 		if (new_front_most_window(window))
@@ -289,7 +257,7 @@ void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
 		reversed.remove(back_most);
 		Window_base &window = *back_most->object();
 		stack_back_most_window(window);
-		window.stacking_neighbor(Window_base::View_handle());
+		window.stacking_neighbor(Gui::View_id());
 
 		Window_base *neighbor = &window;
 
@@ -309,7 +277,7 @@ void Decorator::Window_stack::update_model(Genode::Xml_node root_node,
 	 * Apply window-creation operations before destroying windows to prevent
 	 * flickering.
 	 */
-	flush_window_stack_changes();
+	flush_window_stack_changes_fn();
 
 	/*
 	 * Destroy abandoned window objects

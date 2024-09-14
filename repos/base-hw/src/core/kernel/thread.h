@@ -14,12 +14,10 @@
 #ifndef _CORE__KERNEL__THREAD_H_
 #define _CORE__KERNEL__THREAD_H_
 
-
 /* Genode includes */
 #include <base/signal.h>
-#include <util/reconstructible.h>
 
-/* base-hw Core includes */
+/* base-hw core includes */
 #include <kernel/cpu_context.h>
 #include <kernel/inter_processor_work.h>
 #include <kernel/signal_receiver.h>
@@ -61,6 +59,8 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 
 		enum Type { USER, CORE, IDLE };
 
+		enum Exception_state { NO_EXCEPTION, MMU_FAULT, EXCEPTION };
+
 	private:
 
 		/*
@@ -92,7 +92,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 			 ** Inter_processor_work interface **
 			 ************************************/
 
-			void execute() override;
+			void execute(Cpu &) override;
 		};
 
 		/**
@@ -101,7 +101,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 */
 		struct Destroy : Inter_processor_work
 		{
-			using Kthread = Genode::Kernel_object<Thread>;
+			using Kthread = Core::Kernel_object<Thread>;
 
 			Thread  & caller; /* the caller gets blocked till the end */
 			Kthread & thread_to_destroy; /* thread to be destroyed */
@@ -112,11 +112,40 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 			 ** Inter_processor_work interface **
 			 ************************************/
 
-			void execute() override;
+			void execute(Cpu &) override;
 		};
 
-		friend void Tlb_invalidation::execute();
-		friend void Destroy::execute();
+		/**
+		 * Flush and stop CPU, e.g. before suspending or powering off the CPU
+		 */
+		struct Flush_and_stop_cpu : Inter_processor_work
+		{
+			Inter_processor_work_list &global_work_list;
+			unsigned                   cpus_left;
+			Hw::Suspend_type           suspend;
+
+			Flush_and_stop_cpu(Inter_processor_work_list &global_work_list,
+			                   unsigned cpus, Hw::Suspend_type suspend)
+			:
+				global_work_list(global_work_list),
+				cpus_left(cpus),
+				suspend(suspend)
+			{
+				global_work_list.insert(&_le);
+			}
+
+			~Flush_and_stop_cpu() { global_work_list.remove(&_le); }
+
+			/************************************
+			 ** Inter_processor_work interface **
+			 ************************************/
+
+			void execute(Cpu &) override;
+		};
+
+		friend void Tlb_invalidation::execute(Cpu &);
+		friend void Destroy::execute(Cpu &);
+		friend void Flush_and_stop_cpu::execute(Cpu &);
 
 	protected:
 
@@ -154,9 +183,11 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		bool                               _paused                   { false };
 		bool                               _cancel_next_await_signal { false };
 		Type const                         _type;
+		Exception_state                    _exception_state          { NO_EXCEPTION };
 
-		Genode::Constructible<Tlb_invalidation> _tlb_invalidation {};
-		Genode::Constructible<Destroy>          _destroy {};
+		Genode::Constructible<Tlb_invalidation>   _tlb_invalidation {};
+		Genode::Constructible<Destroy>            _destroy {};
+		Genode::Constructible<Flush_and_stop_cpu> _stop_cpu {};
 
 		/**
 		 * Notice that another thread yielded the CPU to this thread
@@ -206,6 +237,11 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void _mmu_exception();
 
 		/**
+		 * Handle a non-mmu exception
+		 */
+		void _exception();
+
+		/**
 		 * Handle kernel-call request of the thread
 		 */
 		void _call();
@@ -242,6 +278,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void _call_cache_coherent_region();
 		void _call_cache_clean_invalidate_data_region();
 		void _call_cache_invalidate_data_region();
+		void _call_cache_line_size();
 		void _call_print_char();
 		void _call_await_signal();
 		void _call_pending_signal();
@@ -264,22 +301,24 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void _call_timeout();
 		void _call_timeout_max_us();
 		void _call_time();
+		void _call_suspend();
+		void _call_get_cpu_state();
+		void _call_set_cpu_state();
+		void _call_exception_state();
+		void _call_single_step();
 
-		template <typename T, typename... ARGS>
-		void _call_new(ARGS &&... args)
+		template <typename T>
+		void _call_new(auto &&... args)
 		{
-			Genode::Kernel_object<T> & kobj =
-				*(Genode::Kernel_object<T>*)user_arg_1();
+			Core::Kernel_object<T> & kobj = *(Core::Kernel_object<T>*)user_arg_1();
 			kobj.construct(_core_pd, args...);
 			user_arg_0(kobj->core_capid());
 		}
 
-
 		template <typename T>
 		void _call_delete()
 		{
-			Genode::Kernel_object<T> & kobj =
-				*(Genode::Kernel_object<T>*)user_arg_1();
+			Core::Kernel_object<T> & kobj = *(Core::Kernel_object<T>*)user_arg_1();
 			kobj.destruct();
 		}
 
@@ -289,7 +328,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 
 	public:
 
-		Genode::Align_at<Genode::Cpu::Context> regs;
+		Genode::Align_at<Core::Cpu::Context> regs;
 
 		/**
 		 * Constructor
@@ -320,7 +359,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		       char                 const *const  label)
 		:
 			Thread(addr_space_id_alloc, user_irq_pool, cpu_pool, core_pd,
-			       Cpu_priority::min(), 0, label, CORE)
+			       Scheduler::Priority::min(), 0, label, CORE)
 		{ }
 
 		~Thread();
@@ -356,10 +395,10 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 *
 		 * \retval capability id of the new kernel object
 		 */
-		static capid_t syscall_create(Genode::Kernel_object<Thread> & t,
-		                              unsigned const                  priority,
-		                              size_t const                    quota,
-		                              char const * const              label)
+		static capid_t syscall_create(Core::Kernel_object<Thread> &t,
+		                              unsigned const               priority,
+		                              size_t const                 quota,
+		                              char const * const           label)
 		{
 			return (capid_t)call(call_id_new_thread(), (Call_arg)&t,
 			                     (Call_arg)priority, (Call_arg)quota,
@@ -374,8 +413,8 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 *
 		 * \retval capability id of the new kernel object
 		 */
-		static capid_t syscall_create(Genode::Kernel_object<Thread> & t,
-		                              char const * const              label)
+		static capid_t syscall_create(Core::Kernel_object<Thread> &t,
+		                              char const * const           label)
 		{
 			return (capid_t)call(call_id_new_core_thread(), (Call_arg)&t,
 			                     (Call_arg)label);
@@ -386,10 +425,12 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 *
 		 * \param thread  pointer to thread kernel object
 		 */
-		static void syscall_destroy(Genode::Kernel_object<Thread> & t) {
+		static void syscall_destroy(Core::Kernel_object<Thread> &t) {
 			call(call_id_delete_thread(), (Call_arg)&t); }
 
+
 		void print(Genode::Output &out) const;
+
 
 		/**************
 		 ** Ipc_node **
@@ -417,9 +458,9 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 ** Cpu_job **
 		 *************/
 
-		void exception(Cpu & cpu) override;
-		void proceed(Cpu & cpu)   override;
-		Cpu_job * helping_sink()  override;
+		void exception(Cpu & cpu)       override;
+		void proceed(Cpu & cpu)         override;
+		Cpu_job * helping_destination() override;
 
 
 		/*************
@@ -438,6 +479,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		Thread_fault fault() const { return _fault; }
 		Genode::Native_utcb *utcb() { return _utcb; }
 		Type type() const { return _type; }
+		Exception_state exception_state() const { return _exception_state; }
 
 		Pd &pd() const
 		{

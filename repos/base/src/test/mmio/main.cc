@@ -58,9 +58,9 @@ struct Cpu_state : Register<16>
 /**
  * Exemplary MMIO region type
  */
-struct Test_mmio : public Mmio
+struct Test_mmio : public Mmio<MMIO_SIZE>
 {
-	Test_mmio(addr_t const base) : Mmio(base) { }
+	Test_mmio(addr_t const base) : Mmio({(char *)base, Mmio::SIZE}) { }
 
 	struct Reg_64 : Register<0x00, 64>
 	{
@@ -71,8 +71,8 @@ struct Test_mmio : public Mmio
 		struct Bits_4 : Bitfield<60,4> { };
 		struct Bits_5 : Bitfield<0,64> { };
 		struct Bits_6 : Bitfield<16,64> { };
-		struct Bits_7 : Bitfield<12,90> { };
-		struct Bits_8 : Bitfield<0,72> { };
+		struct Bits_7 : Bitfield<12,64> { };
+		struct Bits_8 : Bitfield<0,64> { };
 	};
 	struct Bitset_64_0 : Bitset_2<Reg_64::Bits_0, Reg_64::Bits_1> { };
 	struct Bitset_64_1 : Bitset_3<Reg_64::Bits_4, Reg_64::Bits_3, Reg_64::Bits_2> { };
@@ -129,7 +129,7 @@ struct Test_mmio : public Mmio
 
 	struct Simple_array_1 : Register_array<0x0, 32, 2, 32> { };
 
-	struct Simple_array_2 : Register_array<0x2, 16, 4, 16> { };
+	struct Simple_array_2 : Register_array<0x2, 16, 3, 16> { };
 
 	struct Strict_reg : Register<0x0, 32, true>
 	{
@@ -439,7 +439,7 @@ void Component::construct(Genode::Env &env)
 	 **********************************/
 	{
 		/* whole register */
-		typedef Test_mmio::Reg_64 Reg;
+		using Reg = Test_mmio::Reg_64;
 		enum { REG = 0x0123456789abcdef };
 		static uint8_t cmp_mem[MMIO_SIZE] = {
 			0xef, 0xcd, 0xab, 0x89, 0x67, 0x45, 0x23, 0x01 };
@@ -506,7 +506,7 @@ void Component::construct(Genode::Env &env)
 		}
 
 		/* bitsets */
-		typedef Test_mmio::Bitset_64 Bitset;
+		using Bitset = Test_mmio::Bitset_64;
 		enum { BITSET = 0x4abcdef056789123 };
 		zero_mem(mmio_mem, MMIO_SIZE);
 		mmio.write<Bitset>(BITSET);

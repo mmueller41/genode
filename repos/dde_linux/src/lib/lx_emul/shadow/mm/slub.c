@@ -13,6 +13,7 @@
 
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/version.h>
 #include <../mm/slab.h>
 #include <lx_emul/alloc.h>
 #include <lx_emul/debug.h>
@@ -32,6 +33,8 @@ void kfree(const void * x)
 
 void * __kmalloc(size_t size, gfp_t flags)
 {
+	unsigned long align = (unsigned long)ARCH_KMALLOC_MINALIGN;
+
 	/* Linux expects a non-NULL return value for size 0 */
 	if (size == 0)
 		size = 1;
@@ -40,21 +43,13 @@ void * __kmalloc(size_t size, gfp_t flags)
 	if (flags & GFP_DMA)
 		lx_emul_trace_and_stop(__func__);
 
-	return lx_emul_mem_alloc_aligned(size, ARCH_KMALLOC_MINALIGN);
-}
+	/* for page-rounded sizes use page-alignment */
+	if ((size % PAGE_SIZE) == 0) align = PAGE_SIZE;
 
+	/* guarantee natural alignment for power-of-two kmalloc (see mm/slab_common.c) */
+	if (is_power_of_2(size)) align = max_t(unsigned long, align, size);
 
-struct kmem_cache * kmem_cache_create(const char * name,
-                                      unsigned int size,
-                                      unsigned int align,
-                                      slab_flags_t flags,
-                                      void (* ctor)(void *))
-{
-	struct kmem_cache * cache =
-		__kmalloc(sizeof(struct kmem_cache), GFP_KERNEL);
-	cache->size  = size;
-	cache->align = align;
-	return cache;
+	return lx_emul_mem_alloc_aligned(size, align);
 }
 
 
@@ -122,23 +117,17 @@ size_t __ksize(const void * object)
 }
 
 
-#ifdef CONFIG_NUMA
-
-void * __kmalloc_node(size_t size, gfp_t flags, int node)
-{
-	return __kmalloc(size, flags);
-}
-
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,1,0) || defined(CONFIG_NUMA)
 void * kmem_cache_alloc_node(struct kmem_cache * s, gfp_t gfpflags, int node)
 {
 	return kmem_cache_alloc(s, gfpflags);
 }
-
-#endif /* CONFIG_NUMA */
+#endif
 
 
 #ifdef CONFIG_TRACING
+
+#ifdef CONFIG_NUMA
 
 void * kmem_cache_alloc_node_trace(struct kmem_cache * s,
                                    gfp_t gfpflags,
@@ -148,6 +137,7 @@ void * kmem_cache_alloc_node_trace(struct kmem_cache * s,
 	return kmem_cache_alloc(s, gfpflags);
 }
 
+#endif /* CONFIG_NUMA */
 
 void * kmem_cache_alloc_trace(struct kmem_cache * s,
                               gfp_t               gfpflags,

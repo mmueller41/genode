@@ -27,6 +27,16 @@
 using namespace Genode;
 using namespace Lx_kit;
 
+void Scheduler::_idle_pre_post_process()
+{
+	if (!_idle)
+		return;
+
+	_current = _idle;
+	_idle->run();
+}
+
+
 Task & Scheduler::current()
 {
 	if (!_current) {
@@ -91,11 +101,11 @@ Task & Scheduler::task(void * lx_task)
 }
 
 
-void Scheduler::schedule()
+void Scheduler::execute()
 {
 	/* sanity check that right thread & stack is in use */
 	auto const thread = Genode::Thread::myself();
-	if (!ep.rpc_ep().myself(addr_t(&thread))) {
+	if (!_ep.rpc_ep().myself(addr_t(&thread))) {
 		Genode::error("Lx_kit::Scheduler called by invalid thread/stack ",
 		              thread->name(), " ",
 		              Genode::Hex(thread->mystack().base), "-",
@@ -104,20 +114,20 @@ void Scheduler::schedule()
 		Genode::sleep_forever();
 	}
 
-	/*
-	 * Iterate over all tasks and run first runnable.
-	 *
-	 * (1) If one runnable tasks was run start over from beginning of
-	 *     list.
-	 *
-	 * (2) If no task is runnable quit scheduling (break endless
-	 *     loop).
-	 */
+	_execute();
+}
+
+
+/*
+ * This signal handler function must only be called from within an EP
+ * context, see check in 'execute()'.
+ */
+void Scheduler::_execute()
+{
+	_idle_pre_post_process();
+
 	while (true) {
 		bool at_least_one = false;
-
-		/* update jiffies before running task */
-		//Lx::timer_update_jiffies();
 
 		for (Task * t = _present_list.first(); t; ) {
 
@@ -130,6 +140,7 @@ void Scheduler::schedule()
 			Genode::destroy(Lx_kit::env().heap, tmp);
 		}
 
+		/* iterate over all tasks and run first runnable */
 		for (Task * t = _present_list.first(); t; t = t->next()) {
 
 			if (!t->runnable())
@@ -140,31 +151,23 @@ void Scheduler::schedule()
 			t->run();
 			at_least_one = true;
 
-			if (!t->runnable())
-				break;
+			/* start over after one task was executed to preserve priority order */
+			break;
 		}
 
+		/* no task was runnable - quit scheduling (break endless loop) */
 		if (!at_least_one)
 			break;
 	}
+
+	_idle_pre_post_process();
 
 	/* clear current as no task is running */
 	_current = nullptr;
 }
 
 
-bool Scheduler::another_runnable(Task * skip)
+void Scheduler::schedule()
 {
-	for (Task * t = _present_list.first(); t; t = t->next()) {
-
-		if (!t->runnable())
-			continue;
-
-		if (skip && t == skip)
-			continue;
-
-		return true;
-	};
-
-	return false;
+	Lx_kit::env().submit_signal();
 }

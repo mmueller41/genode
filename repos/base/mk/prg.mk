@@ -73,20 +73,16 @@ endif
 include $(BASE_DIR)/mk/generic.mk
 include $(BASE_DIR)/mk/base-libs.mk
 
-all: message $(TARGET)
+all: $(TARGET)
 
 ifneq ($(INSTALL_DIR),)
 ifneq ($(DEBUG_DIR),)
-all: message $(INSTALL_DIR)/$(TARGET) $(DEBUG_DIR)/$(TARGET)
+all: $(INSTALL_DIR)/$(TARGET) $(DEBUG_DIR)/$(TARGET) $(DEBUG_DIR)/$(TARGET).debug
 endif
 endif
 
 all:
 	@true # prevent nothing-to-be-done message
-
-.PHONY: message
-message:
-	$(MSG_PRG)$(PRG_REL_DIR)/$(TARGET)
 
 #
 # Enforce unconditional call of gnatmake rule when compiling Ada sources
@@ -213,14 +209,18 @@ endif
 # $(TARGET).
 #
 ifneq ($(OBJECTS),)
-$(TARGET): $(LINK_ITEMS) $(wildcard $(LD_SCRIPTS)) $(LIB_SO_DEPS)
+$(TARGET): $(LINK_ITEMS) $(wildcard $(LD_SCRIPTS))
 	$(MSG_LINK)$(TARGET)
 	$(VERBOSE)libs=$(LIB_CACHE_DIR); $(LD_CMD) -o $@
 
 STRIP_TARGET_CMD ?= $(STRIP) -o $@ $<
 
-$(TARGET).stripped: $(TARGET)
+$(TARGET).debug: $(TARGET)
+	$(VERBOSE)$(OBJCOPY) --only-keep-debug $< $@
+
+$(TARGET).stripped: $(TARGET) $(TARGET).debug
 	$(VERBOSE)$(STRIP_TARGET_CMD)
+	$(VERBOSE)$(OBJCOPY) --add-gnu-debuglink=$(TARGET).debug $@
 
 $(INSTALL_DIR)/$(TARGET): $(TARGET).stripped
 	$(VERBOSE)ln -sf $(CURDIR)/$< $@
@@ -230,7 +230,9 @@ ifeq ($(COVERAGE),yes)
 endif
 
 ifneq ($(DEBUG_DIR),)
-$(DEBUG_DIR)/$(TARGET): $(TARGET)
+$(DEBUG_DIR)/$(TARGET): $(TARGET).stripped
+	$(VERBOSE)ln -sf $(CURDIR)/$< $@
+$(DEBUG_DIR)/$(TARGET).debug: $(TARGET).debug
 	$(VERBOSE)ln -sf $(CURDIR)/$< $@
 endif
 
@@ -238,12 +240,13 @@ else
 $(TARGET):
 $(INSTALL_DIR)/$(TARGET): $(TARGET)
 $(DEBUG_DIR)/$(TARGET): $(TARGET)
+$(DEBUG_DIR)/$(TARGET).debug: $(TARGET)
 endif
 
 
 clean_prg_objects:
 	$(MSG_CLEAN)$(PRG_REL_DIR)
-	$(VERBOSE)$(RM) -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TARGET).stripped $(BINDER_SRC)
+	$(VERBOSE)$(RM) -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET) $(TARGET).stripped $(TARGET).debug $(BINDER_SRC)
 	$(VERBOSE)$(RM) -f *.d *.i *.ii *.s *.ali *.lib.so
 
 clean: clean_prg_objects

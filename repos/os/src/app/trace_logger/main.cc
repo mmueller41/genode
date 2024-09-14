@@ -12,11 +12,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* local includes */
-#include <policy.h>
-#include <monitor.h>
-#include <xml_node.h>
-
 /* Genode includes */
 #include <base/component.h>
 #include <base/attached_rom_dataspace.h>
@@ -26,6 +21,11 @@
 #include <timer_session/connection.h>
 #include <util/construct_at.h>
 #include <util/formatted_output.h>
+#include <util/xml_node.h>
+
+/* local includes */
+#include <policy.h>
+#include <monitor.h>
 
 using namespace Genode;
 using Thread_name = String<40>;
@@ -43,8 +43,9 @@ class Main
 		{
 			size_t       session_ram;
 			size_t       session_arg_buffer;
-			unsigned     session_parent_levels;
 			bool         verbose;
+			bool         prio;
+			bool         sc_time;
 			Microseconds period_us;
 			size_t       default_buf_sz;
 			Policy_name  default_policy_name;
@@ -55,8 +56,7 @@ class Main
 
 		Trace::Connection _trace { _env,
 		                           _config.session_ram,
-		                           _config.session_arg_buffer,
-		                           _config.session_parent_levels };
+		                           _config.session_arg_buffer };
 
 		Timer::Connection _timer { _env };
 
@@ -67,8 +67,9 @@ class Main
 		Monitor_tree  _monitors_0      { };
 		Monitor_tree  _monitors_1      { };
 		bool          _monitors_switch { false };
-		Policy_tree   _policies        { };
-		Policy        _default_policy  { _env, _trace, _config.default_policy_name };
+		Policy_dict   _policies        { };
+		Policy        _default_policy  { _env, _trace, _policies,
+		                                 _config.default_policy_name };
 		unsigned long _report_id       { 0 };
 
 		static void _print_monitors(Allocator &alloc, Monitor_tree const &,
@@ -161,8 +162,7 @@ class Main
 			if (_config.verbose)
 				log("destroy monitor: subject ", monitor.subject_id().id);
 
-			try { _trace.free(monitor.subject_id()); }
-			catch (Trace::Nonexistent_subject) { }
+			_trace.free(monitor.subject_id());
 			monitors.remove(&monitor);
 			destroy(_heap, &monitor);
 		}
@@ -171,33 +171,30 @@ class Main
 		                  Trace::Subject_id const  id,
 		                  Xml_node          const &session_policy)
 		{
-			auto warn_msg = [] (auto reason) {
-				warning("Cannot activate tracing: ", reason); };
+			Trace::Buffer_size const buffer_size {
+				session_policy.attribute_value("buffer", Number_of_bytes(_config.default_buf_sz)) };
 
-			try {
-				Number_of_bytes const buffer_sz =
-					session_policy.attribute_value("buffer", _config.default_buf_sz);
+			Policy_name const policy_name =
+				session_policy.attribute_value("policy", _config.default_policy_name);
 
-				Policy_name const policy_name =
-					session_policy.attribute_value("policy", _config.default_policy_name);
+			auto trace = [&] (Policy const &policy)
+			{
+				policy.id.with_result(
+					[&] (Trace::Policy_id const policy_id) {
+						_trace.trace(id, policy_id, buffer_size); },
+					[&] (auto) {
+						warning("skip tracing because of invalid policy '", policy_name, "'");
+					});
+			};
 
-				try {
-					_trace.trace(id.id, _policies.find_by_name(policy_name).id(), buffer_sz);
+			_policies.with_element(policy_name,
+				[&] (Policy const &policy) {
+					trace(policy); },
+				[&] /* no match */ {
+					Policy &policy = *new (_heap) Policy(_env, _trace, _policies, policy_name);
+					trace(policy); });
 
-				}
-				catch (Policy_tree::No_match) {
-					Policy &policy = *new (_heap) Policy(_env, _trace, policy_name);
-					_policies.insert(policy);
-					_trace.trace(id.id, policy.id(), buffer_sz);
-				}
-				monitors.insert(new (_heap) Monitor(_trace, _env.rm(), id));
-			}
-			catch (Trace::Already_traced         ) { warn_msg("Already_traced"         ); return; }
-			catch (Trace::Source_is_dead         ) { warn_msg("Source_is_dead"         ); return; }
-			catch (Trace::Nonexistent_policy     ) { warn_msg("Nonexistent_policy"     ); return; }
-			catch (Trace::Traced_by_other_session) { warn_msg("Traced_by_other_session"); return; }
-			catch (Trace::Nonexistent_subject    ) { warn_msg("Nonexistent_subject"    ); return; }
-			catch (Region_map::Invalid_dataspace ) { warn_msg("Loading policy failed"  ); return; }
+			monitors.insert(new (_heap) Monitor(_trace, _env.rm(), id));
 		}
 
 		void _handle_period(Duration)
@@ -208,7 +205,9 @@ class Main
 
 			log("\nReport ", _report_id++, "\n");
 			Monitor::Level_of_detail const detail { .state       =  _config.verbose,
-			                                        .active_only = !_config.verbose };
+			                                        .active_only = !_config.verbose,
+			                                        .prio        =  _config.prio,
+			                                        .sc_time     =  _config.sc_time };
 			_print_monitors(_heap, monitors, detail);
 		}
 
@@ -216,9 +215,10 @@ class Main
 
 		Main(Env &env) : _env(env)
 		{
-			_policies.insert(_default_policy);
-
-			_update_monitors();
+			/*
+			 * We skip the initial monitor update as the periodic timeout triggers
+			 * the update immediately for the first time.
+			 */
 		}
 };
 
@@ -226,17 +226,19 @@ class Main
 Main::Config Main::Config::from_xml(Xml_node const &config)
 {
 	return {
-		.session_ram           = config.attribute_value("session_ram",
-		                                                Number_of_bytes(1024*1024)),
-		.session_arg_buffer    = config.attribute_value("session_arg_buffer",
-		                                                Number_of_bytes(1024*4)),
-		.session_parent_levels = config.attribute_value("session_parent_levels", 0u),
-		.verbose               = config.attribute_value("verbose",  false),
-		.period_us             = read_sec_attr(config, "period_sec", 5),
-		.default_buf_sz        = config.attribute_value("default_buffer",
-		                                                Number_of_bytes(4*1024)),
-		.default_policy_name   = config.attribute_value("default_policy",
-		                                                Policy_name("null"))
+		.session_ram         = config.attribute_value("session_ram",
+		                                              Number_of_bytes(1024*1024)),
+		.session_arg_buffer  = config.attribute_value("session_arg_buffer",
+		                                              Number_of_bytes(1024*4)),
+		.verbose             = config.attribute_value("verbose",  false),
+		.prio                = config.attribute_value("priority", false),
+		.sc_time             = config.attribute_value("sc_time",  false),
+		.period_us           = Microseconds(config.attribute_value("period_sec", 5)
+		                                    * 1'000'000),
+		.default_buf_sz      = config.attribute_value("default_buffer",
+		                                              Number_of_bytes(4*1024)),
+		.default_policy_name = config.attribute_value("default_policy",
+		                                              Policy_name("null"))
 	};
 }
 
@@ -294,15 +296,19 @@ void Main::_print_monitors(Allocator &alloc, Monitor_tree const &monitors,
 
 	pds.for_each([&] (Pd const &pd) {
 
-		unsigned const state_width  = detail.state ? fmt.state + 1 : 0;
+		auto opt = [] (bool cond, unsigned value) { return cond ? value : 0; };
+
 		unsigned const table_width  = fmt.thread_name
 		                            + fmt.affinity
-		                            + state_width
-		                            + fmt.total_cpu
-		                            + fmt.recent_cpu
-		                            + 26;
-		unsigned const pd_width     = (unsigned)pd.label.length() + 6;
-		unsigned const excess_width = table_width - min(table_width, pd_width);
+		                            + 1 /* additional space */
+		                            + opt(detail.state,   fmt.state)
+		                            + opt(detail.prio,    fmt.prio)
+		                            + fmt.total_tc
+		                            + fmt.recent_tc
+		                            + opt(detail.sc_time, fmt.total_sc)
+		                            + opt(detail.sc_time, fmt.recent_sc);
+		unsigned const pd_width     = 4 + (unsigned)(pd.label.length() - 1) + 1;
+		unsigned const excess_width = table_width - min(table_width, pd_width + 1);
 
 		if (detail.active_only && !pd.recently_active())
 			return;

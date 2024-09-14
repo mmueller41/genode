@@ -13,8 +13,6 @@
 
 /* Genode includes */
 #include <base/ipc.h>
-#include <base/log.h>
-#include <util/string.h>
 #include <foc/thread_state.h>
 
 /* core includes */
@@ -25,7 +23,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Foc;
 
 
@@ -40,7 +38,7 @@ Trace::Execution_time Platform_thread::execution_time() const
 }
 
 
-int Platform_thread::start(void *ip, void *sp)
+void Platform_thread::start(void *ip, void *sp)
 {
 	if (!_platform_pd) {
 
@@ -64,7 +62,7 @@ int Platform_thread::start(void *ip, void *sp)
 	if (l4_msgtag_has_error(tag)) {
 		warning("l4_thread_control_commit for ",
 		        Hex(_thread.local.data()->kcap()), " failed!");
-		return -1;
+		return;
 	}
 
 	_state = RUNNING;
@@ -74,10 +72,8 @@ int Platform_thread::start(void *ip, void *sp)
 	                        (l4_addr_t) sp, 0);
 	if (l4_msgtag_has_error(tag)) {
 		warning("l4_thread_ex_regs failed!");
-		return -1;
+		return;
 	}
-
-	return 0;
 }
 
 
@@ -95,8 +91,8 @@ void Platform_thread::pause()
 
 	Foc_thread_state &reg_state = _pager_obj->state.state;
 
-	reg_state.ip = ~0UL;
-	reg_state.sp = ~0UL;
+	reg_state.cpu.ip = ~0UL;
+	reg_state.cpu.sp = ~0UL;
 
 	unsigned const exc   = _pager_obj->state.exceptions;
 	l4_umword_t    flags = L4_THREAD_EX_REGS_TRIGGER_EXCEPTION;
@@ -109,8 +105,8 @@ void Platform_thread::pause()
 	 * The pager thread, which also acts as exception handler, will
 	 * leave the thread in exception state until, it gets woken again
 	 */
-	l4_thread_ex_regs_ret(_thread.local.data()->kcap(), &reg_state.ip,
-	                      &reg_state.sp, &flags);
+	l4_thread_ex_regs_ret(_thread.local.data()->kcap(), &reg_state.cpu.ip,
+	                      &reg_state.cpu.sp, &flags);
 
 	/*
 	 * The thread state ("ready") is encoded in the lowest bit of the flags.
@@ -209,7 +205,7 @@ void Platform_thread::state(Thread_state s)
 
 Foc_thread_state Platform_thread::state()
 {
-	Foc_thread_state s;
+	Foc_thread_state s { };
 	if (_pager_obj)
 		s = _pager_obj->state.state;
 
@@ -282,7 +278,7 @@ void Platform_thread::_finalize_construction()
 }
 
 
-Platform_thread::Platform_thread(size_t, const char *name, unsigned prio,
+Platform_thread::Platform_thread(Platform_pd &pd, size_t, const char *name, unsigned prio,
                                  Affinity::Location location, addr_t)
 :
 	_name(name),
@@ -300,6 +296,7 @@ Platform_thread::Platform_thread(size_t, const char *name, unsigned prio,
 	_create_thread();
 	_finalize_construction();
 	affinity(location);
+	_bound_to_pd = pd.bind_thread(*this);
 }
 
 
@@ -354,7 +351,7 @@ Platform_thread::~Platform_thread()
 Foc::l4_cap_idx_t Platform_thread::setup_vcpu(unsigned const vcpu_id,
                                               Cap_mapping const &task_vcpu,
                                               Cap_mapping &vcpu_irq,
-                                              Region_map::Local_addr &vcpu_state)
+                                              addr_t &vcpu_state)
 {
 	if (!_platform_pd)
 		return Foc::L4_INVALID_CAP;
@@ -363,8 +360,7 @@ Foc::l4_cap_idx_t Platform_thread::setup_vcpu(unsigned const vcpu_id,
 		return Foc::L4_INVALID_CAP;
 
 	/* vCPU state attached by kernel syscall to client PD directly */
-	vcpu_state = Region_map::Local_addr(Platform::VCPU_VIRT_EXT_START +
-	                                    L4_PAGESIZE * vcpu_id);
+	vcpu_state = Platform::VCPU_VIRT_EXT_START + L4_PAGESIZE * vcpu_id;
 
 	l4_fpage_t const vm_page = l4_fpage(vcpu_state, L4_PAGESHIFT, L4_FPAGE_RW);
 

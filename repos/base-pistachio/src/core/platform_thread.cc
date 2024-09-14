@@ -11,10 +11,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-#include <util/string.h>
-
 /* base-internal includes */
 #include <base/internal/capability_space_tpl.h>
 #include <base/internal/pistachio.h>
@@ -25,7 +21,7 @@
 #include <kip.h>
 #include <print_l4_thread_id.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Pistachio;
 
 
@@ -38,8 +34,8 @@ void Platform_thread::affinity(Affinity::Location location)
 		return;
 	}
 
-	if (_l4_thread_id != L4_nilthread) {
-		if (L4_Set_ProcessorNo(_l4_thread_id, cpu_no) == 0)
+	if (native_thread_id() != L4_nilthread) {
+		if (L4_Set_ProcessorNo(native_thread_id(), cpu_no) == 0)
 			error("could not set processor number");
 		else
 			_location = location;
@@ -53,9 +49,12 @@ Affinity::Location Platform_thread::affinity() const
 }
 
 
-int Platform_thread::start(void *ip, void *sp)
+void Platform_thread::start(void *ip, void *sp)
 {
-	L4_ThreadId_t thread = _l4_thread_id;
+	if (_id.failed())
+		return;
+
+	L4_ThreadId_t thread = native_thread_id();
 	L4_ThreadId_t pager  = _pager
 	                     ? Capability_space::ipc_cap_data(_pager->cap()).dst
 	                     : L4_nilthread;
@@ -63,29 +62,26 @@ int Platform_thread::start(void *ip, void *sp)
 	/* XXX should always be the root task */
 	L4_ThreadId_t preempter = L4_Myself();
 
-	if (_thread_id == THREAD_INVALID) {
-		error("attempt to start a thread with invalid ID");
-		return -1;
-	}
+	L4_Word_t const utcb_location = _id.convert<L4_Word_t>(
+		[&] (Platform_pd::Thread_id id) { return _pd._utcb_location(id.value); },
+		[&] (Platform_pd::Alloc_thread_id_error) { return 0UL; });
 
-	L4_Word_t utcb_location = _platform_pd->_utcb_location(_thread_id);
-
-	int ret = L4_ThreadControl(thread, _platform_pd->_l4_task_id,
+	int ret = L4_ThreadControl(thread, _pd._l4_task_id,
 	                           preempter, L4_Myself(), (void *)utcb_location);
 
 	if (ret != 1) {
 		error(__func__, ": L4_ThreadControl returned ", Hex(L4_ErrorCode()));
-		return -2;
+		return;
 	}
 
 	/* set real pager */
-	ret = L4_ThreadControl(thread, _platform_pd->_l4_task_id,
+	ret = L4_ThreadControl(thread, _pd._l4_task_id,
 	                       L4_nilthread, pager, (void *)-1);
 
 	if (ret != 1) {
 		error(__func__, ": L4_ThreadControl returned ", Hex(L4_ErrorCode()));
 		error("setting pager failed");
-		return -3;
+		return;
 	}
 
 	/* get the thread running on the right cpu */
@@ -107,58 +103,14 @@ int Platform_thread::start(void *ip, void *sp)
 
 	if (L4_IpcFailed(tag)) {
 		error("starting thread failed. (IPC error)");
-		return -4;
+		return;
 	}
-
-	return 0;
-}
-
-
-void Platform_thread::pause()
-{
-	warning(__func__, " not implemented");
-}
-
-
-void Platform_thread::resume()
-{
-	warning(__func__, " not implemented");
-}
-
-
-void Platform_thread::bind(int thread_id, L4_ThreadId_t l4_thread_id,
-                           Platform_pd &pd)
-{
-	_thread_id    = thread_id;
-	_l4_thread_id = l4_thread_id;
-	_platform_pd  = &pd;
-}
-
-
-void Platform_thread::unbind()
-{
-	L4_Word_t res = L4_ThreadControl(_l4_thread_id, L4_nilthread,
-	                                 L4_nilthread, L4_nilthread, (void *)-1);
-
-	if (res != 1)
-		error("deleting thread ", Formatted_tid(_l4_thread_id), " failed");
-
-	_thread_id    = THREAD_INVALID;
-	_l4_thread_id = L4_nilthread;
-	_platform_pd  = 0;
-}
-
-
-void Platform_thread::state(Thread_state)
-{
-	warning(__func__, " not implemented");
-	throw Cpu_thread::State_access_failed();
 }
 
 
 Thread_state Platform_thread::state()
 {
-	Thread_state s;
+	Thread_state s { };
 
 	L4_Word_t     dummy;
 	L4_ThreadId_t dummy_tid;
@@ -168,23 +120,30 @@ Thread_state Platform_thread::state()
 		DELIVER = 1 << 9,
 	};
 
-	L4_ExchangeRegisters(_l4_thread_id,
+	L4_ExchangeRegisters(native_thread_id(),
 	                     DELIVER,
 	                     0, 0, 0, 0, L4_nilthread,
 	                     &dummy, &sp, &ip, &dummy, &dummy,
 	                     &dummy_tid);
-	s.ip = ip;
-	s.sp = sp;
+	s.cpu.ip = ip;
+	s.cpu.sp = sp;
+	s.state  = Thread_state::State::VALID;
 	return s;
 }
 
 
 Platform_thread::~Platform_thread()
 {
-	/*
-	 * We inform our protection domain about thread destruction, which will end up in
-	 * Thread::unbind()
-	 */
-	if (_platform_pd)
-		_platform_pd->unbind_thread(*this);
+	_id.with_result(
+		[&] (Platform_pd::Thread_id id) {
+
+			L4_Word_t res = L4_ThreadControl(native_thread_id(), L4_nilthread,
+			                                 L4_nilthread, L4_nilthread, (void *)-1);
+			if (res != 1)
+				error("deleting thread ", Formatted_tid(native_thread_id()), " failed");
+
+			_pd.free_thread_id(id);
+		},
+		[&] (Platform_pd::Alloc_thread_id_error) { }
+	);
 }

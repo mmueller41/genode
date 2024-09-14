@@ -16,8 +16,6 @@
 
 /* Genode includes */
 #include <util/bit_allocator.h>
-#include <util/reconstructible.h>
-#include <base/log.h>
 #include <base/thread.h>
 #include <base/session_label.h>
 
@@ -29,10 +27,10 @@
 #include <cap_sel_alloc.h>
 #include <core_cspace.h>
 
-namespace Genode { class Vm_space; }
+namespace Core { class Vm_space; }
 
 
-class Genode::Vm_space
+class Core::Vm_space
 {
 	private:
 
@@ -171,8 +169,7 @@ class Genode::Vm_space
 			return Cap_sel((uint32_t)((_id << 20) | idx));
 		}
 
-		template <typename FN>
-		void _flush(bool const flush_support, FN const &fn)
+		void _flush(bool const flush_support, auto const &fn)
 		{
 			if (!flush_support) {
 				warning("mapping cache full, but can't flush");
@@ -185,9 +182,8 @@ class Genode::Vm_space
 			_page_table_registry.flush_pages(fn);
 		}
 
-		template <typename FN>
 		bool _map_frame(addr_t const from_phys, addr_t const to_dest,
-		                Map_attr const attr, bool guest, FN const &fn)
+		                Map_attr const attr, bool guest, auto const &fn)
 		{
 			if (_page_table_registry.page_frame_at(to_dest)) {
 				/*
@@ -410,7 +406,7 @@ class Genode::Vm_space
 			bool ok = true;
 
 			for (size_t i = 0; i < num_pages; i++) {
-				off_t const offset = i << get_page_size_log2();
+				addr_t const offset = i << get_page_size_log2();
 
 				if (_map_frame(from_phys + offset, to_virt + offset, attr,
 				               false /* host page table */, fn_unmap))
@@ -444,7 +440,7 @@ class Genode::Vm_space
 			Mutex::Guard guard(_mutex);
 
 			for (size_t i = 0; i < num_pages; i++) {
-				off_t const offset = i << get_page_size_log2();
+				addr_t const offset = i << get_page_size_log2();
 
 				_map_frame(from_phys + offset, guest_phys + offset, attr,
 				           true /* guest page table */, fn_unmap);
@@ -459,7 +455,7 @@ class Genode::Vm_space
 			Mutex::Guard guard(_mutex);
 
 			for (size_t i = 0; unmap_success && i < num_pages; i++) {
-				off_t const offset = i << get_page_size_log2();
+				addr_t const offset = i << get_page_size_log2();
 
 				_page_table_registry.flush_page(virt + offset, [&] (Cap_sel const &idx, addr_t) {
 

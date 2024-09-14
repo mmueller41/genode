@@ -79,8 +79,7 @@ static long     config_fb_y      = 260;
 /**
  * Window title
  */
-typedef Genode::String<128> Title;
-static Title config_title { "Liquid Framebuffer" };
+static Gui::Title config_title { "Liquid Framebuffer" };
 
 /**
  * Resize handle
@@ -150,7 +149,7 @@ class Liquid_fb::Main : public Scout::Event_handler
 
 		Gui::Connection _gui { _env };
 
-		Platform _platform { _env, *_gui.input() };
+		Platform _platform { _env, _gui.input };
 
 		bool const _event_handler_registered = (_platform.event_handler(*this), true);
 
@@ -186,7 +185,7 @@ class Liquid_fb::Main : public Scout::Event_handler
 		bool _background_animator_initialized = (_init_background_animator(), true);
 
 		User_state _user_state { &_fb_win, &_fb_win,
-		                         _initial_position.x(), _initial_position.y() };
+		                         _initial_position.x, _initial_position.y };
 
 		void _init_fb_win()
 		{

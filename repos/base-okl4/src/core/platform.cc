@@ -12,7 +12,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <base/allocator_avl.h>
 #include <base/sleep.h>
 #include <util/misc_math.h>
@@ -33,7 +32,7 @@
 #include <platform_pd.h>
 #include <map_local.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /****************************************
@@ -52,9 +51,9 @@ bool Mapped_mem_allocator::_unmap_local(addr_t virt_addr, addr_t, size_t size) {
  ** Boot-info parser **
  **********************/
 
-int Platform::bi_init_mem(Okl4::uintptr_t virt_base, Okl4::uintptr_t virt_end,
-                          Okl4::uintptr_t phys_base, Okl4::uintptr_t phys_end,
-                          const Okl4::bi_user_data_t *data)
+int Core::Platform::bi_init_mem(Okl4::uintptr_t virt_base, Okl4::uintptr_t virt_end,
+                                Okl4::uintptr_t phys_base, Okl4::uintptr_t phys_end,
+                                const Okl4::bi_user_data_t *data)
 {
 	Platform &p = *(Platform *)data->user_data;
 	p._core_mem_alloc.phys_alloc().add_range(phys_base, phys_end - phys_base + 1);
@@ -63,8 +62,8 @@ int Platform::bi_init_mem(Okl4::uintptr_t virt_base, Okl4::uintptr_t virt_end,
 }
 
 
-int Platform::bi_add_virt_mem(Okl4::bi_name_t, Okl4::uintptr_t base,
-                              Okl4::uintptr_t end, const Okl4::bi_user_data_t *data)
+int Core::Platform::bi_add_virt_mem(Okl4::bi_name_t, Okl4::uintptr_t base,
+                                    Okl4::uintptr_t end, const Okl4::bi_user_data_t *data)
 {
 	/* prevent first page from being added to core memory */
 	if (base < get_page_size() || end < get_page_size())
@@ -76,8 +75,8 @@ int Platform::bi_add_virt_mem(Okl4::bi_name_t, Okl4::uintptr_t base,
 }
 
 
-int Platform::bi_add_phys_mem(Okl4::bi_name_t pool, Okl4::uintptr_t base,
-                              Okl4::uintptr_t end, const Okl4::bi_user_data_t *data)
+int Core::Platform::bi_add_phys_mem(Okl4::bi_name_t pool, Okl4::uintptr_t base,
+                                    Okl4::uintptr_t end, const Okl4::bi_user_data_t *data)
 {
 	if (pool == 2) {
 		Platform &p = *(Platform *)data->user_data;
@@ -91,7 +90,7 @@ static char init_slab_block_rom[get_page_size()];
 static char init_slab_block_thread[get_page_size()];
 
 
-Platform::Platform()
+Core::Platform::Platform()
 :
 	_io_mem_alloc(&core_mem_alloc()), _io_port_alloc(&core_mem_alloc()),
 	_irq_alloc(&core_mem_alloc()),
@@ -143,9 +142,9 @@ Platform::Platform()
 	 * type.
 	 */
 	static Okl4::bi_callbacks_t callbacks;
-	callbacks.init_mem      = Platform::bi_init_mem;
-	callbacks.add_virt_mem  = Platform::bi_add_virt_mem;
-	callbacks.add_phys_mem  = Platform::bi_add_phys_mem;
+	callbacks.init_mem      = bi_init_mem;
+	callbacks.add_virt_mem  = bi_add_virt_mem;
+	callbacks.add_phys_mem  = bi_add_phys_mem;
 
 	Okl4::bootinfo_parse((void *)boot_info_addr, &callbacks, this);
 
@@ -179,11 +178,9 @@ Platform::Platform()
 	 * not destroy this task, it should be no problem.
 	 */
 	Platform_thread &core_thread =
-		*new (&_thread_slab) Platform_thread("core.main");
+		*new (&_thread_slab) Platform_thread(*_core_pd, "core.main");
 
 	core_thread.set_l4_thread_id(Okl4::L4_rootserver);
-
-	_core_pd->bind_thread(core_thread);
 
 	/* core log as ROM module */
 	{
@@ -203,8 +200,8 @@ Platform::Platform()
 						map_local(phys_addr, (addr_t)ptr, pages);
 						memset(ptr, 0, log_size);
 
-						_rom_fs.insert(new (core_mem_alloc())
-						               Rom_module(phys_addr, log_size, "core_log"));
+						new (core_mem_alloc())
+							Rom_module(_rom_fs, "core_log", phys_addr, log_size);
 
 						init_core_log(Core_log_range { (addr_t)ptr, log_size } );
 					},
@@ -215,7 +212,7 @@ Platform::Platform()
 		);
 	}
 
-	/* export platform specific infos */
+	/* export platform-specific infos */
 	{
 		unsigned const pages  = 1;
 		size_t   const size   = pages << get_page_size_log2();
@@ -234,12 +231,12 @@ Platform::Platform()
 						if (map_local(phys_addr, core_local_addr, pages)) {
 
 							Xml_generator xml(reinterpret_cast<char *>(core_local_addr),
-							                  size, "platform_info", [&] () {
-								xml.node("kernel", [&] () { xml.attribute("name", "okl4"); });
+							                  size, "platform_info", [&] {
+								xml.node("kernel", [&] { xml.attribute("name", "okl4"); });
 							});
 
-							_rom_fs.insert(new (core_mem_alloc()) Rom_module(phys_addr, size,
-							                                                 "platform_info"));
+							new (core_mem_alloc())
+								Rom_module(_rom_fs, "platform_info", phys_addr, size);
 						}
 					},
 					[&] (Range_allocator::Alloc_error) { }
@@ -255,7 +252,7 @@ Platform::Platform()
  ** Generic platform interface **
  ********************************/
 
-void Platform::wait_for_exit()
+void Core::Platform::wait_for_exit()
 {
 	/*
 	 * On OKL4, core never exits. So let us sleep forever.

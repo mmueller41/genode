@@ -31,7 +31,6 @@ namespace Genode {
 
 	extern bool inhibit_tracing;
 	void call_global_static_constructors();
-	void destroy_signal_thread();
 }
 
 
@@ -69,6 +68,12 @@ void Entrypoint::Signal_proxy_component::signal()
 
 	if (io_progress)
 		ep._handle_io_progress();
+}
+
+
+void Entrypoint::Signal_proxy_thread::entry()
+{
+	ep._process_incoming_signals();
 }
 
 
@@ -117,64 +122,28 @@ void Entrypoint::_process_incoming_signals()
 {
 	for (;;) {
 
-		do {
-			{
-				/* see documentation in 'wait_and_dispatch_one_io_signal()' */
-				Mutex::Guard guard { _block_for_signal_mutex };
+		{
+			/* see documentation in 'wait_and_dispatch_one_io_signal()' */
+			Mutex::Guard guard { _block_for_signal_mutex };
 
-				_signal_proxy_delivers_signal = true;
+			_signal_proxy_delivers_signal = true;
 
-				_sig_rec->block_for_signal();
-			}
-
-			/*
-			 * It might happen that we try to forward a signal to the
-			 * entrypoint, while the context of that signal is already
-			 * destroyed. In that case we will get an ipc error exception
-			 * as result, which has to be caught.
-			 */
-			try {
-				retry<Blocking_canceled>(
-					[&] () { _signal_proxy_cap.call<Signal_proxy::Rpc_signal>(); },
-					[]  () { warning("blocking canceled during signal processing"); });
-			} catch (Genode::Ipc_error) { /* ignore - context got destroyed in meantime */ }
-
-			/* entrypoint destructor requested to stop signal handling */
-			if (_stop_signal_proxy) {
-				 return;
-			}
-		} while (!_suspended);
-
-		_deferred_signal_handler.destruct();
-		_suspend_dispatcher.destruct();
-		_sig_rec.destruct();
-		dissolve(_signal_proxy);
-		deinit_heartbeat_monitoring();
-		_signal_proxy_cap = Capability<Signal_proxy>();
-		_rpc_ep.destruct();
-		destroy_signal_thread();
-
-		/* execute fork magic in noux plugin */
-		_suspended_callback();
-
-		init_signal_thread(_env);
-
-		_rpc_ep.construct(&_env.pd(), Component::stack_size(), initial_ep_name(), Affinity::Location());
-		init_heartbeat_monitoring(_env);
-		_signal_proxy_cap = manage(_signal_proxy);
-		_sig_rec.construct();
+			_sig_rec->block_for_signal();
+		}
 
 		/*
-		 * Before calling the resumed callback, we reset the callback pointer
-		 * as these may be set again in the resumed code to initiate the next
-		 * suspend-resume cycle (e.g., exit()).
+		 * It might happen that we try to forward a signal to the
+		 * entrypoint, while the context of that signal is already
+		 * destroyed. In that case we will get an ipc error exception
+		 * as result, which has to be caught.
 		 */
-		void (*resumed_callback)() = _resumed_callback;
-		_suspended_callback        = nullptr;
-		_resumed_callback          = nullptr;
-		_suspended                 = false;
+		try {
+			_signal_proxy_cap.call<Signal_proxy::Rpc_signal>();
+		} catch (Genode::Ipc_error) { /* ignore - context got destroyed in meantime */ }
 
-		resumed_callback();
+		/* entrypoint destructor requested to stop signal handling */
+		if (_stop_signal_proxy)
+			 return;
 	}
 }
 
@@ -248,26 +217,10 @@ bool Entrypoint::_wait_and_dispatch_one_io_signal(bool const dont_block)
 }
 
 
-void Entrypoint::schedule_suspend(void (*suspended)(), void (*resumed)())
-{
-	_suspended_callback = suspended;
-	_resumed_callback   = resumed;
-
-	/*
-	 * We always construct the dispatcher when the suspend is scheduled and
-	 * destruct it when the suspend is executed.
-	 */
-	_suspend_dispatcher.construct(*this, *this, &Entrypoint::_handle_suspend);
-
-	/* trigger wakeup of the signal-dispatch loop for suspend */
-	Signal_transmitter(*_suspend_dispatcher).submit();
-}
-
-
 Signal_context_capability Entrypoint::manage(Signal_dispatcher_base &dispatcher)
 {
 	/* _sig_rec is invalid for a small window in _process_incoming_signals */
-	return _sig_rec.constructed() ? _sig_rec->manage(&dispatcher)
+	return _sig_rec.constructed() ? _sig_rec->manage(dispatcher)
 	                              : Signal_context_capability();
 }
 
@@ -276,7 +229,7 @@ void Genode::Entrypoint::dissolve(Signal_dispatcher_base &dispatcher)
 {
 	/* _sig_rec is invalid for a small window in _process_incoming_signals */
 	if (_sig_rec.constructed())
-		_sig_rec->dissolve(&dispatcher);
+		_sig_rec->dissolve(dispatcher);
 
 	/* also remove context from deferred signal list */
 	{
@@ -345,11 +298,7 @@ Entrypoint::Entrypoint(Env &env)
 
 	_env.ep().manage(constructor);
 
-	try {
-		invoke_constructor_at_entrypoint(constructor.cap());
-	} catch (Blocking_canceled) {
-		warning("blocking canceled in entrypoint constructor");
-	}
+	invoke_constructor_at_entrypoint(constructor.cap());
 
 	_env.ep().dissolve(constructor);
 

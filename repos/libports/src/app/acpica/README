@@ -14,6 +14,7 @@ sources:
 - ACPI fixed events        - e.g. power button
 - ACPI AC adapters         - power cable plugged/un-plugged
 - ACPI Embedded controller - some Fn-* keys and on some machines also Lid, AC, SB changes
+- Vendor-specific hardware - currently Fujitsu FUJ02E3 key events
 
 Whenever a state change is detected, a Genode report is generated, if a 
 config attribute "report" is set to "yes". The reports are named
@@ -40,13 +41,16 @@ Furthermore the ACPICA library may trigger, dependent on the ACPI ASL code,
 various I/O port and I/O mem accesses to hardware. Accesses to PCI devices are
 ignored and dropped by this component.
 
+Log verbosity can be increased by the "verbose" config attribute.
+
 Excerpt of important parts of the acpica configuration
 ------------------------------------------------------
 
 !<start name="acpica">
 !  <!-- <binary name="debug-acpica"/> -->
 !  ...
-!  <config reset="no" poweroff="no" report="yes"/>
+!  <config reset="no" sleep="no" poweroff="no" report="yes" report_period_ms="2000"
+           use_gpe="true" verbose="no"/>
 !  <route>
 !    <service name="ROM" label="system"> <child name="..."/> </service>
 !    <service name="Report"> <child name="..."/> </service>
@@ -54,7 +58,7 @@ Excerpt of important parts of the acpica configuration
 !  </route>
 !</start>
 !
-!<start name="platform_drv" >
+!<start name="platform" >
 !  ...
 !  <config acpi="yes" system="yes">
 !    <policy label_prefix="acpica"> <pci class="ALL"/> </policy>
@@ -134,3 +138,10 @@ Report 'acpi_battery' - smart battery status changes
 !    <status value="15">battery not present</status>
 !    ...
 !</acpi_battery>
+
+!<acpi_hid>
+!  <hid device="Fuj02e3">
+!    <data value="0x4000000" count="7">triggered</data> <!-- touchpad toggle -->
+!    <data value="0x20000000" count="1"/>               <!-- rfkill -->
+!  </hid>
+!</acpi_hid>

@@ -13,17 +13,17 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <irq_session/irq_session.h>
 #include <util/xml_generator.h>
 
-#include "platform.h"
-#include "util.h"
+/* core includes */
+#include <platform.h>
+#include <util.h>
 
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Platform::_setup_io_port_alloc()
@@ -102,11 +102,11 @@ static bool cpu_name(char const * name)
 void Platform::_setup_platform_info(Xml_generator &xml,
                                     Foc::l4_kernel_info_t &kip)
 {
-	xml.node("features", [&] () {
+	xml.node("features", [&] {
 		/* XXX better detection required, best told us by kernel !? */
 		xml.attribute("svm", cpu_name("AuthenticAMD"));
 		xml.attribute("vmx", cpu_name("GenuineIntel")); });
 
-	xml.node("tsc", [&] () {
+	xml.node("tsc", [&] {
 		xml.attribute("freq_khz" , kip.frequency_cpu); });
 }

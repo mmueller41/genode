@@ -35,6 +35,12 @@ struct Genode::Native_utcb
 
 	void ep_sel  (addr_t sel) { _raw[ELEMENTS - 1] = sel; }
 	void lock_sel(addr_t sel) { _raw[ELEMENTS - 2] = sel; }
+
+	static addr_t constexpr tls_ipcbuffer_offset = (ELEMENTS - 3) * sizeof(_raw[0]);
+
+	struct Virt { addr_t addr; };
+
+	void ipcbuffer(Virt const virt) { _raw[ELEMENTS - 3] = virt.addr; }
 };
 
 #endif /* _INCLUDE__BASE__INTERNAL__NATIVE_UTCB_H_ */

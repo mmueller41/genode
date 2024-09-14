@@ -15,7 +15,7 @@
 #define _SRC__LIB__HW__SPEC__RISCV__PAGE_TABLE_H_
 
 #include <base/log.h>
-#include <hw/page_flags.h>
+#include <cpu/page_flags.h>
 #include <hw/page_table_allocator.h>
 #include <util/misc_math.h>
 #include <util/register.h>
@@ -73,7 +73,7 @@ struct Sv39::Descriptor : Register<64>
 	struct Ppn  : Bitfield<10, 38> { }; /* physical address 10 bit aligned */
 	struct Base : Bitfield<12, 38> { }; /* physical address page aligned */
 
-	static access_t permission_bits(Hw::Page_flags const &f)
+	static access_t permission_bits(Genode::Page_flags const &f)
 	{
 		access_t rights = 0;
 		R::set(rights, 1);
@@ -125,7 +125,7 @@ struct Sv39::Table_descriptor : Descriptor
 
 struct Sv39::Block_descriptor : Descriptor
 {
-	static access_t create(Hw::Page_flags const &f, addr_t const pa)
+	static access_t create(Genode::Page_flags const &f, addr_t const pa)
 	{
 		access_t base = Base::get(pa);
 		access_t desc = 0;
@@ -184,8 +184,7 @@ class Sv39::Level_x_translation_table
 			return align_addr<size_t>(region, (unsigned)alignment) / (1UL << alignment); }
 
 
-		template <typename FUNC>
-		void _range_op(addr_t vo, addr_t pa, size_t size, FUNC &&func)
+		void _range_op(addr_t vo, addr_t pa, size_t size, auto const &fn)
 		{
 			/* sanity check vo bits 38 to 63 must be equal */
 			addr_t sanity = vo >> 38;
@@ -202,7 +201,7 @@ class Sv39::Level_x_translation_table
 				addr_t end = (vo + BLOCK_SIZE) & BLOCK_MASK;
 				size_t sz  = min(size, end-vo);
 
-				func(vo, pa, sz, _entries[i]);
+				fn(vo, pa, sz, _entries[i]);
 
 				/* flush cached table entry address */
 				_translation_added((addr_t)&_entries[i], sz);
@@ -219,16 +218,16 @@ class Sv39::Level_x_translation_table
 		template <typename E>
 		struct Insert_func
 		{
-			Hw::Page_flags const & flags;
+			Genode::Page_flags const & flags;
 			Allocator            & alloc;
 
-			Insert_func(Hw::Page_flags const & flags, Allocator & alloc)
+			Insert_func(Genode::Page_flags const & flags, Allocator & alloc)
 			: flags(flags), alloc(alloc) { }
 
 			void operator () (addr_t const          vo,
 			                  addr_t const          pa,
 			                  size_t const          size,
-			                  typename Descriptor::access_t &desc)
+			                  typename Descriptor::access_t &desc) const
 			{
 				using Td = Table_descriptor;
 
@@ -280,7 +279,7 @@ class Sv39::Level_x_translation_table
 			void operator () (addr_t const    vo,
 			                  addr_t const /* pa */,
 			                  size_t const    size,
-			                  typename Descriptor::access_t &desc)
+			                  typename Descriptor::access_t &desc) const
 			{
 				using Td = Table_descriptor;
 
@@ -333,7 +332,7 @@ class Sv39::Level_x_translation_table
 		 * \param alloc  level allocator
 		 */
 		void insert_translation(addr_t vo, addr_t pa, size_t size,
-		                        Hw::Page_flags const & flags,
+		                        Genode::Page_flags const & flags,
 		                        Allocator & alloc )
 		{
 			_range_op(vo, pa, size, Insert_func<ENTRY>(flags, alloc));
@@ -367,15 +366,15 @@ namespace Sv39 {
 	template <> template <>
 	struct Level_3_translation_table::Insert_func<None>
 	{
-		Hw::Page_flags const & flags;
+		Genode::Page_flags const & flags;
 
-		Insert_func(Hw::Page_flags const & flags, Allocator &)
+		Insert_func(Genode::Page_flags const & flags, Allocator &)
 		: flags(flags) { }
 
 		void operator () (addr_t const          vo,
 		                  addr_t const          pa,
 		                  size_t const          size,
-		                  Descriptor::access_t &desc)
+		                  Descriptor::access_t &desc) const
 		{
 			if ((vo & ~BLOCK_MASK) || (pa & ~BLOCK_MASK) ||
 			    size < BLOCK_SIZE) {
@@ -401,7 +400,7 @@ namespace Sv39 {
 		void operator () (addr_t /* vo */,
 		                  addr_t /* pa */,
 		                  size_t /* size */,
-		                  Descriptor::access_t &desc) {
+		                  Descriptor::access_t &desc) const {
 			desc = 0; }
 	};
 }

@@ -14,20 +14,23 @@
 #ifndef _CORE__INCLUDE__PLATFORM_PD_H_
 #define _CORE__INCLUDE__PLATFORM_PD_H_
 
+/* Genode includes */
 #include <base/allocator.h>
 #include <parent/parent.h>
 
-namespace Genode {
+/* core includes */
+#include <types.h>
+
+namespace Core {
+
 	struct Platform_pd;
 	struct Platform_thread;
 }
 
 
-struct Genode::Platform_pd
+struct Core::Platform_pd
 {
 	Platform_pd(Allocator &, char const *) { }
-
-	bool bind_thread(Platform_thread &) { return true; }
 
 	void assign_parent(Capability<Parent>) { }
 };

@@ -45,43 +45,42 @@ class Scout::Graphics_backend_impl : public Graphics_backend
 
 		Genode::Dataspace_capability _init_fb_ds(Area max_size)
 		{
-			Framebuffer::Mode const mode { .area = { max_size.w(), max_size.h()*2 }};
+			Framebuffer::Mode const mode { .area = { max_size.w, max_size.h*2 }};
 
 			_gui.buffer(mode, false);
 
-			return _gui.framebuffer()->dataspace();
+			return _gui.framebuffer.dataspace();
 		}
 
 		Area _max_size;
 
 		Genode::Attached_dataspace _fb_ds { _local_rm, _init_fb_ds(_max_size) };
 
-		typedef Gui::Session::View_handle View_handle;
-
 		Point        _position;
 		Area         _view_size;
-		View_handle  _view { _gui.create_view() };
 		Canvas_base *_canvas[2];
 		bool         _flip_state = { false };
 
+		Gui::Top_level_view _view { _gui, { _position, _view_size } };
+
 		void _update_viewport()
 		{
-			typedef Gui::Session::Command Command;
+			using Command = Gui::Session::Command;
 
 			Gui::Rect rect(_position, _view_size);
-			_gui.enqueue<Command::Geometry>(_view, rect);
+			_gui.enqueue<Command::Geometry>(_view.id(), rect);
 
-			Gui::Point offset(0, _flip_state ? -_max_size.h() : 0);
-			_gui.enqueue<Command::Offset>(_view, offset);
+			Gui::Point offset(0, _flip_state ? -_max_size.h : 0);
+			_gui.enqueue<Command::Offset>(_view.id(), offset);
 
 			_gui.execute();
 		}
 
 		void _refresh_view(Rect rect)
 		{
-			int const y_offset = _flip_state ? _max_size.h() : 0;
-			_gui.framebuffer()->refresh(rect.x1(), rect.y1() + y_offset,
-			                            rect.w(), rect.h());
+			int const y_offset = _flip_state ? _max_size.h : 0;
+			_gui.framebuffer.refresh(rect.x1(), rect.y1() + y_offset,
+			                         rect.w(), rect.h());
 		}
 
 		template <typename PT>
@@ -111,9 +110,7 @@ class Scout::Graphics_backend_impl : public Graphics_backend
 			_position(position),
 			_view_size(view_size)
 		{
-			bring_to_front();
-
-			typedef Genode::Pixel_rgb888 PT;
+			using PT = Genode::Pixel_rgb888;
 			static Canvas<PT> canvas_0(_base<PT>(0), max_size, alloc);
 			static Canvas<PT> canvas_1(_base<PT>(1), max_size, alloc);
 
@@ -132,18 +129,18 @@ class Scout::Graphics_backend_impl : public Graphics_backend
 		void copy_back_to_front(Rect rect) override
 		{
 
-			typedef Genode::Pixel_rgb888 PT;
+			using PT = Genode::Pixel_rgb888;
 
 			PT const *src = _base<PT>( _back_idx());
 			PT       *dst = _base<PT>(_front_idx());
 
-			unsigned long const offset = rect.y1()*_max_size.w() + rect.x1();
+			unsigned long const offset = rect.y1()*_max_size.w + rect.x1();
 
 			src += offset;
 			dst += offset;
 
-			blit(src, (unsigned)sizeof(PT)*_max_size.w(), dst,
-			     (int)sizeof(PT)*_max_size.w(),
+			blit(src, (unsigned)sizeof(PT)*_max_size.w, dst,
+			     (int)sizeof(PT)*_max_size.w,
 			     (int)sizeof(PT)*rect.w(), rect.h());
 
 			_refresh_view(rect);
@@ -163,10 +160,7 @@ class Scout::Graphics_backend_impl : public Graphics_backend
 
 		void bring_to_front() override
 		{
-			typedef Gui::Session::Command     Command;
-			typedef Gui::Session::View_handle View_handle;
-			_gui.enqueue<Command::To_front>(_view, View_handle());
-			_gui.execute();
+			_view.front();
 		}
 
 		void view_area(Area area) override

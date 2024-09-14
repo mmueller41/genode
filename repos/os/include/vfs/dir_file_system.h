@@ -51,7 +51,7 @@ class Vfs::Dir_file_system : public File_system
 		{
 			struct Subdir_handle_element;
 
-			typedef Genode::Registry<Subdir_handle_element> Subdir_handle_registry;
+			using Subdir_handle_registry = Genode::Registry<Subdir_handle_element>;
 
 			struct Subdir_handle_element : Subdir_handle_registry::Element
 			{
@@ -98,7 +98,7 @@ class Vfs::Dir_file_system : public File_system
 		{
 			struct Watch_handle_element;
 
-			typedef Genode::Registry<Watch_handle_element> Watch_handle_registry;
+			using Watch_handle_registry = Genode::Registry<Watch_handle_element>;
 
 			struct Watch_handle_element : Watch_handle_registry::Element
 			{
@@ -156,7 +156,7 @@ class Vfs::Dir_file_system : public File_system
 		/**
 		 * Directory name
 		 */
-		typedef String<MAX_NAME_LEN> Name;
+		using Name = String<MAX_NAME_LEN>;
 		Name const _name;
 
 		/**
@@ -170,9 +170,9 @@ class Vfs::Dir_file_system : public File_system
 		 * \param fn  functor that takes a file-system reference and
 		 *            the path as arguments
 		 */
-		template <typename RES, typename FN>
+		template <typename RES>
 		RES _dir_op(RES const no_entry, RES const no_perm, RES const ok,
-		            char const *path, FN const &fn)
+		            char const *path, auto const &fn)
 		{
 			path = _sub_path(path);
 
@@ -314,7 +314,7 @@ class Vfs::Dir_file_system : public File_system
 					vfs_handle.seek(index * sizeof(Dirent));
 
 					/* forward the response handler */
-					dir_vfs_handle->apply_handler([&] (Vfs::Io_response_handler &h) {
+					dir_vfs_handle->apply_handler([&] (Vfs::Read_ready_response_handler &h) {
 						vfs_handle.handler(&h); });
 
 					result = vfs_handle.fs().queue_read(&vfs_handle, sizeof(Dirent));
@@ -330,8 +330,8 @@ class Vfs::Dir_file_system : public File_system
 		}
 
 		Read_result _complete_read_of_file_systems(Dir_vfs_handle *dir_vfs_handle,
-		                                           char *dst, file_size count,
-		                                           file_size &out_count)
+		                                           Byte_range_ptr const &dst,
+		                                           size_t &out_count)
 		{
 			if (!dir_vfs_handle->queued_read_handle) {
 
@@ -340,10 +340,10 @@ class Vfs::Dir_file_system : public File_system
 				 * fs->opendir() failed
 				 */
 
-				if (count < sizeof(Dirent))
+				if (dst.num_bytes < sizeof(Dirent))
 					return READ_ERR_INVALID;
 
-				Dirent &dirent = *(Dirent*)dst;
+				Dirent &dirent = *(Dirent*)dst.start;
 				dirent = Dirent { };
 
 				out_count = sizeof(Dirent);
@@ -353,7 +353,7 @@ class Vfs::Dir_file_system : public File_system
 
 			Read_result result = dir_vfs_handle->queued_read_handle->fs().
 			                     complete_read(dir_vfs_handle->queued_read_handle,
-			                                   dst, count, out_count);
+			                                   dst, out_count);
 
 			if (result == READ_QUEUED)
 				return result;
@@ -394,18 +394,7 @@ class Vfs::Dir_file_system : public File_system
 					continue;
 				}
 
-				Genode::error("failed to create <", sub_node.type(), "> VFS node");
-				try {
-					for (unsigned i = 0; i < 16; ++i) {
-
-						Xml_attribute const attr = sub_node.attribute(i);
-
-						String<64> value { };
-						attr.value(value);
-
-						Genode::error("\t", attr.name(), "=\"", value, "\"");
-					}
-				} catch (Xml_node::Nonexistent_attribute) { }
+				Genode::error("failed to create VFS node: ", sub_node);
 			}
 		}
 
@@ -659,9 +648,15 @@ class Vfs::Dir_file_system : public File_system
 						continue;
 					}
 
-					new (dir_vfs_handle.alloc())
-						Dir_vfs_handle::Subdir_handle_element(
-							dir_vfs_handle.subdir_handle_registry, *sub_dir_handle);
+					try {
+						new (dir_vfs_handle.alloc())
+							Dir_vfs_handle::Subdir_handle_element(
+								dir_vfs_handle.subdir_handle_registry, *sub_dir_handle);
+					}
+					catch (...) {
+						sub_dir_handle->close();
+						throw;
+					}
 					/* return OK because at least one directory has been opened */
 					res = OPENDIR_OK;
 				}
@@ -893,12 +888,12 @@ class Vfs::Dir_file_system : public File_system
 		 ** File I/O service interface **
 		 ********************************/
 
-		Write_result write(Vfs_handle *, char const *, file_size, file_size &) override
+		Write_result write(Vfs_handle *, Const_byte_range_ptr const &, size_t &) override
 		{
 			return WRITE_ERR_INVALID;
 		}
 
-		bool queue_read(Vfs_handle *vfs_handle, file_size) override
+		bool queue_read(Vfs_handle *vfs_handle, size_t) override
 		{
 			Dir_vfs_handle *dir_vfs_handle =
 				static_cast<Dir_vfs_handle*>(vfs_handle);
@@ -913,23 +908,23 @@ class Vfs::Dir_file_system : public File_system
 		}
 
 		Read_result complete_read(Vfs_handle *vfs_handle,
-		                          char *dst, file_size count,
-		                          file_size &out_count) override
+		                          Byte_range_ptr const &dst,
+		                          size_t &out_count) override
 		{
 			out_count = 0;
 
-			if (count < sizeof(Dirent))
+			if (dst.num_bytes < sizeof(Dirent))
 				return READ_ERR_INVALID;
 
 			Dir_vfs_handle *dir_vfs_handle =
 				static_cast<Dir_vfs_handle*>(vfs_handle);
 
 			if (_vfs_root)
-				return _complete_read_of_file_systems(dir_vfs_handle, dst, count, out_count);
+				return _complete_read_of_file_systems(dir_vfs_handle, dst, out_count);
 
 			if (_top_dir(dir_vfs_handle->path.base())) {
 
-				Dirent &dirent = *(Dirent*)dst;
+				Dirent &dirent = *(Dirent*)dst.start;
 
 				file_offset const index = vfs_handle->seek() / sizeof(Dirent);
 
@@ -957,7 +952,7 @@ class Vfs::Dir_file_system : public File_system
 				return READ_OK;
 			}
 
-			return _complete_read_of_file_systems(dir_vfs_handle, dst, count, out_count);
+			return _complete_read_of_file_systems(dir_vfs_handle, dst, out_count);
 		}
 
 		Ftruncate_result ftruncate(Vfs_handle *, file_size) override
@@ -965,12 +960,20 @@ class Vfs::Dir_file_system : public File_system
 			return FTRUNCATE_ERR_NO_PERM;
 		}
 
-		bool read_ready(Vfs_handle *handle) override
+		bool read_ready(Vfs_handle const &handle) const override
 		{
-			if (&handle->fs() == this)
+			if (&handle.fs() == this)
 				return true;
 
-			return handle->fs().read_ready(handle);
+			return handle.fs().read_ready(handle);
+		}
+
+		bool write_ready(Vfs_handle const &handle) const override
+		{
+			if (&handle.fs() == this)
+				return false;
+
+			return handle.fs().write_ready(handle);
 		}
 
 		bool notify_read_ready(Vfs_handle *handle) override
@@ -990,7 +993,7 @@ class Vfs::Dir_file_system : public File_system
 
 			auto f = [&result, dir_vfs_handle] (Dir_vfs_handle::Subdir_handle_element &e) {
 				/* forward the response handler */
-				dir_vfs_handle->apply_handler([&] (Io_response_handler &h) {
+				dir_vfs_handle->apply_handler([&] (Read_ready_response_handler &h) {
 					e.vfs_handle.handler(&h); });
 				e.synced = false;
 

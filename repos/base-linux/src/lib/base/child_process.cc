@@ -24,68 +24,45 @@
 using namespace Genode;
 
 
+static Thread_capability create_thread(auto &pd, auto &cpu, auto const &name)
+{
+	return cpu.create_thread(pd, name, { }, { }).template convert<Thread_capability>(
+		[&] (Thread_capability cap) { return cap; },
+		[&] (Cpu_session::Create_thread_error) {
+			error("failed to create thread via CPU session");
+			return Thread_capability(); });
+}
+
+
 /*
  * Register main thread at core
  *
  * At this point in time, we do not yet know the TID and PID of the new
  * thread. Those information will be provided to core by the constructor of
- * the 'Platform_env' of the new process.
+ * the 'Platform' of the new process.
  */
 Child::Initial_thread::Initial_thread(Cpu_session          &cpu,
                                       Pd_session_capability pd,
                                       Name           const &name)
 :
-	_cpu(cpu),
-	_cap(cpu.create_thread(pd, name, Affinity::Location(), Cpu_session::Weight()))
+	_cpu(cpu), _cap(create_thread(pd, cpu, name))
 { }
 
 
 Child::Initial_thread::~Initial_thread() { }
 
 
-void Child::Initial_thread::start(addr_t) { }
+void Child::Initial_thread::start(addr_t, Start &) { }
 
 
-/*
- * On Linux, the ELF loading is performed by the kernel
- */
-Child::Process::Loaded_executable::Loaded_executable(Type,
-                                                     Dataspace_capability,
-                                                     Ram_allocator &,
-                                                     Region_map &,
-                                                     Region_map &,
-                                                     Parent_capability) { }
-
-
-Child::Process::Process(Type                  type,
-                        Dataspace_capability  ldso_ds,
-                        Pd_session           &pd,
-                        Initial_thread_base  &,
-                        Region_map           &local_rm,
-                        Region_map           &remote_rm,
-                        Parent_capability     parent_cap)
-:
-	loaded_executable(type, ldso_ds, pd, local_rm, remote_rm, parent_cap)
+Child::Start_result Child::_start_process(Dataspace_capability   ldso_ds,
+                                          Pd_session            &pd,
+                                          Initial_thread_base   &,
+                                          Initial_thread::Start &,
+                                          Region_map            &,
+                                          Region_map            &,
+                                          Parent_capability)
 {
-	/* skip loading when called during fork */
-	if (type == TYPE_FORKED)
-		return;
-
-	/*
-	 * If the specified executable is a dynamically linked program, we load
-	 * the dynamic linker instead.
-	 */
-	if (!ldso_ds.valid()) {
-		error("attempt to start dynamic executable without dynamic linker");
-		throw Missing_dynamic_linker();
-	}
-
-	pd.assign_parent(parent_cap);
-
-	Linux_native_pd_client lx_pd(pd.native_pd());
-
-	lx_pd.start(ldso_ds);
+	Linux_native_pd_client(pd.native_pd()).start(ldso_ds);
+	return Start_result::OK;
 }
-
-
-Child::Process::~Process() { }

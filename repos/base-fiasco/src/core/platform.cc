@@ -12,7 +12,6 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <base/allocator_avl.h>
 #include <base/sleep.h>
 #include <util/misc_math.h>
@@ -35,7 +34,7 @@
 /* L4/Fiasco includes */
 #include <fiasco/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 using namespace Fiasco;
 
 
@@ -124,7 +123,7 @@ static void _core_pager_loop()
 }
 
 
-Platform::Sigma0::Sigma0()
+Core::Platform::Sigma0::Sigma0()
 :
 	Pager_object(Cpu_session_capability(), Thread_capability(),
 	             0, Affinity::Location(), Session_label(),
@@ -134,23 +133,22 @@ Platform::Sigma0::Sigma0()
 }
 
 
-Platform::Sigma0 &Platform::sigma0()
+Core::Platform::Sigma0 &Core::Platform::sigma0()
 {
 	static Sigma0 _sigma0;
 	return _sigma0;
 }
 
 
-Platform::Core_pager::Core_pager(Platform_pd &core_pd)
+Core::Platform::Core_pager::Core_pager(Platform_pd &core_pd)
 :
-	Platform_thread("core.pager"),
+	Platform_thread(core_pd, "core.pager"),
 	Pager_object(Cpu_session_capability(), Thread_capability(),
 	             0, Affinity::Location(), Session_label(),
 	             Cpu_session::Name(name()))
 {
 	Platform_thread::pager(sigma0());
 
-	core_pd.bind_thread(*this);
 	cap(Capability_space::import(native_thread_id(), Rpc_obj_key()));
 
 	/* pager needs to know core's pd ID */
@@ -168,7 +166,7 @@ Platform::Core_pager::Core_pager(Platform_pd &core_pd)
 }
 
 
-Platform::Core_pager &Platform::core_pager()
+Core::Platform::Core_pager &Core::Platform::core_pager()
 {
 	static Core_pager _core_pager(core_pd());
 	return _core_pager;
@@ -250,7 +248,7 @@ static inline int sigma0_req_region(addr_t *addr, unsigned log2size)
 }
 
 
-void Platform::_setup_mem_alloc()
+void Core::Platform::_setup_mem_alloc()
 {
 	/*
 	 * Completely map program image by touching all pages read-only to
@@ -297,7 +295,7 @@ void Platform::_setup_mem_alloc()
 }
 
 
-void Platform::_setup_irq_alloc()
+void Core::Platform::_setup_irq_alloc()
 {
 	_irq_alloc.add_range(0, 0x10);
 }
@@ -348,12 +346,9 @@ static l4_kernel_info_t *get_kip()
 }
 
 
-void Platform::_setup_basics()
+void Core::Platform::_setup_basics()
 {
 	l4_kernel_info_t * kip = get_kip();
-
-	/* add KIP as ROM module */
-	_rom_fs.insert(&_kip_rom);
 
 	/* parse memory descriptors - look for virtual memory configuration */
 	/* XXX we support only one VM region (here and also inside RM) */
@@ -401,12 +396,12 @@ void Platform::_setup_basics()
 }
 
 
-Platform::Platform()
+Core::Platform::Platform()
 :
 	_ram_alloc(nullptr), _io_mem_alloc(&core_mem_alloc()),
 	_io_port_alloc(&core_mem_alloc()), _irq_alloc(&core_mem_alloc()),
 	_region_alloc(&core_mem_alloc()),
-	_kip_rom((addr_t)get_kip(), L4_PAGESIZE, "l4v2_kip")
+	_kip_rom(_rom_fs, "l4v2_kip", (addr_t)get_kip(), L4_PAGESIZE)
 {
 	/*
 	 * We must be single-threaded at this stage and so this is safe.
@@ -436,10 +431,9 @@ Platform::Platform()
 	 * interface that allows us to specify the lthread number.
 	 */
 	Platform_thread &core_thread = *new (core_mem_alloc())
-		Platform_thread("core.main");
+		Platform_thread(*_core_pd, "core.main");
 
 	core_thread.pager(sigma0());
-	_core_pd->bind_thread(core_thread);
 
 	/* we never call _core_thread.start(), so set name directly */
 	fiasco_register_thread_name(core_thread.native_thread_id(),
@@ -460,8 +454,8 @@ Platform::Platform()
 				memset(core_local_ptr, 0, size);
 				content_fn(core_local_ptr, size);
 
-				_rom_fs.insert(new (core_mem_alloc())
-				               Rom_module(phys_addr, size, rom_name));
+				new (core_mem_alloc())
+					Rom_module(_rom_fs, rom_name, phys_addr, size);
 			},
 			[&] (Range_allocator::Alloc_error) {
 				warning("failed to export ", rom_name, " as ROM module"); }
@@ -478,8 +472,8 @@ Platform::Platform()
 		[&] (void *core_local_ptr, size_t size) {
 			Xml_generator xml(reinterpret_cast<char *>(core_local_ptr),
 			                  size, "platform_info",
-				[&] () {
-					xml.node("kernel", [&] () {
+				[&] {
+					xml.node("kernel", [&] {
 						xml.attribute("name", "fiasco"); }); }); });
 }
 
@@ -488,7 +482,7 @@ Platform::Platform()
  ** Generic platform interface **
  ********************************/
 
-void Platform::wait_for_exit()
+void Core::Platform::wait_for_exit()
 {
 	/*
 	 * On Fiasco, Core never exits. So let us sleep forever.

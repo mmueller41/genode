@@ -14,20 +14,25 @@
 #ifndef _CORE__SPEC__ARM_TRUSTZONE_BOARD_H_
 #define _CORE__SPEC__ARM_TRUSTZONE_BOARD_H_
 
-#include <spec/arm/cpu/vm_state_trustzone.h>
+/* Genode includes */
+#include <spec/arm/cpu/vcpu_state_trustzone.h>
+
+/* core includes */
+#include <types.h>
 
 namespace Kernel { class Cpu; }
 
 namespace Board {
 
-	using Genode::Vm_state;
+	using Core::Vcpu_state;
+	using Vcpu_data = Core::Vcpu_state;
 
 	enum { VCPU_MAX = 1 };
 
 	struct Vm_page_table {};
 	struct Vm_page_table_array {};
 
-	class Global_interrupt_controller { };
+	class Global_interrupt_controller { public: void init() {} };
 	struct Pic : Hw::Pic { struct Virtual_context {}; Pic(Global_interrupt_controller &) { } };
 	struct Vcpu_context { Vcpu_context(Kernel::Cpu &) {} };
 }

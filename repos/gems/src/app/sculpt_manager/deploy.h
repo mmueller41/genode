@@ -35,7 +35,7 @@ namespace Sculpt { struct Deploy; }
 
 struct Sculpt::Deploy
 {
-	typedef Depot_deploy::Child::Prio_levels Prio_levels;
+	using Prio_levels = Depot_deploy::Child::Prio_levels;
 
 	Env &_env;
 
@@ -45,27 +45,35 @@ struct Sculpt::Deploy
 
 	Runtime_info const &_runtime_info;
 
-	Dialog::Generator &_dialog_generator;
+	struct Action : Interface { virtual void refresh_deploy_dialog() = 0; };
+
+	Action &_action;
 
 	Runtime_config_generator &_runtime_config_generator;
 
 	Depot_query &_depot_query;
 
-	Attached_rom_dataspace const &_launcher_listing_rom;
-	Attached_rom_dataspace const &_blueprint_rom;
+	Rom_data const &_launcher_listing_rom;
+	Rom_data const &_blueprint_rom;
 
-	Download_queue const &_download_queue;
+	Download_queue &_download_queue;
 
-	typedef String<16> Arch;
+	using Arch = String<16>;
 	Arch _arch { };
 
 	Child_state cached_depot_rom_state {
-		_child_states, "depot_rom", Priority::STORAGE,
-		Ram_quota{24*1024*1024}, Cap_quota{200} };
+		_child_states, { .name      = "depot_rom",
+		                 .priority  = Priority::STORAGE,
+		                 .cpu_quota = 0,
+		                 .initial   = { Ram_quota{24*1024*1024}, Cap_quota{200} },
+		                 .max       = { Ram_quota{2*1024*1024*1024UL}, { } } } };
 
 	Child_state uncached_depot_rom_state {
-		_child_states, "dynamic_depot_rom", Priority::STORAGE,
-		Ram_quota{8*1024*1024}, Cap_quota{200} };
+		_child_states, { .name      = "dynamic_depot_rom",
+		                 .priority  = Priority::STORAGE,
+		                 .cpu_quota = 0,
+		                 .initial   = { Ram_quota{8*1024*1024}, Cap_quota{200} },
+		                 .max       = { Ram_quota{2*1024*1024*1024UL}, { } } } };
 
 	/*
 	 * Report written to '/config/managed/deploy'
@@ -76,9 +84,30 @@ struct Sculpt::Deploy
 	Expanding_reporter _managed_deploy_config { _env, "config", "deploy_config" };
 
 	/* config obtained from '/config/managed/deploy' */
-	Attached_rom_dataspace _managed_deploy_rom { _env, "config -> managed/deploy" };
+	Rom_handler<Deploy> _managed_deploy_rom {
+		_env, "config -> managed/deploy", *this, &Deploy::_handle_managed_deploy };
 
-	void update_managed_deploy_config(Xml_node deploy)
+	Constructible<Buffered_xml> _template { };
+
+	void use_as_deploy_template(Xml_node const &deploy)
+	{
+		_template.construct(_alloc, deploy);
+	}
+
+	void update_managed_deploy_config()
+	{
+		if (!_template.constructed())
+			return;
+
+		Xml_node const deploy = _template->xml();
+
+		if (deploy.type() == "empty")
+			return;
+
+		_update_managed_deploy_config(deploy);
+	}
+
+	void _update_managed_deploy_config(Xml_node deploy)
 	{
 		/*
 		 * Ignore intermediate states that may occur when manually updating
@@ -115,7 +144,7 @@ struct Sculpt::Deploy
 				if (_runtime_info.abandoned_by_user(name))
 					return;
 
-				xml.node("start", [&] () {
+				xml.node("start", [&] {
 
 					/*
 					 * Copy attributes
@@ -145,6 +174,7 @@ struct Sculpt::Deploy
 					copy_attribute("cpu");
 					copy_attribute("priority");
 					copy_attribute("pkg");
+					copy_attribute("managing_system");
 
 					/* copy start-node content */
 					node.with_raw_content([&] (char const *start, size_t length) {
@@ -164,7 +194,7 @@ struct Sculpt::Deploy
 	Managed_config<Deploy> _installation {
 		_env, "installation", "installation", *this, &Deploy::_handle_installation };
 
-	void _handle_installation(Xml_node manual_config)
+	void _handle_installation(Xml_node const &manual_config)
 	{
 		_manual_installation_scheduled = manual_config.has_sub_node("archive");
 		handle_deploy();
@@ -175,23 +205,21 @@ struct Sculpt::Deploy
 	bool update_needed() const
 	{
 		return _manual_installation_scheduled
-		    || _children.any_incomplete()
 		    || _download_queue.any_active_download();
 	}
 
-	void handle_deploy();
+	void _handle_managed_deploy(Xml_node const &);
 
-	void _handle_managed_deploy()
+	void handle_deploy()
 	{
-		_managed_deploy_rom.update();
-		handle_deploy();
+		_managed_deploy_rom.with_xml([&] (Xml_node const &managed_deploy) {
+			_handle_managed_deploy(managed_deploy); });
 	}
 
 	/**
 	 * Call 'fn' for each unsatisfied dependency of the child's 'start' node
 	 */
-	template <typename FN>
-	void _for_each_missing_server(Xml_node start, FN const &fn) const
+	void _for_each_missing_server(Xml_node start, auto const &fn) const
 	{
 		start.for_each_sub_node("route", [&] (Xml_node route) {
 			route.for_each_sub_node("service", [&] (Xml_node service) {
@@ -206,7 +234,7 @@ struct Sculpt::Deploy
 					if (name == "default_fs_rw")
 						return;
 
-					if (!_runtime_info.present_in_runtime(name))
+					if (!_runtime_info.present_in_runtime(name) || _children.blueprint_needed(name))
 						fn(name);
 				});
 			});
@@ -229,12 +257,9 @@ struct Sculpt::Deploy
 		return !all_satisfied;
 	}
 
-	void gen_child_diagnostics(Xml_generator &xml) const;
+	void view_diag(Scope<> &) const;
 
 	void gen_runtime_start_nodes(Xml_generator &, Prio_levels, Affinity::Space) const;
-
-	Signal_handler<Deploy> _managed_deploy_handler {
-		_env.ep(), *this, &Deploy::_handle_managed_deploy };
 
 	void restart()
 	{
@@ -261,33 +286,33 @@ struct Sculpt::Deploy
 		if (_installation.try_generate_manually_managed())
 			return;
 
+		_children.for_each_missing_pkg_path([&] (Depot::Archive::Path const path) {
+			_download_queue.add(path, Verify { true }); });
+
 		_installation.generate([&] (Xml_generator &xml) {
 			xml.attribute("arch", _arch);
-			_children.gen_installation_entries(xml);
 			_download_queue.gen_installation_entries(xml);
 		});
 	}
 
 	Deploy(Env &env, Allocator &alloc, Registry<Child_state> &child_states,
 	       Runtime_info const &runtime_info,
-	       Dialog::Generator &dialog_generator,
+	       Action &action,
 	       Runtime_config_generator &runtime_config_generator,
 	       Depot_query &depot_query,
-	       Attached_rom_dataspace const &launcher_listing_rom,
-	       Attached_rom_dataspace const &blueprint_rom,
-	       Download_queue const &download_queue)
+	       Rom_data const &launcher_listing_rom,
+	       Rom_data const &blueprint_rom,
+	       Download_queue &download_queue)
 	:
 		_env(env), _alloc(alloc), _child_states(child_states),
 		_runtime_info(runtime_info),
-		_dialog_generator(dialog_generator),
+		_action(action),
 		_runtime_config_generator(runtime_config_generator),
 		_depot_query(depot_query),
 		_launcher_listing_rom(launcher_listing_rom),
 		_blueprint_rom(blueprint_rom),
 		_download_queue(download_queue)
-	{
-		_managed_deploy_rom.sigh(_managed_deploy_handler);
-	}
+	{ }
 };
 
 #endif /* _DEPLOY_H_ */

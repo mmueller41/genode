@@ -31,7 +31,10 @@
 	};
 
 
-namespace Hw { struct Arm_64_cpu; }
+namespace Hw { struct Arm_64_cpu; struct Suspend_type; }
+
+
+struct Hw::Suspend_type { };
 
 
 struct Hw::Arm_64_cpu
@@ -76,11 +79,13 @@ struct Hw::Arm_64_cpu
 		struct Ec : Bitfield<26, 6>
 		{
 			enum Exception {
-				SVC                   = 0b010101,
-				INST_ABORT_LOW_LEVEL  = 0b100000,
-				INST_ABORT_SAME_LEVEL = 0b100001,
-				DATA_ABORT_LOW_LEVEL  = 0b100100,
-				DATA_ABORT_SAME_LEVEL = 0b100101,
+				SVC                     = 0b010101,
+				INST_ABORT_LOW_LEVEL    = 0b100000,
+				INST_ABORT_SAME_LEVEL   = 0b100001,
+				DATA_ABORT_LOW_LEVEL    = 0b100100,
+				DATA_ABORT_SAME_LEVEL   = 0b100101,
+				SOFTWARE_STEP_LOW_LEVEL = 0b110010,
+				BRK                     = 0b111100,
 			};
 		};
 
@@ -141,6 +146,11 @@ struct Hw::Arm_64_cpu
 	SYSTEM_REGISTER(64, Mair_el1, mair_el1);
 	SYSTEM_REGISTER(64, Mair_el2, mair_el2);
 
+	struct Mdscr : Genode::Register<64>
+	{
+		struct Ss  : Bitfield<0,  1> {};
+	};
+
 	SYSTEM_REGISTER(64, Mpidr, mpidr_el1,
 		struct Aff0 : Bitfield<0,  8> {};
 		struct Aff1 : Bitfield<8,  8> {};
@@ -168,6 +178,7 @@ struct Hw::Arm_64_cpu
 		struct I   : Bitfield<12, 1> { };
 		struct Uct : Bitfield<15, 1> { };
 		struct Wxn : Bitfield<19, 1> { };
+		struct Uci : Bitfield<26, 1> { };
 	};
 
 	SYSTEM_REGISTER(64, Sctlr_el1, sctlr_el1);
@@ -175,12 +186,13 @@ struct Hw::Arm_64_cpu
 
 	struct Spsr : Genode::Register<64>
 	{
-		struct Sp : Bitfield<0, 1> {};
-		struct El : Bitfield<2, 2> {};
-		struct F  : Bitfield<6, 1> {};
-		struct I  : Bitfield<7, 1> {};
-		struct A  : Bitfield<8, 1> {};
-		struct D  : Bitfield<9, 1> {};
+		struct Sp : Bitfield<0,  1> {};
+		struct El : Bitfield<2,  2> {};
+		struct F  : Bitfield<6,  1> {};
+		struct I  : Bitfield<7,  1> {};
+		struct A  : Bitfield<8,  1> {};
+		struct D  : Bitfield<9,  1> {};
+		struct Ss : Bitfield<21, 1> {};
 	};
 
 	SYSTEM_REGISTER(64, Spsr_el2, spsr_el2);

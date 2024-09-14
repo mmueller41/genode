@@ -17,6 +17,8 @@
 
 /* Genode includes */
 #include <util/mmio.h>
+#include <hw/spec/x86_64/apic.h>
+#include <hw/spec/x86_64/x86_64.h>
 
 namespace Board {
 
@@ -47,7 +49,7 @@ struct Board::Irte : Genode::Register<64>
 };
 
 
-class Board::Global_interrupt_controller : public Genode::Mmio
+class Board::Global_interrupt_controller : public Genode::Mmio<Hw::Cpu_memory_map::MMIO_IOAPIC_SIZE>
 {
 	private:
 
@@ -85,7 +87,6 @@ class Board::Global_interrupt_controller : public Genode::Mmio
 		};
 
 		unsigned _irte_count = 0;       /* number of redirection table entries */
-		uint8_t  _lapic_id[NR_OF_CPUS]; /* unique name of the LAPIC of each CPU */
 		Irq_mode _irq_mode[IRQ_COUNT];
 
 		/**
@@ -114,6 +115,8 @@ class Board::Global_interrupt_controller : public Genode::Mmio
 
 		Global_interrupt_controller();
 
+		void init();
+
 		/**
 		 * Set/unset mask bit of IRTE for given vector
 		 *
@@ -133,54 +136,12 @@ class Board::Global_interrupt_controller : public Genode::Mmio
 		void irq_mode(unsigned irq_number,
 		              unsigned trigger,
 		              unsigned polarity);
-
-
-		/***************
-		 ** Accessors **
-		 ***************/
-
-		void lapic_id(unsigned cpu_id, uint8_t lapic_id);
-
-		uint8_t lapic_id(unsigned cpu_id) const;
 };
 
 
-class Board::Local_interrupt_controller : public Genode::Mmio
+class Board::Local_interrupt_controller : private Hw::Local_apic
 {
 	private:
-
-		/*
-		 * Registers
-		 */
-
-		struct Id  : Register<0x020, 32> { };
-		struct EOI : Register<0x0b0, 32, true> { };
-		struct Svr : Register<0x0f0, 32>
-		{
-			struct APIC_enable : Bitfield<8, 1> { };
-		};
-
-		/*
-		 * ISR register, see Intel SDM Vol. 3A, section 10.8.4.
-		 *
-		 * Each of the 8 32-bit ISR values is followed by 12 bytes of padding.
-		 */
-		struct Isr : Register_array<0x100, 32, 8 * 4, 32> { };
-
-		/*
-		 * Interrupt control register
-		 */
-		struct Icr_low  : Register<0x300, 32, true>
-		{
-			struct Vector          : Bitfield< 0, 8> { };
-			struct Delivery_status : Bitfield<12, 1> { };
-			struct Level_assert    : Bitfield<14, 1> { };
-		};
-
-		struct Icr_high : Register<0x310, 32, true>
-		{
-			struct Destination : Bitfield<24, 8> { };
-		};
 
 		Global_interrupt_controller &_global_irq_ctrl;
 
@@ -219,15 +180,9 @@ class Board::Local_interrupt_controller : public Genode::Mmio
 
 		void irq_mode(unsigned irq, unsigned trigger, unsigned polarity);
 
-		void store_apic_id(unsigned const cpu_id)
-		{
-			if (cpu_id < NR_OF_CPUS) {
-				Id::access_t const lapic_id = read<Id>();
-				_global_irq_ctrl.lapic_id(cpu_id, (unsigned char)((lapic_id >> 24) & 0xff));
-			}
-		}
-
 		void send_ipi(unsigned const);
+
+		void init();
 };
 
 #endif /* _CORE__SPEC__X86_64__PIC_H_ */

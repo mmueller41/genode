@@ -5,11 +5,6 @@ if { [have_spec linux] } {
 	exit 0
 }
 
-set host_tool [installed_command host]
-set ntp_ip    [exec $host_tool -t A pool.ntp.org | head -1 | cut -d " " -f 4]
-
-puts "Using NTP server $ntp_ip"
-
 create_boot_directory
 
 import_from_depot [depot_user]/src/[base_src] \
@@ -20,7 +15,7 @@ import_from_depot [depot_user]/src/[base_src] \
 
 build { app/sntp_client }
 
-append config {
+install_config {
 <config>
 	<parent-provides>
 		<service name="ROM"/>
@@ -50,7 +45,7 @@ append config {
 		<provides><service name="Timer"/></provides>
 	</start>
 
-	<start name="drivers" caps="1000" managing_system="yes">
+	<start name="drivers" caps="1200" managing_system="yes">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -98,7 +93,7 @@ append config {
 
 	<start name="sntp_client">
 		<resource name="RAM" quantum="8M"/>
-		<config verbose="no" dst_ip="} $ntp_ip {" period_min="1"/>
+		<config verbose="no" dst_addr="pool.ntp.org" period_min="1"/>
 		<route>
 			<service name="Nic"> <child name="nic_router"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
@@ -106,12 +101,13 @@ append config {
 	</start>
 </config>}
 
-install_config $config
-build_boot_image { sntp_client }
+build_boot_image [build_artifacts]
 
 append qemu_args "  -nographic "
 append_qemu_nic_args
 
-set done_string "report_rom]   <set_rtc year.*?report_rom]   <set_rtc year.*?\n"
+set done_string {report_rom\]   <set_rtc year.*?\n}
 
 run_genode_until $done_string 90
+set serial_id [output_spawn_id]
+run_genode_until $done_string 70 $serial_id

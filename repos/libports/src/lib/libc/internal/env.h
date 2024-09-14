@@ -64,19 +64,21 @@ class Libc::Env_implementation : public Libc::Env, public Config_accessor
 
 	public:
 
-		Env_implementation(Genode::Env &env, Genode::Allocator &alloc)
-		: _env(env), _vfs_env(_env, alloc, _vfs_config()) { }
+		Env_implementation(Genode::Env &env, Genode::Allocator &alloc,
+		                   Vfs::Env::User &vfs_user)
+		:
+			_env(env), _vfs_env(_env, alloc, _vfs_config(), vfs_user)
+		{ }
 
-
-		Vfs::Env &vfs_env() { return _vfs_env; }
+		Vfs::File_system &vfs() { return _vfs_env.root_dir(); }
 
 
 		/*************************
 		 ** Libc::Env interface **
 		 *************************/
 
-		Vfs::File_system &vfs() override {
-			return _vfs_env.root_dir(); }
+		Vfs::Env &vfs_env() override {
+			return _vfs_env; }
 
 		Xml_node libc_config() override {
 			return _libc_config(); }

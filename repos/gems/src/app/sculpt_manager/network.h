@@ -20,9 +20,8 @@
 
 /* local includes */
 #include <model/child_exit_state.h>
-#include <model/pci_info.h>
-#include <view/network_dialog.h>
-#include <menu_view.h>
+#include <model/board_info.h>
+#include <view/network_widget.h>
 #include <runtime.h>
 #include <keyboard_focus.h>
 #include <managed_config.h>
@@ -30,7 +29,7 @@
 namespace Sculpt { struct Network; }
 
 
-struct Sculpt::Network : Network_dialog::Action
+struct Sculpt::Network : Noncopyable
 {
 	Env &_env;
 
@@ -38,40 +37,42 @@ struct Sculpt::Network : Network_dialog::Action
 
 	struct Action : Interface
 	{
-		virtual void update_network_dialog() = 0;
+		virtual void network_config_changed() = 0;
 	};
 
-	Action &_action;
+	struct Info : Interface
+	{
+		virtual bool ap_list_hovered() const = 0;
+	};
+
+	Action     &_action;
+	Info const &_info;
 
 	Registry<Child_state> &_child_states;
 
 	Runtime_config_generator &_runtime_config_generator;
 
-	Runtime_info const &_runtime_info;
-	Pci_info     const &_pci_info;
+	using Wlan_config_policy = Network_widget::Wlan_config_policy;
 
 	Nic_target _nic_target { };
 	Nic_state  _nic_state  { };
 
+	Access_point::Bssid _selected_ap { };
+
 	Wpa_passphrase wpa_passphrase { };
 
-	unsigned _nic_drv_version  = 0;
-	unsigned _wifi_drv_version = 0;
-	unsigned _usb_net_version  = 0;
+	Rom_handler<Network> _wlan_accesspoints_rom {
+		_env, "report -> runtime/wifi/accesspoints", *this, &Network::_handle_wlan_accesspoints };
 
-	Attached_rom_dataspace _wlan_accesspoints_rom {
-		_env, "report -> runtime/wifi_drv/accesspoints" };
+	Rom_handler<Network> _wlan_state_rom {
+		_env, "report -> runtime/wifi/state", *this, &Network::_handle_wlan_state };
 
-	Attached_rom_dataspace _wlan_state_rom {
-		_env, "report -> runtime/wifi_drv/state" };
-
-	Attached_rom_dataspace _nic_router_state_rom {
-		_env, "report -> runtime/nic_router/state" };
+	Rom_handler<Network> _nic_router_state_rom {
+		_env, "report -> runtime/nic_router/state", *this, &Network::_handle_nic_router_state };
 
 	void _generate_nic_router_config();
 
-	void _generate_nic_router_uplink(Xml_generator &xml,
-	                                 char    const *label);
+	void _generate_nic_router_uplink(Xml_generator &xml, char const *label);
 
 	Access_points _access_points { };
 
@@ -83,43 +84,32 @@ struct Sculpt::Network : Network_dialog::Action
 
 	void handle_key_press(Codepoint);
 
-	void _handle_wlan_accesspoints();
-	void _handle_wlan_state();
-	void _handle_nic_router_state();
-	void _handle_nic_router_config(Xml_node);
+	void _handle_wlan_accesspoints(Xml_node const &);
+	void _handle_wlan_state(Xml_node const &);
+	void _handle_nic_router_state(Xml_node const &);
+	void _handle_nic_router_config(Xml_node const &);
 
 	Managed_config<Network> _nic_router_config {
 		_env, "config", "nic_router", *this, &Network::_handle_nic_router_config };
 
-	Signal_handler<Network> _wlan_accesspoints_handler {
-		_env.ep(), *this, &Network::_handle_wlan_accesspoints };
+	Wlan_config_policy _wlan_config_policy = Wlan_config_policy::MANAGED;
 
-	Signal_handler<Network> _wlan_state_handler {
-		_env.ep(), *this, &Network::_handle_wlan_state };
-
-	Signal_handler<Network> _nic_router_state_handler {
-		_env.ep(), *this, &Network::_handle_nic_router_state };
-
-	Network_dialog::Wlan_config_policy _wlan_config_policy =
-		Network_dialog::WLAN_CONFIG_MANAGED;
-
-	Network_dialog dialog {
+	Network_widget dialog {
 		_nic_target, _access_points,
-		_wifi_connection, _nic_state, wpa_passphrase, _wlan_config_policy,
-		_pci_info };
+		_wifi_connection, _nic_state, wpa_passphrase, _wlan_config_policy };
 
 	Managed_config<Network> _wlan_config {
 		_env, "config", "wifi", *this, &Network::_handle_wlan_config };
 
-	void _handle_wlan_config(Xml_node)
+	void _handle_wlan_config(Xml_node const &)
 	{
 		if (_wlan_config.try_generate_manually_managed()) {
-			_wlan_config_policy = Network_dialog::WLAN_CONFIG_MANUAL;
-			_action.update_network_dialog();
+			_wlan_config_policy = Wlan_config_policy::MANUAL;
+			_action.network_config_changed();
 			return;
 		}
 
-		_wlan_config_policy = Network_dialog::WLAN_CONFIG_MANAGED;;
+		_wlan_config_policy = Wlan_config_policy::MANAGED;;
 
 		if (_wifi_connection.connected())
 			wifi_connect(_wifi_connection.bssid);
@@ -129,20 +119,17 @@ struct Sculpt::Network : Network_dialog::Action
 
 	void _update_nic_target_from_config(Xml_node const &);
 
-	/**
-	 * Network_dialog::Action interface
-	 */
-	void nic_target(Nic_target::Type const type) override
+	void nic_target(Nic_target::Type const type)
 	{
 		if (type != _nic_target.managed_type) {
 			_nic_target.managed_type = type;
 			_generate_nic_router_config();
 			_runtime_config_generator.generate_runtime_config();
-			_action.update_network_dialog();
+			_action.network_config_changed();
 		}
 	}
 
-	void wifi_connect(Access_point::Bssid bssid) override
+	void wifi_connect(Access_point::Bssid bssid)
 	{
 		_access_points.for_each([&] (Access_point const &ap) {
 			if (ap.bssid != bssid)
@@ -156,7 +143,7 @@ struct Sculpt::Network : Network_dialog::Action
 
 				xml.attribute("connected_scan_interval", 0U);
 				xml.attribute("scan_interval", 10U);
-				xml.attribute("use_11n", false);
+				xml.attribute("update_quality_interval", 30U);
 
 				xml.attribute("verbose_state", false);
 				xml.attribute("verbose",       false);
@@ -175,11 +162,7 @@ struct Sculpt::Network : Network_dialog::Action
 		});
 	}
 
-	void restart_nic_drv_on_next_runtime_cfg()  { _nic_drv_version++; }
-	void restart_wifi_drv_on_next_runtime_cfg() { _wifi_drv_version++; }
-	void restart_usb_net_on_next_runtime_cfg()  { _usb_net_version++; }
-
-	void wifi_disconnect() override
+	void wifi_disconnect()
 	{
 		/*
 		 * Reflect state change immediately to the user interface even
@@ -191,7 +174,7 @@ struct Sculpt::Network : Network_dialog::Action
 
 			xml.attribute("connected_scan_interval", 0U);
 			xml.attribute("scan_interval", 10U);
-			xml.attribute("use_11n", false);
+			xml.attribute("update_quality_interval", 30U);
 
 			xml.attribute("verbose_state", false);
 			xml.attribute("verbose",       false);
@@ -207,22 +190,14 @@ struct Sculpt::Network : Network_dialog::Action
 		_runtime_config_generator.generate_runtime_config();
 	}
 
-	Network(Env &env, Allocator &alloc, Action &action,
+	Network(Env &env, Allocator &alloc, Action &action, Info const &info,
 	        Registry<Child_state> &child_states,
-	        Runtime_config_generator &runtime_config_generator,
-	        Runtime_info const &runtime_info, Pci_info const &pci_info)
+	        Runtime_config_generator &runtime_config_generator)
 	:
-		_env(env), _alloc(alloc), _action(action), _child_states(child_states),
-		_runtime_config_generator(runtime_config_generator),
-		_runtime_info(runtime_info), _pci_info(pci_info)
+		_env(env), _alloc(alloc), _action(action), _info(info),
+		_child_states(child_states),
+		_runtime_config_generator(runtime_config_generator)
 	{
-		/*
-		 * Subscribe to reports
-		 */
-		_wlan_accesspoints_rom.sigh(_wlan_accesspoints_handler);
-		_wlan_state_rom       .sigh(_wlan_state_handler);
-		_nic_router_state_rom .sigh(_nic_router_state_handler);
-
 		/*
 		 * Evaluate and forward initial manually managed config
 		 */

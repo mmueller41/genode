@@ -102,7 +102,7 @@ struct Sandbox::Parent_provides_model : Noncopyable
 		auto update = [&] (Node &, Xml_node const &) { };
 
 		try {
-			update_list_model_from_xml(_model, xml, create, destroy, update);
+			_model.update_from_xml(xml, create, destroy, update);
 		} catch (...) {
 			error("unable to apply complete configuration");
 		}
@@ -117,8 +117,8 @@ struct Sandbox::Start_model : Noncopyable
 	 * because both node types share the same name space.
 	 */
 
-	typedef Child_policy::Name Name;
-	typedef Child::Version     Version;
+	using Name    = Child_policy::Name;
+	using Version = Child::Version;
 
 	static char const *start_type() { return "start"; }
 	static char const *alias_type() { return "alias"; }
@@ -264,7 +264,7 @@ class Sandbox::Config_model : Noncopyable
 
 	public:
 
-		typedef State_reporter::Version Version;
+		using Version = State_reporter::Version;
 
 		void update_from_xml(Xml_node                 const &,
 		                     Allocator                      &,

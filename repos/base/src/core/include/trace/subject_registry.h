@@ -21,20 +21,23 @@
 
 /* Genode includes */
 #include <util/list.h>
-#include <util/string.h>
 #include <base/mutex.h>
 #include <base/trace/types.h>
 #include <base/env.h>
 #include <base/weak_ptr.h>
 #include <dataspace/client.h>
 
-/* core includes */
-#include <trace/source_registry.h>
-
 /* base-internal include */
 #include <base/internal/trace_control.h>
 
-namespace Genode { namespace Trace {
+/* core includes */
+#include <types.h>
+#include <trace/source_registry.h>
+
+namespace Core { namespace Trace {
+
+	using namespace Genode::Trace;
+
 	class Subject;
 	class Subject_registry;
 } }
@@ -43,10 +46,10 @@ namespace Genode { namespace Trace {
 /**
  * Subject of tracing data
  */
-class Genode::Trace::Subject
+class Core::Trace::Subject
 :
-	public Genode::List<Genode::Trace::Subject>::Element,
-	public Genode::Trace::Source_owner
+	public List<Subject>::Element,
+	public Source_owner
 {
 	private:
 
@@ -96,29 +99,21 @@ class Genode::Trace::Subject
 				/**
 				 * Clone dataspace into newly allocated dataspace
 				 */
-				bool setup(Ram_allocator &ram, Region_map &local_rm,
+				void setup(Ram_allocator &ram, Region_map &local_rm,
 				           Dataspace_capability &from_ds, size_t size)
 				{
-					if (!from_ds.valid())
-						return false;
-
 					if (_size)
 						flush();
 
+					_ds      = ram.alloc(size); /* may throw */
 					_ram_ptr = &ram;
 					_size    = size;
-					_ds      = ram.alloc(_size);
 
 					/* copy content */
-					void *src = local_rm.attach(from_ds),
-					     *dst = local_rm.attach(_ds);
+					Attached_dataspace from { local_rm, from_ds },
+					                   to   { local_rm, _ds };
 
-					memcpy(dst, src, _size);
-
-					local_rm.detach(src);
-					local_rm.detach(dst);
-
-					return true;
+					Genode::memcpy(to.local_addr<char>(), from.local_addr<char const>(), _size);
 				}
 
 				/**
@@ -139,14 +134,13 @@ class Genode::Trace::Subject
 		friend class Subject_registry;
 
 		Subject_id    const _id;
-		unsigned      const _source_id;
+		Source::Id    const _source_id;
 		Weak_ptr<Source>    _source;
 		Session_label const _label;
 		Thread_name   const _name;
 		Ram_dataspace       _buffer { };
 		Ram_dataspace       _policy { };
 		Policy_id           _policy_id { };
-		size_t              _allocated_memory { 0 };
 
 		Subject_info::State _state()
 		{
@@ -169,25 +163,12 @@ class Genode::Trace::Subject
 			return Subject_info::UNATTACHED;
 		}
 
-		void _traceable_or_throw()
-		{
-			switch(_state()) {
-				case Subject_info::DEAD       : throw Source_is_dead();
-				case Subject_info::FOREIGN    : throw Traced_by_other_session();
-				case Subject_info::ERROR      : throw Source_is_dead();
-				case Subject_info::INVALID    : throw Nonexistent_subject();
-				case Subject_info::UNATTACHED : return;
-				case Subject_info::ATTACHED   : return;
-				case Subject_info::TRACED     : return;
-			}
-		}
-
 	public:
 
 		/**
 		 * Constructor, called from 'Subject_registry' only
 		 */
-		Subject(Subject_id id, unsigned source_id, Weak_ptr<Source> &source,
+		Subject(Subject_id id, Source::Id source_id, Weak_ptr<Source> &source,
 		        Session_label const &label, Thread_name const &name)
 		:
 			_id(id), _source_id(source_id), _source(source),
@@ -197,15 +178,7 @@ class Genode::Trace::Subject
 		/**
 		 * Destructor, releases ownership of associated source
 		 */
-		~Subject()
-		{
-			Locked_ptr<Source> source(_source);
-
-			if (source.valid()) {
-				source->disable();
-				source->release_ownership(*this);
-			}
-		}
+		~Subject() { release(); }
 
 		/**
 		 * Return registry-local ID
@@ -215,49 +188,60 @@ class Genode::Trace::Subject
 		/**
 		 * Test if subject belongs to the specified unique source ID
 		 */
-		bool has_source_id(unsigned id) const { return id == _source_id; }
+		bool has_source_id(Source::Id id) const { return id.value == _source_id.value; }
 
-		size_t allocated_memory() const { return _allocated_memory; }
-		void   reset_allocated_memory() { _allocated_memory = 0; }
+		enum class Trace_result { OK, OUT_OF_RAM, OUT_OF_CAPS, FOREIGN,
+		                          SOURCE_IS_DEAD, INVALID_SUBJECT };
 
 		/**
 		 * Start tracing
 		 *
 		 * \param size  trace buffer size
-		 *
-		 * \throw Out_of_ram
-		 * \throw Out_of_caps
-		 * \throw Already_traced
-		 * \throw Source_is_dead
-		 * \throw Traced_by_other_session
 		 */
-		void trace(Policy_id policy_id, Dataspace_capability policy_ds,
-		           size_t policy_size, Ram_allocator &ram,
-		           Region_map &local_rm, size_t size)
+		Trace_result trace(Policy_id policy_id, Dataspace_capability policy_ds,
+		                   Policy_size policy_size, Ram_allocator &ram,
+		                   Region_map &local_rm, Buffer_size size)
 		{
-			/* check state and throw error in case subject is not traceable */
-			_traceable_or_throw();
+			/* check state and return error if subject is not traceable */
+			switch(_state()) {
+			case Subject_info::DEAD:      return Trace_result::SOURCE_IS_DEAD;
+			case Subject_info::ERROR:     return Trace_result::SOURCE_IS_DEAD;
+			case Subject_info::FOREIGN:   return Trace_result::FOREIGN;
+			case Subject_info::INVALID:   return Trace_result::INVALID_SUBJECT;
+			case Subject_info::UNATTACHED:
+			case Subject_info::ATTACHED:
+			case Subject_info::TRACED:    break;
+			}
 
-			_buffer.setup(ram, size);
-			if(!_policy.setup(ram, local_rm, policy_ds, policy_size))
-				throw Already_traced();
+			try {
+				_buffer.setup(ram, size.num_bytes);
+			}
+			catch (Out_of_ram)  { return Trace_result::OUT_OF_RAM;  }
+			catch (Out_of_caps) { return Trace_result::OUT_OF_CAPS; }
+
+			try {
+				_policy.setup(ram, local_rm, policy_ds, policy_size.num_bytes);
+			}
+			catch (Out_of_ram)  { _buffer.flush(); return Trace_result::OUT_OF_RAM;  }
+			catch (Out_of_caps) { _buffer.flush(); return Trace_result::OUT_OF_CAPS; }
 
 			/* inform trace source about the new buffer */
 			Locked_ptr<Source> source(_source);
 
-			if (!source->try_acquire(*this))
-				throw Traced_by_other_session();
+			if (!source->try_acquire(*this)) {
+				_policy.flush();
+				_buffer.flush();
+				return Trace_result::FOREIGN;
+			}
 
 			_policy_id = policy_id;
 
-			_allocated_memory = policy_size + size;
-
 			source->trace(_policy.dataspace(), _buffer.dataspace());
+			return Trace_result::OK;
 		}
 
 		void pause()
 		{
-			/* inform trace source about the new buffer */
 			Locked_ptr<Source> source(_source);
 
 			if (source.valid())
@@ -266,18 +250,13 @@ class Genode::Trace::Subject
 
 		/**
 		 * Resume tracing of paused source
-		 *
-		 * \throw Source_is_dead
 		 */
 		void resume()
 		{
-			/* inform trace source about the new buffer */
 			Locked_ptr<Source> source(_source);
 
-			if (!source.valid())
-				throw Source_is_dead();
-
-			source->enable();
+			if (source.valid())
+				source->enable();
 		}
 
 		Subject_info info()
@@ -301,16 +280,19 @@ class Genode::Trace::Subject
 
 		Dataspace_capability buffer() const { return _buffer.dataspace(); }
 
-		size_t release()
+		void release()
 		{
-			/* inform trace source about the new buffer */
 			Locked_ptr<Source> source(_source);
 
 			/* source vanished */
 			if (!source.valid())
-				return 0;
+				return;
 
-			return _buffer.flush() + _policy.flush();
+			source->disable();
+			source->release_ownership(*this);
+
+			_buffer.flush();
+			_policy.flush();
 		}
 };
 
@@ -320,108 +302,47 @@ class Genode::Trace::Subject
  *
  * There exists one instance for each TRACE session.
  */
-class Genode::Trace::Subject_registry
+class Core::Trace::Subject_registry
 {
 	private:
 
-		typedef List<Subject> Subjects;
+		using Subjects = List<Subject>;
 
 		Allocator       &_md_alloc;
 		Source_registry &_sources;
+		Filter     const _filter;
 		unsigned         _id_cnt  { 0 };
 		Mutex            _mutex   { };
 		Subjects         _entries { };
 
 		/**
-		 * Functor for testing the existance of subjects for a given source
-		 *
-		 * This functor is invoked by 'Source_registry::export'.
-		 */
-		struct Tester
-		{
-			Subjects &subjects;
-
-			Tester(Subjects &subjects) : subjects(subjects) { }
-
-			bool operator () (unsigned source_id)
-			{
-				for (Subject *s = subjects.first(); s; s = s->next())
-					if (s->has_source_id(source_id))
-						return true;
-				return false;
-			}
-		} _tester { _entries };
-
-		/**
-		 * Functor for inserting new subjects into the registry
-		 *
-		 * This functor is invoked by 'Source_registry::export'.
-		 */
-		struct Inserter
-		{
-			Subject_registry &registry;
-
-			Inserter(Subject_registry &registry) : registry(registry) { }
-
-			void operator () (unsigned source_id, Weak_ptr<Source> source,
-			                  Session_label const &label, Thread_name const &name)
-			{
-				Subject *subject = new (&registry._md_alloc)
-					Subject(Subject_id(++registry._id_cnt), source_id, source, label, name);
-
-				registry._entries.insert(subject);
-			}
-		} _inserter { *this };
-
-		/**
 		 * Destroy subject, and release policy and trace buffers
-		 *
-		 * \return RAM resources released during destruction
 		 */
-		size_t _unsynchronized_destroy(Subject &s)
+		void _unsynchronized_destroy(Subject &s)
 		{
 			_entries.remove(&s);
-
-			size_t const released_ram = s.release();
-
+			s.release();
 			destroy(&_md_alloc, &s);
-
-			return released_ram;
 		};
 
 		/**
 		 * Obtain subject from given session-local ID
-		 *
-		 * \throw Nonexistent_subject
 		 */
-		Subject &_unsynchronized_lookup_by_id(Subject_id id)
+		void _with_subject_unsynchronized(Subject_id id, auto const &fn)
 		{
-			for (Subject *s = _entries.first(); s; s = s->next())
-				if (s->id() == id)
-					return *s;
-
-			throw Nonexistent_subject();
+			Subject *ptr = _entries.first();
+			for (; ptr && (ptr->id().id != id.id); ptr = ptr->next());
+			if (ptr)
+				fn(*ptr);
 		}
 
 	public:
 
-		/**
-		 * Constructor
-		 *
-		 * \param md_alloc  meta-data allocator used for allocating 'Subject'
-		 *                  objects.
-		 * \param ram       allocator used for the allocation of trace
-		 *                  buffers and policy dataspaces.
-		 */
-		Subject_registry(Allocator &md_alloc,
-		                 Source_registry &sources)
+		Subject_registry(Allocator &md_alloc, Source_registry &sources, Filter const &filter)
 		:
-			_md_alloc(md_alloc), _sources(sources)
+			_md_alloc(md_alloc), _sources(sources), _filter(filter)
 		{ }
 
-		/**
-		 * Destructor
-		 */
 		~Subject_registry()
 		{
 			Mutex::Guard guard(_mutex);
@@ -437,13 +358,38 @@ class Genode::Trace::Subject_registry
 		{
 			Mutex::Guard guard(_mutex);
 
-			_sources.export_sources(_tester, _inserter);
+			auto already_known = [&] (Source::Id const unique_id)
+			{
+				for (Subject *s = _entries.first(); s; s = s->next())
+					if (s->has_source_id(unique_id))
+						return true;
+				return false;
+			};
+
+			auto filter_matches = [&] (Session_label const &label)
+			{
+				return strcmp(_filter.string(), label.string(), _filter.length() - 1) == 0;
+			};
+
+			_sources.for_each_source([&] (Source &source) {
+
+				Source::Info const info = source.info();
+
+				if (!filter_matches(info.label) || already_known(source.id()))
+					return;
+
+				Weak_ptr<Source> source_ptr = source.weak_ptr();
+
+				_entries.insert(new (_md_alloc)
+					Subject(Subject_id(++_id_cnt), source.id(),
+					        source_ptr, info.label, info.name));
+			});
 		}
 
 		/**
 		 * Retrieve existing subject IDs
 		 */
-		size_t subjects(Subject_id *dst, size_t dst_len)
+		unsigned subjects(Subject_id *dst, size_t dst_len)
 		{
 			Mutex::Guard guard(_mutex);
 
@@ -456,40 +402,48 @@ class Genode::Trace::Subject_registry
 		/**
 		 * Retrieve Subject_infos batched
 		 */
-		size_t subjects(Subject_info * const dst, Subject_id * ids, size_t const len)
+		unsigned subjects(Subject_info * const dst, Subject_id * ids, size_t const len)
 		{
 			Mutex::Guard guard(_mutex);
 
+			auto filtered = [&] (Session_label const &label) -> Session_label
+			{
+				return (label.length() <= _filter.length() || !_filter.length())
+				        ? Session_label("") /* this cannot happen */
+				        : Session_label(label.string() + _filter.length() - 1);
+			};
+
 			unsigned i = 0;
 			for (Subject *s = _entries.first(); s && i < len; s = s->next()) {
-				ids[i]   = s->id();
-				dst[i++] = s->info();
-			}
+				ids[i] = s->id();
 
+				Subject_info const info = s->info();
+
+				/* strip filter prefix from reported trace-subject label */
+				dst[i++] = {
+					filtered(info.session_label()), info.thread_name(), info.state(),
+					info.policy_id(), info.execution_time(), info.affinity()
+				};
+			}
 			return i;
 		}
 
 		/**
 		 * Remove subject and release resources
-		 *
-		 * \return  RAM resources released as a side effect for removing the
-		 *          subject (i.e., if the subject held a trace buffer or
-		 *          policy dataspace). The value does not account for
-		 *          memory allocated from the metadata allocator.
 		 */
-		size_t release(Subject_id subject_id)
+		void release(Subject_id subject_id)
 		{
 			Mutex::Guard guard(_mutex);
 
-			Subject &subject = _unsynchronized_lookup_by_id(subject_id);
-			return _unsynchronized_destroy(subject);
+			_with_subject_unsynchronized(subject_id, [&] (Subject &subject) {
+				_unsynchronized_destroy(subject); });
 		}
 
-		Subject &lookup_by_id(Subject_id id)
+		void with_subject(Subject_id id, auto const &fn)
 		{
 			Mutex::Guard guard(_mutex);
 
-			return _unsynchronized_lookup_by_id(id);
+			return _with_subject_unsynchronized(id, fn);
 		}
 };
 

@@ -27,10 +27,12 @@ class Genode::Session_object : private Ram_quota_guard,
 {
 	public:
 
-		typedef Session::Label     Label;
-		typedef Session::Diag      Diag;
-		typedef Session::Resources Resources;
+		using Label     = Session::Label;
+		using Diag      = Session::Diag;
+		using Resources = Session::Resources;
 
+		using Ram_quota_guard::try_withdraw;
+		using Cap_quota_guard::try_withdraw;
 		using Ram_quota_guard::withdraw;
 		using Cap_quota_guard::withdraw;
 		using Ram_quota_guard::replenish;
@@ -101,8 +103,7 @@ class Genode::Session_object : private Ram_quota_guard,
 		 * The method produces output only if the session is in diagnostic
 		 * mode (defined via the 'diag' session argument).
 		 */
-		template <typename... ARGS>
-		void diag(ARGS &&... args)
+		void diag(auto &&... args) const
 		{
 			if (_diag.enabled)
 				log(RPC_INTERFACE::service_name(), " (", _label, ") ", args...);
@@ -111,8 +112,7 @@ class Genode::Session_object : private Ram_quota_guard,
 		/**
 		 * Output label-prefixed error message
 		 */
-		template <typename... ARGS>
-		void error(ARGS &&... args)
+		void error(auto &&... args) const
 		{
 			Genode::error(RPC_INTERFACE::service_name(), " (", _label, ") ", args...);
 		}
@@ -120,8 +120,7 @@ class Genode::Session_object : private Ram_quota_guard,
 		/**
 		 * Output label-prefixed error message
 		 */
-		template <typename... ARGS>
-		void warning(ARGS &&... args)
+		void warning(auto &&... args) const
 		{
 			Genode::warning(RPC_INTERFACE::service_name(), " (", _label, ") ", args...);
 		}

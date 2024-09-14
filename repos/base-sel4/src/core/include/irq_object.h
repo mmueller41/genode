@@ -14,13 +14,20 @@
 #ifndef _CORE__INCLUDE__IRQ_OBJECT_H_
 #define _CORE__INCLUDE__IRQ_OBJECT_H_
 
+/* Genode includes */
 #include <base/thread.h>
-#include <base/internal/capability_space_sel4.h>
 #include <irq_session/irq_session.h>
 
-namespace Genode { class Irq_object; }
+/* base internal includes */
+#include <base/internal/capability_space_sel4.h>
 
-class Genode::Irq_object : public Thread {
+/* core includes */
+#include <types.h>
+
+namespace Core { class Irq_object; }
+
+
+class Core::Irq_object : public Thread {
 
 	private:
 
@@ -42,10 +49,10 @@ class Genode::Irq_object : public Thread {
 		Irq_object(unsigned irq);
 
 		void sigh(Signal_context_capability cap) { _sig_cap = cap; }
-		void notify() { Genode::Signal_transmitter(_sig_cap).submit(1); }
+		void notify() { Signal_transmitter(_sig_cap).submit(1); }
 		void ack_irq();
 
-		void start() override;
+		Start_result start() override;
 		bool associate(Irq_session::Trigger const, Irq_session::Polarity const);
 };
 

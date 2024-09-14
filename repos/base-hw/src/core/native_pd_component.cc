@@ -14,12 +14,18 @@
 #include <pd_session_component.h>
 #include <native_pd_component.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Native_pd_component::upgrade_cap_slab()
 {
 	_pd_session._pd->upgrade_slab(_pd_session._sliced_heap);
+}
+
+
+size_t Native_pd_component::avail_cap_slab()
+{
+	return _pd_session._pd->avail_slab();
 }
 
 

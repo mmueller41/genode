@@ -23,7 +23,7 @@ namespace Virtio {
 	class Device;
 }
 
-struct Virtio::Device_mmio : public Genode::Mmio
+struct Virtio::Device_mmio : public Genode::Mmio<0x100>
 {
 	struct DeviceFeatureSelect : Register<0x00, 32> { };
 	struct DeviceFeature       : Register<0x04, 32> { };
@@ -45,11 +45,11 @@ struct Virtio::Device_mmio : public Genode::Mmio
 	struct QueueUsedLow        : Register<0x30, 32> { };
 	struct QueueUsedHigh       : Register<0x34, 32> { };
 
-	struct Config_8            : Register_array<0x0,  8, 256, 8>  { };
-	struct Config_16           : Register_array<0x0, 16, 128, 16> { };
-	struct Config_32           : Register_array<0x0, 32,  64, 32> { };
+	template <typename T> class Config :
+		public Register_array<0x0, sizeof(T)*8,
+		                      256/sizeof(T), sizeof(T)*8> {};
 
-	struct IrqReason           : Register<0x0, 32> { };
+	struct IrqReason : Register<0x0, 32> { };
 
 	using Mmio::Mmio;
 };
@@ -96,16 +96,15 @@ class Virtio::Device
 		Platform::Device       _device { _plat };
 		Platform::Device::Irq  _irq    { _device, { 0 } };
 
-		Constructible<Platform::Device::Mmio> _mmio[MMIO_MAX] { };
+		Constructible<Platform::Device::Mmio<0> > _mmio[MMIO_MAX] { };
 
-		Mmio     _cfg_common { _bar_offset("common")     };
-		Mmio     _dev_config { _bar_offset("device")     };
-		Mmio     _notify     { _bar_offset("notify")     };
-		Mmio     _isr        { _bar_offset("irq_status") };
-		size_t   _notify_offset_multiplier { 0 };
+		Device_mmio _cfg_common { _bar_range("common")     };
+		Device_mmio _dev_config { _bar_range("device")     };
+		Device_mmio _notify     { _bar_range("notify")     };
+		Device_mmio _isr        { _bar_range("irq_status") };
+		size_t      _notify_offset_multiplier { 0 };
 
-		template <typename FN>
-		void with_virtio_range(String<16> type, FN const & fn)
+		void with_virtio_range(String<16> type, auto const &fn)
 		{
 			_plat.update();
 			_plat.with_xml([&] (Xml_node xml) {
@@ -123,7 +122,7 @@ class Virtio::Device
 			});
 		}
 
-		addr_t _bar_offset(String<16> type)
+		Byte_range_ptr _bar_range(String<16> type)
 		{
 			unsigned idx = MMIO_MAX;
 			addr_t   off = ~0UL;
@@ -137,8 +136,8 @@ class Virtio::Device
 
 			if (!_mmio[idx].constructed())
 				_mmio[idx].construct(_device,
-				                     Platform::Device::Mmio::Index{idx});
-			return _mmio[idx]->base() + off;
+				                     Platform::Device::Mmio<0>::Index{idx});
+			return _mmio[idx]->range_at(off);
 		}
 
 	public:
@@ -184,32 +183,19 @@ class Virtio::Device
 			return _cfg_common.read<Device_mmio::QueueSize>();
 		}
 
-		uint32_t read_config(uint8_t offset, Access_size size)
+		template <typename T>
+		T read_config(const uint8_t offset)
 		{
-			switch (size) {
-			case Device::ACCESS_8BIT:
-				return _dev_config.read<Device_mmio::Config_8>(offset);
-			case Device::ACCESS_16BIT:
-				return _dev_config.read<Device_mmio::Config_16>(offset >> 1);
-			case Device::ACCESS_32BIT:
-				return _dev_config.read<Device_mmio::Config_32>(offset >> 2);
-			}
-			return 0;
+			static_assert(sizeof(T) <= 4);
+			return _dev_config.read<Device_mmio::Config<T>>(offset >> log2(sizeof(T)));
 		}
 
-		void write_config(uint8_t offset, Access_size size, uint32_t value)
+		template <typename T>
+		void write_config(const uint8_t offset, const T value)
 		{
-			switch (size) {
-			case Device::ACCESS_8BIT:
-				_dev_config.write<Device_mmio::Config_8>(value, offset);
-				break;
-			case Device::ACCESS_16BIT:
-				_dev_config.write<Device_mmio::Config_16>(value, offset >> 1);
-				break;
-			case Device::ACCESS_32BIT:
-				_dev_config.write<Device_mmio::Config_32>(value, offset >> 2);
-				break;
-			}
+			static_assert(sizeof(T) <= 4);
+			_dev_config.write<Device_mmio::Config<T>>(value,
+			                  (offset >> log2(sizeof(T))));
 		}
 
 		bool configure_queue(uint16_t queue_index, Virtio::Queue_description desc)

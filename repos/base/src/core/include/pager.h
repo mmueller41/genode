@@ -24,13 +24,11 @@
 #include <cpu_session/cpu_session.h>
 #include <ipc_pager.h>
 
-/* core-local includes */
+/* core includes */
 #include <rpc_cap_factory.h>
 #include <pager_object_exception_state.h>
 
-namespace Genode {
-
-	typedef Cpu_session::Thread_creation_failed Invalid_thread;
+namespace Core {
 
 	/**
 	 * Special server object for paging
@@ -46,11 +44,13 @@ namespace Genode {
 	 */
 	class Pager_entrypoint;
 
+	using Pager_capability = Capability<Pager_object>;
+
 	enum { PAGER_EP_STACK_SIZE = sizeof(addr_t) * 2048 };
 }
 
 
-class Genode::Pager_object : public Object_pool<Pager_object>::Entry
+class Core::Pager_object : public Object_pool<Pager_object>::Entry
 {
 	protected:
 
@@ -82,8 +82,6 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 		 * Constructor
 		 *
 		 * \param location  affinity of paged thread to physical CPU
-		 *
-		 * \throw Invalid_thread
 		 */
 		Pager_object(Cpu_session_capability cpu_sesion,
 		             Thread_capability thread,
@@ -99,6 +97,8 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 
 		unsigned long badge() const { return _badge; }
 
+		enum class Pager_result { STOP, CONTINUE };
+
 		/**
 		 * Interface to be implemented by a derived class
 		 *
@@ -106,7 +106,7 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 		 *
 		 * Returns !0 on error and pagefault will not be answered.
 		 */
-		virtual int pager(Ipc_pager &ps) = 0;
+		virtual Pager_result pager(Ipc_pager &ps) = 0;
 
 		/**
 		 * Wake up the faulter
@@ -162,8 +162,8 @@ class Genode::Pager_object : public Object_pool<Pager_object>::Entry
 };
 
 
-class Genode::Pager_entrypoint : public Object_pool<Pager_object>,
-                                 public Thread
+class Core::Pager_entrypoint : public Object_pool<Pager_object>,
+                               public Thread
 {
 	private:
 

@@ -39,15 +39,13 @@
 #include <base/log.h>
 
 
-typedef Mixer::Channel Channel;
+using Channel = Mixer::Channel;
 
 
-enum {
-	LEFT         = Channel::Number::LEFT,
-	RIGHT        = Channel::Number::RIGHT,
-	MAX_CHANNELS = Channel::Number::MAX_CHANNELS,
-	MAX_VOLUME   = Channel::Volume_level::MAX,
-};
+static constexpr int LEFT         = Channel::Number::LEFT;
+static constexpr int RIGHT        = Channel::Number::RIGHT;
+static constexpr int MAX_CHANNELS = Channel::Number::MAX_CHANNELS;
+static constexpr int MAX_VOLUME   = Channel::Volume_level::MAX;
 
 
 static struct Names {
@@ -96,7 +94,7 @@ namespace Audio_out
 	class Mixer;
 
 	enum { MAX_CHANNEL_NAME_LEN = 16, MAX_LABEL_LEN = 128 };
-	typedef Genode::String<MAX_LABEL_LEN> Label;
+	using Label = Genode::String<MAX_LABEL_LEN>;
 }
 
 
@@ -675,7 +673,7 @@ class Audio_out::Session_component : public Audio_out::Session_elem
 
 
 namespace Audio_out {
-	typedef Genode::Root_component<Session_component, Genode::Multiple_clients> Root_component;
+	using Root_component = Genode::Root_component<Session_component, Genode::Multiple_clients>;
 }
 
 

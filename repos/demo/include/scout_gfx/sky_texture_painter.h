@@ -20,9 +20,9 @@
 
 struct Sky_texture_painter
 {
-	typedef Genode::Surface_base::Area Area;
-	typedef Genode::Surface_base::Rect Rect;
-	typedef Genode::Color              Color;
+	using Area  = Genode::Surface_base::Area;
+	using Rect  = Genode::Surface_base::Rect;
+	using Color = Genode::Color;
 
 
 	template <typename PT>
@@ -182,10 +182,10 @@ struct Sky_texture_painter
 				_multiply_buf(_bufs[2][0], TW*TH, 16*16*256);
 
 				/* create color table */
-				_create_coltab(_coltab, Color(255, 255, 255),
-				                        Color(  0,   0,   0),
-				                        Color(255, 255, 255),
-				                        Color( 80,  88, 112));
+				_create_coltab(_coltab, Color::rgb(255, 255, 255),
+				                        Color::rgb(  0,   0,   0),
+				                        Color::rgb(255, 255, 255),
+				                        Color::rgb( 80,  88, 112));
 
 				/* create fallback texture */
 				_compose(_fallback[0], TW, TH, 0, TW - 1,
@@ -246,20 +246,20 @@ struct Sky_texture_painter
 
 		int v  = -py;
 		int y0 = cy1 + v;
-		int y1 = cy1 + (( (5*v)/16)%texture.size().h());
-		int y2 = cy1 + (((11*v)/16)%texture.size().h());
+		int y1 = cy1 + (( (5*v)/16)%texture.size().h);
+		int y2 = cy1 + (((11*v)/16)%texture.size().h);
 
-		addr += cy1*surface.size().w();
+		addr += cy1*surface.size().w;
 
 		if (detail == false) {
-			_copy(addr, surface.size().w(), cy2 - cy1 + 1, cx1, cx2,
-			      texture.fallback(), cy1 - py, texture.size().w(), texture.size().h());
+			_copy(addr, surface.size().w, cy2 - cy1 + 1, cx1, cx2,
+			      texture.fallback(), cy1 - py, texture.size().w, texture.size().h);
 			return;
 		}
 
-		_compose(addr, surface.size().w(), cy2 - cy1 + 1, cx1, cx2,
+		_compose(addr, surface.size().w, cy2 - cy1 + 1, cx1, cx2,
 		         texture.buf(0), y0, texture.buf(1), y1, texture.buf(2), y2,
-		         texture.size().w(), texture.size().h(), texture.coltab());
+		         texture.size().w, texture.size().h, texture.coltab());
 
 		surface.flush_pixels(surface.clip());
 	}

@@ -1,12 +1,8 @@
 _/src/init
 _/src/libc
-_/src/libpng
 _/src/zlib
 _/src/fs_query
-_/src/menu_view
-_/src/cbe
-_/src/spark
-_/src/libsparkcrypto
+_/src/tresor
 _/src/vfs_block
 _/src/vfs_jitterentropy
 _/src/vfs
@@ -14,6 +10,10 @@ _/src/openssl
 _/src/fs_tool
 _/src/fs_utils
 _/src/posix
-_/src/rump
+_/src/vfs_rump
 _/src/sandbox
 _/src/file_vault
+_/src/file_vault_gui
+_/src/report_rom
+_/src/menu_view
+_/src/libpng

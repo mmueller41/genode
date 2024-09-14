@@ -21,14 +21,14 @@
 #include <base/signal.h>
 #include <pager/capability.h>
 
-/* core-local includes */
+/* core includes */
 #include <kernel/signal_receiver.h>
 #include <hw/mapping.h>
 #include <mapping.h>
 #include <object.h>
 #include <rpc_cap_factory.h>
 
-namespace Genode {
+namespace Core {
 
 	/**
 	 * Interface used by generic region_map code
@@ -50,11 +50,13 @@ namespace Genode {
 	 */
 	class Pager_entrypoint;
 
+	using Pager_capability = Capability<Pager_object>;
+
 	enum { PAGER_EP_STACK_SIZE = sizeof(addr_t) * 2048 };
 }
 
 
-class Genode::Ipc_pager
+class Core::Ipc_pager
 {
 	protected:
 
@@ -91,8 +93,8 @@ class Genode::Ipc_pager
 };
 
 
-class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
-                             private Genode::Kernel_object<Kernel::Signal_context>
+class Core::Pager_object : private Object_pool<Pager_object>::Entry,
+                           private Kernel_object<Kernel::Signal_context>
 {
 	friend class Pager_entrypoint;
 	friend class Object_pool<Pager_object>;
@@ -102,6 +104,12 @@ class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
 		unsigned long    const _badge;
 		Cpu_session_capability _cpu_session_cap;
 		Thread_capability      _thread_cap;
+
+		/**
+		 * User-level signal handler registered for this pager object via
+		 * 'Cpu_session::exception_handler()'.
+		 */
+		Signal_context_capability _exception_sigh { };
 
 	public:
 
@@ -126,9 +134,24 @@ class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
 		void wake_up();
 
 		/**
-		 * Unnecessary as base-hw doesn't use exception handlers
+		 * Assign user-level exception handler for the pager object
 		 */
-		void exception_handler(Signal_context_capability);
+		void exception_handler(Signal_context_capability sigh)
+		{
+			_exception_sigh = sigh;
+		}
+
+		/**
+		 * Notify exception handler about the occurrence of an exception
+		 */
+		bool submit_exception_signal()
+		{
+			if (!_exception_sigh.valid()) return false;
+
+			Signal_transmitter transmitter(_exception_sigh);
+			transmitter.submit();
+			return true;
+		}
 
 		/**
 		 * Install information that is necessary to handle page faults
@@ -149,6 +172,8 @@ class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
 		 ** Pure virtual **
 		 ******************/
 
+		enum class Pager_result { STOP, CONTINUE };
+
 		/**
 		 * Request a mapping that resolves a fault directly
 		 *
@@ -157,7 +182,7 @@ class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
 		 * \retval   0  succeeded
 		 * \retval !=0  fault can't be received directly
 		 */
-		virtual int pager(Ipc_pager & p) = 0;
+		virtual Pager_result pager(Ipc_pager & p) = 0;
 
 
 		/***************
@@ -171,9 +196,9 @@ class Genode::Pager_object : private Object_pool<Pager_object>::Entry,
 };
 
 
-class Genode::Pager_entrypoint : public  Object_pool<Pager_object>,
-                                 public  Thread,
-                                 private Ipc_pager
+class Core::Pager_entrypoint : public  Object_pool<Pager_object>,
+                               public  Thread,
+                               private Ipc_pager
 {
 	private:
 

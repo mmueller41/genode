@@ -18,8 +18,6 @@
 #define _CORE__INCLUDE__UTIL_H_
 
 /* Genode includes */
-#include <base/stdint.h>
-#include <base/log.h>
 #include <rm_session/rm_session.h>
 #include <util/touch.h>
 
@@ -29,7 +27,10 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-namespace Genode {
+/* core includes */
+#include <types.h>
+
+namespace Core {
 
 	inline void panic(const char *s)
 	{
@@ -44,8 +45,8 @@ namespace Genode {
 		unsigned char const volatile *bptr;
 		unsigned char const *eptr;
 
-		bptr = (unsigned char const volatile *)(((Genode::addr_t)addr) & L4_PAGEMASK);
-		eptr = (unsigned char const *)(((Genode::addr_t)addr + size - 1) & L4_PAGEMASK);
+		bptr = (unsigned char const volatile *)(((addr_t)addr) & L4_PAGEMASK);
+		eptr = (unsigned char const *)(((addr_t)addr + size - 1) & L4_PAGEMASK);
 		for ( ; bptr <= eptr; bptr += L4_PAGESIZE)
 			touch_read(bptr);
 	}
@@ -57,8 +58,8 @@ namespace Genode {
 		unsigned char volatile *bptr;
 		unsigned char const *eptr;
 
-		bptr = (unsigned char volatile *)(((Genode::addr_t)addr) & L4_PAGEMASK);
-		eptr = (unsigned char const *)(((Genode::addr_t)addr + size - 1) & L4_PAGEMASK);
+		bptr = (unsigned char volatile *)(((addr_t)addr) & L4_PAGEMASK);
+		eptr = (unsigned char const *)(((addr_t)addr + size - 1) & L4_PAGEMASK);
 		for (; bptr <= eptr; bptr += L4_PAGESIZE)
 			touch_read_write(bptr);
 	}
@@ -72,7 +73,7 @@ namespace Genode {
 	inline addr_t map_src_addr(addr_t core_local_addr, addr_t) {
 		return core_local_addr; }
 
-	inline size_t constrain_map_size_log2(size_t size_log2) { return size_log2; }
+	inline Log2 kernel_constrained_map_size(Log2 size) { return size; }
 }
 
 #endif /* _CORE__INCLUDE__UTIL_H_ */

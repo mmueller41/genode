@@ -32,13 +32,13 @@
 namespace Kernel { struct Thread_fault; }
 
 
-namespace Genode {
-	using sizet_arithm_t = Genode::uint64_t;
+namespace Core {
+	using sizet_arithm_t = uint64_t;
 	struct Arm_cpu;
 }
 
 
-struct Genode::Arm_cpu : public Hw::Arm_cpu
+struct Core::Arm_cpu : public Hw::Arm_cpu
 {
 	struct Fpu_context
 	{
@@ -120,6 +120,8 @@ struct Genode::Arm_cpu : public Hw::Arm_cpu
 	 * Return kernel name of the executing CPU
 	 */
 	static unsigned executing_id() { return 0; }
+
+	static void single_step(Context &, bool) { };
 };
 
 #endif /* _CORE__SPEC__ARM__CPU_SUPPORT_H_ */

@@ -26,6 +26,12 @@ extern "C" void lx_emul_initcalls()
 }
 
 
+extern "C" void lx_emul_initcall(char const *name)
+{
+	Lx_kit::env().initcalls.execute(name);
+}
+
+
 extern "C" void lx_emul_register_initcall(int (*initcall)(void),
                                           const char * name)
 {
@@ -40,7 +46,7 @@ extern "C" void lx_emul_register_initcall(int (*initcall)(void),
 	for (unsigned i = 0; i < (sizeof(lx_emul_initcall_order) / sizeof(char*));
 	     i++) {
 		if (Genode::strcmp(name, lx_emul_initcall_order[i]) == 0) {
-			Lx_kit::env().initcalls.add(initcall, i);
+			Lx_kit::env().initcalls.add(initcall, i, name);
 			return;
 		}
 	}
@@ -51,6 +57,9 @@ extern "C" void lx_emul_register_initcall(int (*initcall)(void),
 extern "C" void lx_emul_start_kernel(void * dtb)
 {
 	using namespace Lx_kit;
+
+	/* register 'module_init' calls and friends */
+	lx_emul_register_initcalls();
 
 	new (env().heap) Task(lx_emul_init_task_function, dtb,
 	                      lx_emul_init_task_struct, SWAPPER_PID, "swapper",
@@ -63,11 +72,18 @@ extern "C" void lx_emul_start_kernel(void * dtb)
 }
 
 
-extern "C" void lx_emul_execute_kernel_until(int (*condition)(void))
+extern "C" void lx_emul_execute_kernel_until(int (*condition)(void*), void * args)
 {
-	Lx_kit::env().scheduler.schedule();
+	do {
+		/*
+		 * Assume we have to execute all scheduled tasks once before
+		 * it makes sense to check the condition.
+		 */
+		Lx_kit::env().scheduler.execute();
 
-	while (!condition()) {
+		if (condition(args))
+			break;
+
 		Lx_kit::env().env.ep().wait_and_dispatch_one_io_signal();
-	}
+	} while (true);
 }

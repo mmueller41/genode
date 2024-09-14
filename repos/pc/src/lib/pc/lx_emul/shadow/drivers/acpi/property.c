@@ -1,5 +1,5 @@
 /*
- * \brief  Replaces drivers/acpi/property.c
+ * \brief  Replaces driver/acpi/property.c
  * \author Josef Soentgen
  * \date   2022-05-06
  */
@@ -17,6 +17,13 @@
 
 
 bool is_acpi_device_node(const struct fwnode_handle *fwnode)
+{
+	lx_emul_trace(__func__);
+	return false;
+}
+
+
+bool is_acpi_data_node(const struct fwnode_handle *fwnode)
 {
 	lx_emul_trace(__func__);
 	return false;

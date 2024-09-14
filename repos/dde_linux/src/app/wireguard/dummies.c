@@ -15,39 +15,21 @@
 #include <lx_emul.h>
 
 
-#include <linux/cpuhotplug.h>
+DEFINE_PER_CPU_READ_MOSTLY(cpumask_var_t, cpu_sibling_map);
+EXPORT_PER_CPU_SYMBOL(cpu_sibling_map);
 
-int __cpuhp_setup_state(enum cpuhp_state state,const char * name,bool invoke,int (* startup)(unsigned int cpu),int (* teardown)(unsigned int cpu),bool multi_instance)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
+DEFINE_PER_CPU(unsigned long, cpu_scale);
 
-
-#include <asm/irq_regs.h>
-struct pt_regs * __irq_regs = NULL;
+#ifdef __aarch64__
+DECLARE_BITMAP(system_cpucaps, ARM64_NCAPS);
+EXPORT_SYMBOL(system_cpucaps);
+#endif
 
 
-#include <asm/preempt.h>
-
-int __preempt_count = 0;
-
-
-#include <linux/kernel_stat.h>
-
-void account_process_tick(struct task_struct * p,int user_tick)
-{
-	lx_emul_trace(__func__);
-}
-
-
-#include <linux/random.h>
-
-int add_random_ready_callback(struct random_ready_callback * rdy)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
+/* mm/debug.c */
+const struct trace_print_flags pagetype_names[] = {
+	{0, NULL}
+};
 
 
 extern int __init buses_init(void);
@@ -55,14 +37,6 @@ int __init buses_init(void)
 {
 	lx_emul_trace(__func__);
 	return 0;
-}
-
-
-#include <linux/sched/loadavg.h>
-
-void calc_global_load(void)
-{
-	lx_emul_trace(__func__);
 }
 
 
@@ -82,32 +56,9 @@ int __init devices_init(void)
 }
 
 
-#include <linux/interrupt.h>
+#include <linux/timekeeper_internal.h>
 
-int __init early_irq_init(void)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
-
-
-#include <linux/irq.h>
-#include <linux/irqdesc.h>
-
-int generic_handle_irq(unsigned int irq)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/tracepoint-defs.h>
-
-const struct trace_print_flags gfpflag_names[]  = { {0,NULL}};
-
-
-#include <linux/sched/signal.h>
-
-void ignore_signals(struct task_struct * t)
+void update_vsyscall(struct timekeeper * tk)
 {
 	lx_emul_trace(__func__);
 }
@@ -116,42 +67,6 @@ void ignore_signals(struct task_struct * t)
 #include <net/ipv6_stubs.h>
 
 const struct ipv6_stub *ipv6_stub = NULL;
-
-
-#include <linux/prandom.h>
-
-unsigned long net_rand_noise;
-
-
-#include <linux/tracepoint-defs.h>
-
-const struct trace_print_flags pageflag_names[] = { {0,NULL}};
-
-
-extern int __init platform_bus_init(void);
-int __init platform_bus_init(void)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
-
-
-#include <linux/types.h>
-#include <linux/kernel.h>
-#include <linux/rcupdate.h>
-
-void rcu_barrier(void)
-{
-	lx_emul_trace_and_stop(__func__);
-}
-
-
-#include <linux/rcupdate.h>
-
-void rcu_sched_clock_irq(int user)
-{
-	lx_emul_trace(__func__);
-}
 
 
 #include <linux/netdevice.h>
@@ -194,19 +109,6 @@ void synchronize_net(void)
 {
 	lx_emul_trace(__func__);
 }
-
-
-#include <linux/timekeeper_internal.h>
-
-void update_vsyscall(struct timekeeper * tk)
-{
-	lx_emul_trace(__func__);
-}
-
-
-#include <linux/tracepoint-defs.h>
-
-const struct trace_print_flags vmaflag_names[]  = { {0,NULL}};
 
 
 #include <linux/rtnetlink.h>
@@ -285,9 +187,100 @@ __wsum csum_partial(const void * buff,int len,__wsum sum)
 }
 
 
-#include <linux/rcutree.h>
+#include <linux/interrupt.h>
 
-void kvfree(const void * addr)
+DEFINE_STATIC_KEY_FALSE(force_irqthreads_key);
+
+
+#include <net/net_namespace.h>
+
+void __init net_ns_init(void)
+{
+	lx_emul_trace(__func__);
+}
+
+
+unsigned long __must_check __arch_copy_to_user(void __user *to, const void *from, unsigned long n);
+unsigned long __must_check __arch_copy_to_user(void __user *to, const void *from, unsigned long n)
+
 {
 	lx_emul_trace_and_stop(__func__);
 }
+
+
+/* kernel/sched/cpudeadline.h */
+struct cpudl;
+int  cpudl_init(struct cpudl *cp)
+{
+	lx_emul_trace_and_stop(__func__);
+	return -1;
+}
+
+
+void cpudl_cleanup(struct cpudl *cp)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+/* kernel/sched/sched.h */
+bool sched_smp_initialized = true;
+
+struct dl_bw;
+void init_dl_bw(struct dl_bw *dl_b)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+struct irq_work;
+extern void rto_push_irq_work_func(struct irq_work *work);
+void rto_push_irq_work_func(struct irq_work *work)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+/* include/linux/sched/topology.h */
+int arch_asym_cpu_priority(int cpu)
+{
+	lx_emul_trace_and_stop(__func__);
+	return 0;
+}
+
+
+#ifdef CONFIG_ARM64
+extern void flush_dcache_page(struct page * page);
+void flush_dcache_page(struct page * page)
+{
+	lx_emul_trace(__func__);
+}
+#endif
+
+pteval_t __default_kernel_pte_mask __read_mostly = ~0;
+
+
+#include <linux/kernel.h>
+
+bool parse_option_str(const char * str,const char * option)
+{
+	lx_emul_trace(__func__);
+	return false;
+}
+
+
+int get_option(char ** str,int * pint)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+#ifdef CONFIG_SWIOTLB
+#include <linux/swiotlb.h>
+
+bool is_swiotlb_allocated(void)
+{
+	lx_emul_trace(__func__);
+	return false;
+}
+#endif

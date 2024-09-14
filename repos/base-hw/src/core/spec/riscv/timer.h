@@ -16,6 +16,8 @@
 
 /* Genode includes */
 #include <base/stdint.h>
+
+/* core includes */
 #include <kernel/types.h>
 
 namespace Board { class Timer; }
@@ -31,11 +33,11 @@ struct Board::Timer
 		TICKS_PER_US = TICKS_PER_MS / 1000,
 	};
 
-	Kernel::time_t last_time { 0 };
-
 	Kernel::time_t stime() const;
 
 	Timer(unsigned);
+
+	void init();
 };
 
 #endif /* _SRC__CORE__SPEC__RISCV__TIMER_H_ */

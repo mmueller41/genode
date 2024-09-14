@@ -14,9 +14,6 @@
 #ifndef _INCLUDE__BASE__LOCK_H_
 #define _INCLUDE__BASE__LOCK_H_
 
-#include <base/lock_guard.h>
-#include <base/blocking.h>
-
 namespace Genode {
 	class Lock;
 	class Thread;

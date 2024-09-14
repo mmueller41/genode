@@ -27,8 +27,9 @@
 namespace Cpu_sampler {
 	using namespace Genode;
 	class Cpu_session_component;
-	typedef List<List_element<Cpu_thread_component>> Thread_list;
-	typedef List_element<Cpu_thread_component>       Thread_element;
+
+	using Thread_list    = List<List_element<Cpu_thread_component>>;
+	using Thread_element = List_element<Cpu_thread_component>;
 
 	template <typename FN>
 	void for_each_thread(Thread_list &thread_list, FN const &fn);
@@ -97,11 +98,11 @@ class Cpu_sampler::Cpu_session_component : public Rpc_object<Cpu_session>
 		 ** CPU session interface **
 		 ***************************/
 
-		Thread_capability create_thread(Pd_session_capability pd,
-		                                Name const &,
-		                                Affinity::Location,
-		                                Weight,
-		                                addr_t) override;
+		Create_thread_result create_thread(Pd_session_capability pd,
+		                                   Name const &,
+		                                   Affinity::Location,
+		                                   Weight,
+		                                   addr_t) override;
 		void kill_thread(Thread_capability) override;
 		void exception_sigh(Signal_context_capability handler) override;
 		Affinity::Space affinity_space() const override;

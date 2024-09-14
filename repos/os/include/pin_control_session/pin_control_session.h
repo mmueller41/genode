@@ -36,12 +36,15 @@ struct Pin_control::Session : Genode::Session
 	 * A pin-control session consumes a dataspace capability for the server's
 	 * session-object allocation and its session capability.
 	 */
-	enum { CAP_QUOTA = 2 };
+	static constexpr unsigned CAP_QUOTA = 2;
 
 	virtual void state(bool) = 0;
 
+	virtual void yield() = 0;
+
 	GENODE_RPC(Rpc_state, void, state, bool);
-	GENODE_RPC_INTERFACE(Rpc_state);
+	GENODE_RPC(Rpc_yield, void, yield);
+	GENODE_RPC_INTERFACE(Rpc_state, Rpc_yield);
 };
 
 #endif /* _INCLUDE__PIN_CONTROL_SESSION__PIN_CONTROL_SESSION_H_ */

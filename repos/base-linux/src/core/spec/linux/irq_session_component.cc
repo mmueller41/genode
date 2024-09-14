@@ -14,14 +14,13 @@
  */
 
 /* Genode includes */
-#include <base/log.h>
 #include <base/thread.h>
 #include <irq_session_component.h>
 
-/* core-local includes */
+/* core includes */
 #include <core_linux_syscalls.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 Irq_session_component::Irq_session_component(Range_allocator &, const char *)
@@ -76,9 +75,10 @@ void Irq_object::ack_irq()
 }
 
 
-void Irq_object::start()
+Thread::Start_result Irq_object::start()
 {
 	warning(__func__, " not implemented");
+	return Start_result::DENIED;
 }
 
 

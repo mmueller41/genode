@@ -1,0 +1,32 @@
+source ${genode_dir}/repos/os/run/monitor_gdb.inc
+
+# sequence of GDB commands to execute at startup
+set gdb_cmds ""
+# avoid pagination prompts in autopilot test
+append gdb_cmds {-ex "set pagination off" }
+# avoid color escape sequences in autopilot test
+append gdb_cmds {-ex "set style enabled off" }
+# don't ask for y/n when loading a new symbol file
+append gdb_cmds {-ex "set interactive-mode off" }
+# set search path for shared libraries
+append gdb_cmds {-ex "set solib-search-path debug" }
+# use non-stop mode
+append gdb_cmds {-ex "set non-stop on" }
+# connect to the debug monitor
+append gdb_cmds {-ex "target extended-remote $host:$port" }
+# set a breakpoint in the 'binary_ready_hook_for_gdb' function
+append gdb_cmds {-ex "b binary_ready_hook_for_gdb" }
+# continue execution until the breakpoint triggers
+append gdb_cmds {-ex "c" }
+# delete the 'binary_ready_hook_for_gdb' breakpoint
+append gdb_cmds {-ex "delete 1" }
+# switch to the 'ep' thread
+append gdb_cmds {-ex "thread 2" }
+# load the symbols of the test application
+append gdb_cmds "-ex \"file debug/test-monitor_gdb\" "
+
+# run GDB
+eval spawn [gdb] debug/ld.lib.so -n $gdb_cmds
+set gdb_id [list $spawn_id $genode_id]
+
+source ${genode_dir}/repos/os/run/monitor_gdb_tests.inc

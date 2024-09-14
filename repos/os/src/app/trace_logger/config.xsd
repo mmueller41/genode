@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 
-	<xs:include schemaLocation="base_types.xsd"/>
-	<xs:include schemaLocation="timeout_types.xsd"/>
+	<xs:include schemaLocation="genode://base_types.xsd"/>
+	<xs:include schemaLocation="genode://timeout_types.xsd"/>
 
 	<xs:simpleType name="Trace_policy_name">
 		<xs:restriction base="xs:string">
@@ -37,11 +37,10 @@
 
 			</xs:choice>
 			<xs:attribute name="verbose"               type="Boolean" />
-			<xs:attribute name="activity"              type="Boolean" />
-			<xs:attribute name="affinity"              type="Boolean" />
+			<xs:attribute name="priority"              type="Boolean" />
+			<xs:attribute name="sc_time"               type="Boolean" />
 			<xs:attribute name="session_arg_buffer"    type="Number_of_bytes" />
 			<xs:attribute name="session_ram"           type="Number_of_bytes" />
-			<xs:attribute name="session_parent_levels" type="xs:nonNegativeInteger" />
 			<xs:attribute name="default_policy"        type="Trace_policy_name" />
 			<xs:attribute name="period_sec"            type="Seconds" />
 			<xs:attribute name="default_buffer"        type="Number_of_bytes" />

@@ -17,23 +17,23 @@
 /* Genode includes */
 #include <base/object_pool.h>
 
-/* core-local includes */
+/* core includes */
 #include <object.h>
 #include <kernel/signal_receiver.h>
 #include <assertion.h>
 
-namespace Genode {
+namespace Core {
 
 	class Signal_context_component;
 	class Signal_source_component;
 
-	typedef Object_pool<Signal_context_component> Signal_context_pool;
-	typedef Object_pool<Signal_source_component>  Signal_source_pool;
+	using Signal_context_pool = Object_pool<Signal_context_component>;
+	using Signal_source_pool  = Object_pool<Signal_source_component>;
 }
 
 
-struct Genode::Signal_context_component : private Kernel_object<Kernel::Signal_context>,
-                                          public Signal_context_pool::Entry
+struct Core::Signal_context_component : private Kernel_object<Kernel::Signal_context>,
+                                        public Signal_context_pool::Entry
 {
 	friend class Object_pool<Signal_context_component>;
 
@@ -46,8 +46,8 @@ struct Genode::Signal_context_component : private Kernel_object<Kernel::Signal_c
 };
 
 
-struct Genode::Signal_source_component : private Kernel_object<Kernel::Signal_receiver>,
-                                         public Signal_source_pool::Entry
+struct Core::Signal_source_component : private Kernel_object<Kernel::Signal_receiver>,
+                                       public Signal_source_pool::Entry
 {
 	friend class Object_pool<Signal_source_component>;
 	friend class Signal_context_component;
@@ -67,8 +67,8 @@ struct Genode::Signal_source_component : private Kernel_object<Kernel::Signal_re
 };
 
 
-Genode::Signal_context_component::Signal_context_component(Signal_source_component &s,
-                                                           addr_t const imprint)
+Core::Signal_context_component::Signal_context_component(Signal_source_component &s,
+                                                         addr_t const imprint)
 :
 	Kernel_object<Kernel::Signal_context>(CALLED_FROM_CORE,
 	                                      s.signal_receiver(),

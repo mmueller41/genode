@@ -1,9 +1,6 @@
-TARGET   = fiasco_timer_drv
-LIBS    += syscall-fiasco
-GEN_DIR := $(dir $(call select_from_repositories,src/timer/main.cc))
-INC_DIR += $(GEN_DIR)/periodic
-SRC_CC  += periodic/time_source.cc fiasco/time_source.cc
+TARGET   = fiasco_timer
+INC_DIR += $(PRG_DIR)
+SRC_CC  += component.cc
+LIBS    += base syscall-fiasco
 
-vpath %.cc $(GEN_DIR)
-
-include $(GEN_DIR)/target.inc
+REP_INC_DIR += src/include

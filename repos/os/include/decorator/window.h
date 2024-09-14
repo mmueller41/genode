@@ -18,8 +18,8 @@
 #include <util/string.h>
 #include <util/xml_generator.h>
 #include <util/list_model.h>
+#include <util/reconstructible.h>
 #include <gui_session/client.h>
-#include <base/snprintf.h>
 
 /* decorator includes */
 #include <decorator/types.h>
@@ -30,16 +30,14 @@ namespace Decorator {
 	class Canvas_base;
 	class Window_base;
 
-	typedef Genode::List<Genode::List_element<Window_base> > Abandoned_windows;
-	typedef Genode::List<Genode::List_element<Window_base> > Reversed_windows;
+	using Abandoned_windows = Genode::List<Genode::List_element<Window_base> >;
+	using Reversed_windows  = Genode::List<Genode::List_element<Window_base> >;
 }
 
 
 class Decorator::Window_base : private Genode::List_model<Window_base>::Element
 {
 	public:
-
-		typedef Gui::Session::View_handle View_handle;
 
 		struct Border
 		{
@@ -110,7 +108,7 @@ class Decorator::Window_base : private Genode::List_model<Window_base>::Element
 		/*
 		 * View immediately behind the window
 		 */
-		View_handle _neighbor { };
+		Genode::Constructible<Gui::View_id> _neighbor { };
 
 		Genode::List_element<Window_base> _abandoned { this };
 
@@ -137,30 +135,35 @@ class Decorator::Window_base : private Genode::List_model<Window_base>::Element
 		unsigned id()       const { return _id; }
 		Rect     geometry() const { return _geometry; }
 
-		void stacking_neighbor(View_handle neighbor)
+		void stacking_neighbor(Gui::View_id neighbor)
 		{
-			_neighbor = neighbor;
+			_neighbor.construct(neighbor);
 			_stacked  = true;
 		}
 
-		bool stacked() const { return _stacked; }
+		bool back_most() const
+		{
+			return _stacked && !_neighbor.constructed();
+		}
 
 		bool in_front_of(Window_base const &neighbor) const
 		{
-			return _neighbor == neighbor.frontmost_view();
+			return _stacked
+			    && _neighbor.constructed()
+			    && (*_neighbor == neighbor.frontmost_view());
 		}
 
 		void geometry(Rect geometry) { _geometry = geometry; }
 
 		virtual Rect outer_geometry() const = 0;
 
-		virtual void stack(View_handle neighbor) = 0;
+		virtual void stack(Gui::View_id neighbor) = 0;
 
 		virtual void stack_front_most() = 0;
 
 		virtual void stack_back_most() = 0;
 
-		virtual View_handle frontmost_view() const = 0;
+		virtual Gui::View_id frontmost_view() const = 0;
 
 		/**
 		 * Draw window elements
@@ -196,6 +199,19 @@ class Decorator::Window_base : private Genode::List_model<Window_base>::Element
 		 * model has not changed
 		 */
 		virtual bool animated() const { return false; }
+
+		/**
+		 * List_model::Element
+		 */
+		bool matches(Xml_node const &node) const
+		{
+			return _id == node.attribute_value("id", ~0UL);
+		}
+
+		/**
+		 * List_model::Element
+		 */
+		static bool type_matches(Xml_node const &) { return true; }
 };
 
 #endif /* _INCLUDE__DECORATOR__WINDOW_H_ */

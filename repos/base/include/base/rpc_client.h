@@ -49,16 +49,18 @@ namespace Genode {
 
 	template <typename ARGS>
 	struct Rpc_caps_out {
-		enum { Value = Cap_para_out<typename ARGS::Head>::Value
-		             + Rpc_caps_out<typename ARGS::Tail>::Value }; };
+		static constexpr unsigned
+			Value = Cap_para_out<typename ARGS::Head>::Value
+			      + Rpc_caps_out<typename ARGS::Tail>::Value; };
 
 	template <>
-	struct Rpc_caps_out<Meta::Empty> { enum { Value = 0 }; };
+	struct Rpc_caps_out<Meta::Empty> { static constexpr unsigned Value = 0; };
 
 	template <typename RPC_FUNCTION>
 	struct Rpc_function_caps_out {
-		enum { Value = Rpc_caps_out<typename RPC_FUNCTION::Server_args>::Value +
-		               Cap_return  <typename RPC_FUNCTION::Ret_type>::Value}; };
+		static constexpr unsigned
+			Value = Rpc_caps_out<typename RPC_FUNCTION::Server_args>::Value +
+			        Cap_return  <typename RPC_FUNCTION::Ret_type>::Value; };
 
 
 	/***************************************************
@@ -107,7 +109,7 @@ namespace Genode {
 		 * '_unmarshal_result' is selected depending on the RPC
 		 * direction.
 		 */
-		typedef typename Trait::Rpc_direction<typename ATL::Head>::Type Rpc_dir;
+		using Rpc_dir = typename Trait::Rpc_direction<typename ATL::Head>::Type;
 		_unmarshal_result(unmarshaller, args.get(), Meta::Overload_selector<Rpc_dir>());
 
 		/* unmarshal remaining arguments */
@@ -135,7 +137,7 @@ namespace Genode {
 		Msgbuf<REPLY_MSG_SIZE + PROTOCOL_OVERHEAD> reply_buf;
 
 		/* determine opcode of RPC function */
-		typedef typename RPC_INTERFACE::Rpc_functions Rpc_functions;
+		using Rpc_functions = typename RPC_INTERFACE::Rpc_functions;
 		Rpc_opcode opcode(static_cast<int>(Meta::Index_of<Rpc_functions, IF>::Value));
 
 		/* marshal opcode and RPC input arguments */
@@ -192,7 +194,7 @@ class Genode::Rpc_client : public RPC_INTERFACE
 
 	public:
 
-		typedef RPC_INTERFACE Rpc_interface;
+		using Rpc_interface = RPC_INTERFACE;
 
 		Rpc_client(Capability<RPC_INTERFACE> const &cap) : _cap(cap) { }
 

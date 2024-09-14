@@ -11,9 +11,6 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes*/
 #include <pager.h>
 #include <platform_thread.h>
@@ -23,7 +20,7 @@
 /* base-internal includes */
 #include <base/internal/capability_space.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /***************
@@ -64,23 +61,14 @@ void Pager_object::start_paging(Kernel_object<Kernel::Signal_receiver> & receive
 }
 
 
-void Pager_object::exception_handler(Signal_context_capability) { }
-
-
-void Pager_object::unresolved_page_fault_occurred()
-{
-	Platform_thread * const pt = (Platform_thread *)badge();
-	if (pt && pt->pd())
-		warning("page fault, pager_object: pd='", pt->pd()->label(),
-		        "' thread='", pt->label(), "' ", pt->fault_info());
-}
+void Pager_object::unresolved_page_fault_occurred() { }
 
 
 void Pager_object::print(Output &out) const
 {
 	Platform_thread * const pt = (Platform_thread *)badge();
-	if (pt && pt->pd())
-		Genode::print(out, "pager_object: pd='", pt->pd()->label(),
+	if (pt)
+		Genode::print(out, "pager_object: pd='", pt->pd().label(),
 		                   "' thread='", pt->label(), "'");
 }
 

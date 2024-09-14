@@ -101,7 +101,7 @@ struct Decorator::Main : Window_factory_base
 
 	void _trigger_sync_handling()
 	{
-		_gui.framebuffer()->sync_sigh(_gui_sync_handler);
+		_gui.framebuffer.sync_sigh(_gui_sync_handler);
 	}
 
 	Attached_rom_dataspace _config { _env, "config" };
@@ -170,21 +170,9 @@ struct Decorator::Main : Window_factory_base
 	 */
 	Window_base *create(Xml_node window_node) override
 	{
-		for (;;) {
-			try {
-				return new (_heap)
-					Window(_env, window_node.attribute_value("id", 0U),
-					       _gui, _animator, _theme, _decorator_config);
-			}
-			catch (Out_of_ram) {
-				log("Handle Out_of_ram of GUI session - upgrade by 8K");
-				_gui.upgrade_ram(8192);
-			}
-			catch (Out_of_caps) {
-				log("Handle Out_of_caps of GUI session - upgrade by 2");
-				_gui.upgrade_caps(2);
-			}
-		}
+		return new (_heap)
+			Window(_env, window_node.attribute_value("id", 0U),
+			       _gui, _animator, _theme, _decorator_config);
 	}
 
 	/**
@@ -316,7 +304,7 @@ void Decorator::Main::_handle_gui_sync()
 	 * Disable sync handling when becoming idle
 	 */
 	if (!_animator.active())
-		_gui.framebuffer()->sync_sigh(Signal_context_capability());
+		_gui.framebuffer.sync_sigh(Signal_context_capability());
 }
 
 

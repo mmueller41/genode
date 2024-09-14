@@ -42,7 +42,7 @@ class Cpu_counter
 		{
 			while (!Genode::cmpxchg((volatile int*)&_locked, UNLOCKED, LOCKED))
 				;
-			_counter++;
+			_counter = _counter + 1;
 			Genode::memory_barrier();
 			_locked = UNLOCKED;
 		}
@@ -52,7 +52,7 @@ class Cpu_counter
 };
 
 
-struct Scu : Genode::Mmio
+struct Scu : Genode::Mmio<0x34>
 {
 	struct Cr : Register<0x0, 32>
 	{
@@ -72,7 +72,7 @@ struct Scu : Genode::Mmio
 		struct Cpu3_way : Bitfield<12, 4> { };
 	};
 
-	Scu() : Genode::Mmio(Board::Cpu_mmio::SCU_MMIO_BASE) { }
+	Scu() : Mmio({(char *)Board::Cpu_mmio::SCU_MMIO_BASE, Mmio::SIZE}) { }
 
 	void invalidate()
 	{

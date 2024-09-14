@@ -11,17 +11,15 @@
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Genode includes */
-#include <base/log.h>
-
 /* core includes */
 #include <platform.h>
 #include <irq_root.h>
 #include <irq_args.h>
 
+/* sel4 includes */
 #include <sel4/sel4.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 bool Irq_object::associate(Irq_session::Trigger const irq_trigger,
@@ -59,10 +57,11 @@ void Irq_object::_wait_for_irq()
 }
 
 
-void Irq_object::start()
+Thread::Start_result Irq_object::start()
 {
-	::Thread::start();
+	Thread::Start_result const result = ::Thread::start();
 	_sync_bootup.block();
+	return result;
 }
 
 
@@ -105,7 +104,8 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 	_irq_alloc(irq_alloc),
 	_irq_object(_irq_number)
 {
-	long msi = Arg_string::find_arg(args, "device_config_phys").long_value(0);
+	Irq_args const irq_args(args);
+	bool msi { irq_args.type() != Irq_session::TYPE_LEGACY };
 	if (msi)
 		throw Service_denied();
 
@@ -114,8 +114,6 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 		throw Service_denied();
 	}
 
-
-	Irq_args const irq_args(args);
 
 	if (!_irq_object.associate(irq_args.trigger(), irq_args.polarity())) {
 		error("could not associate with IRQ ", irq_args.irq_number());

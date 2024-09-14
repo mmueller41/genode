@@ -14,9 +14,9 @@
 #ifndef _VIEW_STACK_H_
 #define _VIEW_STACK_H_
 
-#include "view.h"
-#include "gui_session.h"
-#include "canvas.h"
+#include <view.h>
+#include <gui_session.h>
+#include <canvas.h>
 
 namespace Nitpicker { class View_stack; }
 
@@ -152,8 +152,8 @@ class Nitpicker::View_stack
 				 * specified by 'rect'.
 				 */
 				Point const offset = view->abs_position() + view->buffer_off();
-				Rect const r = Rect::intersect(Rect(rect.p1() + offset,
-				                                    rect.p2() + offset),
+				Rect const r = Rect::intersect(Rect::compound(rect.p1() + offset,
+				                                              rect.p2() + offset),
 				                               view->abs_geometry());
 
 				refresh_view(*view, r);
@@ -208,7 +208,7 @@ class Nitpicker::View_stack
 		/**
 		 * Set view title
 		 */
-		void title(View &view, char const *title);
+		void title(View &view, Title const &title);
 
 		/**
 		 * Find view at specified position

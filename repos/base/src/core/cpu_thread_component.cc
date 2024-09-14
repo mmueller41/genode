@@ -12,9 +12,9 @@
  */
 
 /* core includes */
-#include <cpu_thread_component.h>
+#include <cpu_session_component.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Cpu_thread_component::_update_exception_sigh()
@@ -24,6 +24,9 @@ void Cpu_thread_component::_update_exception_sigh()
 
 	_platform_thread.pager().exception_handler(sigh);
 }
+
+
+void Cpu_thread_component::destroy() { _cpu.kill_thread(cap()); }
 
 
 void Cpu_thread_component::quota(size_t quota)

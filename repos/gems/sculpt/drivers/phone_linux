@@ -1,0 +1,35 @@
+<config>
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="PD"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+		<service name="Timer"/>
+		<service name="Report"/>
+		<service name="Capture"/>
+		<service name="Event"/>
+	</parent-provides>
+
+	<start name="fb_sdl" caps="100" ld="no">
+		<resource name="RAM" quantum="10M"/>
+		<route>
+			<service name="Event"> <parent label="sdl"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<start name="modem" caps="120">
+		<binary name="dummy_modem"/>
+		<resource name="RAM" quantum="1M"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="modem.config"/> </service>
+			<service name="ROM">    <parent/> </service>
+			<service name="PD">     <parent/> </service>
+			<service name="CPU">    <parent/> </service>
+			<service name="LOG">    <parent/> </service>
+			<service name="Timer">  <parent/> </service>
+			<service name="Report"> <parent/> </service>
+		</route>
+	</start>
+
+</config>

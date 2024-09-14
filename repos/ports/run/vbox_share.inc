@@ -101,11 +101,10 @@ catch { exec dd if=/dev/urandom of=bin/test.bin bs=4096 count=8160 }
 # Step 1: prepare and start the actual VM
 #
 set build_components {
-	server/event_filter
-	server/report_rom server/fs_rom server/vfs
-	server/tcp_terminal drivers/nic
-	lib/vfs_lwip lib/vfs_pipe lib/vfs_import
-	server/nic_router
+	lib/vfs lib/libc lib/posix lib/vfs_lwip lib/vfs_pipe lib/vfs_import
+	server/event_filter server/report_rom server/fs_rom server/vfs
+	server/tcp_terminal server/nic_router
+	driver/nic
 }
 
 #
@@ -114,20 +113,12 @@ set build_components {
 foreach pkg {bash coreutils} {
 	lappend_if [expr ![file exists bin/$pkg]] build_components noux-pkg/$pkg }
 
-set boot_modules {
-	vfs fs_rom nic_router
-	posix.lib.so bash.tar coreutils.tar
-	tcp_terminal vfs_lwip.lib.so vfs_pipe.lib.so vfs_import.lib.so
-	ipxe_nic_drv report_rom event_filter
-	test.bin template.bat
-}
-
-append boot_modules $vbox_file
+lappend boot_modules bash.tar coreutils.tar test.bin template.bat $vbox_file
 
 set config_of_app {
 
-	<start name="nic_drv" priority="-1">
-		<binary name="ipxe_nic_drv"/>
+	<start name="nic" priority="-1">
+		<binary name="pc_nic"/>
 		<resource name="RAM" quantum="8M"/>
 		<route>
 			<service name="Uplink"><child name="nic_router"/></service>
@@ -143,7 +134,7 @@ set config_of_app {
 		</provides>
 		<config verbose_domain_state="yes">
 
-			<policy label_prefix="nic_drv"      domain="uplink"/>
+			<policy label_prefix="nic"          domain="uplink"/>
 			<policy label_prefix="tcp_terminal" domain="downlink"/>
 
 			<domain name="uplink">
@@ -171,7 +162,7 @@ set config_of_app {
 	</start>
 
 	<start name="tcp_terminal" priority="-1" caps="200">
-		<resource name="RAM" quantum="5M"/>
+		<resource name="RAM" quantum="6M"/>
 		<provides> <service name="Terminal"/> </provides>
 		<config>
 			<policy label_prefix="vfs" port="8888"/>
@@ -281,12 +272,9 @@ set config_of_app {
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
-			<policy label="pointer -> hover"                    report="nitpicker -> hover"/>
-			<policy label="pointer -> xray"                     report="nitpicker -> xray"/>
-			<policy label="usb_hid_drv -> report"               report="usb_drv -> devices"/>
-			<policy label="usb_report_filter -> devices"        report="usb_drv -> devices"/>
-			<policy label="usb_report_filter -> usb_drv_config" report="usb_drv -> config"/>
-			<policy label="vbox1 -> usb_devices"                report="usb_report_filter -> usb_devices"/>
+			<policy label="pointer -> hover"  report="nitpicker -> hover"/>
+			<policy label="pointer -> xray"   report="nitpicker -> xray"/>
+			<policy label="usb_hid -> report" report="usb_drv -> devices"/>
 		</config>
 	</start>
 

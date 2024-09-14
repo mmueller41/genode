@@ -53,64 +53,76 @@ template <size_t NR_OF_FILTERS>
 struct Filters
 {
 	Filter array[NR_OF_FILTERS];
+
+	Filter const *filter_to_apply(char const *curr,
+	                              char const *end)
+	{
+		for (Filter const &flt : array) {
+			char const *keyword_end { curr + flt.keyword_size() };
+			if (keyword_end < curr || keyword_end > end) {
+				continue;
+			}
+			if (memcmp(curr, flt.keyword(), flt.keyword_size()) != 0) {
+				continue;
+			}
+			return &flt;
+		}
+		return nullptr;
+	}
+
+	size_t apply_to(char *const base,
+	                size_t size)
+	{
+		struct Bad_filter : Exception { };
+		char const *end { base + size };
+		for (char *curr { base }; curr < end; ) {
+			Filter const *flt { filter_to_apply(curr, end) };
+			if (!flt) {
+				curr++;
+				continue;
+			}
+			if (flt->replacement_size() > flt->keyword_size()) {
+				throw Bad_filter();
+			}
+			memcpy(curr, flt->replacement(), flt->replacement_size());
+			if (flt->replacement_size() < flt->keyword_size()) {
+				char       *const replacement_end { curr + flt->replacement_size() };
+				char const *const keyword_end     { curr + flt->keyword_size() };
+				memmove(replacement_end, keyword_end, (size_t)(end - keyword_end));
+			}
+			curr += flt->replacement_size();
+			size -= flt->keyword_size() - flt->replacement_size();
+			end   = base + size;
+		}
+		return size;
+	}
 };
 
 
-template <typename FILTERS>
-static Filter const *filter_to_apply(FILTERS const &filters,
-                                     char    const *curr,
-                                     char    const *end)
+static Filters<6> pattern_filters
 {
-	for (Filter const &flt : filters.array) {
-		char const *keyword_end { curr + flt.keyword_size() };
-		if (keyword_end < curr || keyword_end > end) {
-			continue;
-		}
-		if (memcmp(curr, flt.keyword(), flt.keyword_size()) != 0) {
-			continue;
-		}
-		return &flt;
-	}
-	return 0;
-}
-
-
-static size_t sanitize_pattern(char *const base,
-                               size_t      size)
-{
-	static Filters<5> pattern_filters
 	{
-		{
-			{ "\x9", "" },
-			{ "\xa", "" },
-			{ "&lt;", "<" },
-			{ "&amp;", "&" },
-			{ "&#42;", "*" }
-		}
-	};
-	struct Bad_filter : Exception { };
-	char const *end { base + size };
-	for (char *curr { base }; curr < end; ) {
-		Filter const *flt { filter_to_apply(pattern_filters, curr, end) };
-		if (!flt) {
-			curr++;
-			continue;
-		}
-		if (flt->replacement_size() > flt->keyword_size()) {
-			throw Bad_filter();
-		}
-		memcpy(curr, flt->replacement(), flt->replacement_size());
-		if (flt->replacement_size() < flt->keyword_size()) {
-			char       *const replacement_end { curr + flt->replacement_size() };
-			char const *const keyword_end     { curr + flt->keyword_size() };
-			memmove(replacement_end, keyword_end, (size_t)(end - keyword_end));
-		}
-		curr += flt->replacement_size();
-		size -= flt->keyword_size() - flt->replacement_size();
-		end   = base + size;
+		{ "\x9", "" },
+		{ "\xa", "" },
+		{ "&lt;", "<" },
+		{ "&amp;", "&" },
+		{ "&#42;", "*" },
+		{ "&quot;", "\"" }
 	}
-	return size;
-}
+};
+
+
+static Filters<6> log_matching_filters
+{
+	{
+		{ "\x9", "" },
+		{ "\x1b[0m", "" },
+		{ "\x1b[31m", "" },
+		{ "\x1b[32m", "" },
+		{ "\x1b[33m", "" },
+		{ "\x1b[34m", "" }
+	}
+};
 
 
 static void forward_to_log(uint64_t    const sec,
@@ -156,21 +168,15 @@ static void c_string_append(char       * &dst,
 }
 
 
-static size_t sanitize_log(char                      *dst,
-                           size_t              const  dst_sz,
-                           Log_session::String const &str,
-                           Session_label       const &label)
+static size_t sanitize_log_for_output(char                      *dst,
+                                      size_t              const  dst_sz,
+                                      Log_session::String const &str,
+                                      Session_label       const &label)
 {
-	static Filters<7> log_filters
+	static Filters<1> filters
 	{
 		{
-			{ "\x9", "" },
-			{ "\xa", "" },
-			{ "\x1b[0m", "" },
-			{ "\x1b[31m", "" },
-			{ "\x1b[32m", "" },
-			{ "\x1b[33m", "" },
-			{ "\x1b[34m", "" }
+			{ "\xa", "" }
 		}
 	};
 	/* first, write the label prefix to the buffer */
@@ -185,7 +191,7 @@ static size_t sanitize_log(char                      *dst,
 	char const *src_copied { str.string() };
 	char const *src_end    { str.string() + str.size() };
 	for (; src_curr < src_end; ) {
-		Filter const *const flt { filter_to_apply(log_filters, src_curr, src_end) };
+		Filter const *const flt { filters.filter_to_apply(src_curr, src_end) };
 		if (!flt) {
 			src_curr++;
 			continue;
@@ -272,7 +278,7 @@ void Child::gen_start_node(Xml_generator          &xml,
 
 		xml.attribute("caps", caps);
 
-		typedef String<64> Version;
+		using Version = String<64>;
 		Version const version = _start_xml->xml().attribute_value("version", Version());
 		if (version.valid())
 			xml.attribute("version", version);
@@ -337,20 +343,65 @@ void Child::gen_start_node(Xml_generator          &xml,
 
 	uint64_t max_timeout_sec = 0;
 	try {
-		Xml_node const events = _pkg_xml->xml().sub_node("runtime").sub_node("events");
-		events.for_each_sub_node("timeout", [&] (Xml_node const &event) {
-			try {
-				Timeout_event &timeout = *new (_alloc) Timeout_event(_timer, *this, event);
-				if (timeout.sec() > max_timeout_sec) {
-					max_timeout_sec = timeout.sec();
+		Xml_node const runtime = _pkg_xml->xml().sub_node("runtime");
+
+		/*
+		 * The check for the <events> node is made only for compatibility with
+		 * the old (< Genode 23.08) success-criterion syntax and can be removed
+		 * after an appropriate transition period.
+		 */
+		if (runtime.has_sub_node("events")) {
+
+			Xml_node const events = runtime.sub_node("events");
+			events.for_each_sub_node("timeout", [&] (Xml_node const &event) {
+				try {
+					Timeout_event &timeout = *new (_alloc) Timeout_event(_timer, *this, event);
+					if (timeout.sec() > max_timeout_sec) {
+						max_timeout_sec = timeout.sec();
+					}
+					_timeout_events.insert(&timeout);
 				}
-				_timeout_events.insert(&timeout);
-			}
-			catch (Timeout_event::Invalid) { warning("Invalid timeout event"); }
-		});
-		events.for_each_sub_node("log", [&] (Xml_node const &event) {
-			_log_events.insert(new (_alloc) Log_event(_alloc, event));
-		});
+				catch (Timeout_event::Invalid) { warning("Invalid timeout event"); }
+			});
+			events.for_each_sub_node("log", [&] (Xml_node const &event) {
+				_log_events.insert(new (_alloc) Log_event(_alloc, event));
+			});
+
+		} else {
+
+			runtime.for_each_sub_node("succeed", [&] (Xml_node const &event) {
+
+				if (event.has_attribute("after_seconds")) {
+					try {
+						Timeout_event &timeout = *new (_alloc) Timeout_event(_timer, *this, event);
+						if (timeout.sec() > max_timeout_sec) {
+							max_timeout_sec = timeout.sec();
+						}
+						_timeout_events.insert(&timeout);
+					}
+					catch (Timeout_event::Invalid) { warning("Invalid timeout event"); }
+				}
+				event.with_raw_content([&] (char const *, size_t) {
+					_log_events.insert(new (_alloc) Log_event(_alloc, event));
+				});
+			});
+			runtime.for_each_sub_node("fail", [&] (Xml_node const &event) {
+
+				if (event.has_attribute("after_seconds")) {
+					try {
+						Timeout_event &timeout = *new (_alloc) Timeout_event(_timer, *this, event);
+						if (timeout.sec() > max_timeout_sec) {
+							max_timeout_sec = timeout.sec();
+						}
+						_timeout_events.insert(&timeout);
+					}
+					catch (Timeout_event::Invalid) { warning("Invalid timeout event"); }
+				}
+				event.with_raw_content([&] (char const *, size_t) {
+					_log_events.insert(new (_alloc) Log_event(_alloc, event));
+				});
+			});
+		}
 	}
 	catch (...) { }
 	log("");
@@ -372,7 +423,7 @@ void Child::_gen_routes(Xml_generator          &xml,
 	if (!_pkg_xml.constructed())
 		return;
 
-	typedef String<160> Path;
+	using Path = String<160>;
 
 	/*
 	 * Add routes given in the start node.
@@ -423,7 +474,7 @@ void Child::_gen_routes(Xml_generator          &xml,
 			xml.node("service", [&] () {
 				xml.attribute("name",  "ROM");
 				xml.attribute("label", "config");
-				typedef String<160> Path;
+				using Path = String<160>;
 				Path const path = rom.attribute_value("path", Path());
 
 				if (cached_depot_rom.valid())
@@ -452,7 +503,7 @@ void Child::_gen_routes(Xml_generator          &xml,
 		if (!rom.has_attribute("path"))
 			return;
 
-		typedef Name Label;
+		using Label = Name;
 		Path  const path  = rom.attribute_value("path",  Path());
 		Label const label = rom.attribute_value("label", Label());
 
@@ -584,9 +635,20 @@ size_t Child::log_session_write(Log_session::String const &str,
 	/* max log string size + max label size + size of label framing "[ ]" */
 	enum { LOG_BUF_SZ = Log_session::MAX_STRING_LEN + 160 + 3 };
 
-	char               log_buf[LOG_BUF_SZ];
-	size_t      const  log_len { sanitize_log(log_buf, LOG_BUF_SZ, str, label) };
-	Log_event   const *matching_event { nullptr };
+	char log_buf[LOG_BUF_SZ];
+	size_t log_len { sanitize_log_for_output(log_buf, LOG_BUF_SZ, str, label) };
+
+	/* calculate timestamp */
+	uint64_t const time_us  { _timer.curr_time().trunc_to_plain_us().value - init_time_us };
+	uint64_t       time_ms  { time_us / 1000UL };
+	uint64_t const time_sec { time_ms / 1000UL };
+	time_ms = time_ms - time_sec * 1000UL;
+
+	/* forward timestamp and sanitized string to back-end log session */
+	forward_to_log(time_sec, time_ms, log_buf, log_buf + log_len);
+
+	log_len = log_matching_filters.apply_to(log_buf, log_len);
+	Log_event const *matching_event { nullptr };
 
 	_log.append(log_buf, log_len);
 	_log_events.for_each([&] (Log_event &log_event) {
@@ -597,14 +659,6 @@ size_t Child::log_session_write(Log_session::String const &str,
 			matching_event = &log_event;
 		}
 	});
-	/* calculate timestamp */
-	uint64_t const time_us  { _timer.curr_time().trunc_to_plain_us().value - init_time_us };
-	uint64_t       time_ms  { time_us / 1000UL };
-	uint64_t const time_sec { time_ms / 1000UL };
-	time_ms = time_ms - time_sec * 1000UL;
-
-	/* forward timestamp and sanitized string to back-end log session */
-	forward_to_log(time_sec, time_ms, log_buf, log_buf + log_len);
 
 	/* handle a matching log event */
 	if (matching_event) {
@@ -861,7 +915,17 @@ Timeout_event::Timeout_event(Timer::Connection &timer,
 	Event    { event, Type::TIMEOUT },
 	_child   { child },
 	_timer   { timer },
-	_sec     { event.attribute_value("sec", (uint64_t)0) },
+
+	/*
+	 * The check for the type "timeout" is made only for
+	 * compatibility with the old (< Genode 23.08) success-criterion syntax
+	 * and can be removed after an appropriate transition period.
+	 */
+	_sec     { event.type() == "fail" || event.type() == "succeed" ?
+	               event.attribute_value("after_seconds", (uint64_t)0) :
+	           event.type() == "timeout" ?
+	               event.attribute_value("sec", (uint64_t)0) : 0 },
+
 	_timeout { timer, *this, &Timeout_event::_handle_timeout }
 {
 	if (!_sec) {
@@ -929,7 +993,11 @@ bool Log_event::handle_log_update(Expanding_string const &log_str)
 {
 	while (true) {
 
-		/* determine current pattern chunk */
+		/*
+		 * Determine the log pattern chunk that covers the point defined
+		 * by the current value of _pattern_offset. I.e., the first chunk of
+		 * the pattern that could not be fully matched against the log yet.
+		 */
 		Plain_string const *pattern_chunk        { nullptr };
 		size_t              pattern_chunk_offset { _pattern_offset };
 		_plain_strings.for_each([&] (Plain_string const &chunk) {
@@ -942,13 +1010,21 @@ bool Log_event::handle_log_update(Expanding_string const &log_str)
 				pattern_chunk = &chunk;
 			}
 		});
+		/*
+		 * If there is nothing left to match, stop and return that the event
+		 * was just triggered.
+		 */
 		if (!pattern_chunk) {
 			return true;
 		}
+		/* get the range of yet unmatched bytes inside the pattern chunk */
 		char   const *pattern_chunk_curr { pattern_chunk->base() + pattern_chunk_offset };
 		size_t const  pattern_chunk_left { pattern_chunk->size() - pattern_chunk_offset };
 
-		/* determine current log chunk */
+		/*
+		 * Determine the buffered log chunk that covers the point
+		 * defined by the current value of _log_offset.
+		 */
 		Expanding_string::Chunk const *log_chunk        { nullptr };
 		size_t                         log_chunk_offset { _log_offset };
 		log_str.for_each_chunk([&] (Expanding_string::Chunk const &chunk) {
@@ -961,19 +1037,53 @@ bool Log_event::handle_log_update(Expanding_string const &log_str)
 				log_chunk = &chunk;
 			}
 		});
+		/*
+		 * If there is no log left to process, stop and return that the event
+		 * was not yet triggered.
+		 */
 		if (!log_chunk) {
 			return false;
 		}
+		if (_log_prefix_valid) {
+
+			/*
+			 * If the log chunk doesn't start with the log prefix configured
+			 * for this event, completely ignore the chunk.
+			 */
+			if (memcmp(log_chunk->base(), _log_prefix.string(), _log_prefix.length() - 1)) {
+
+				_log_offset += log_chunk->size();
+				continue;
+			}
+		}
+		/* get the range of yet unprocessed bytes inside the log chunk */
 		char   const *log_chunk_curr { log_chunk->base() + log_chunk_offset };
 		size_t const  log_chunk_left { log_chunk->size() - log_chunk_offset };
 
-		/* compare log with pattern */
+		/*
+		 * Compare the yet unmatched pattern bytes to the yet unprocessed log
+		 * bytes advance .
+		 */
 		size_t const cmp_size { min(log_chunk_left, pattern_chunk_left) };
 		if (memcmp(pattern_chunk_curr, log_chunk_curr, cmp_size)) {
+
+			/*
+			 * If the offset into the pattern chunk is > 0, this means that
+			 * the chunk could be matched partially against the less advanced
+			 * log buffer during the last update. If the remaining bytes now
+			 * fail to match against the just arrived subsequent log bytes,
+			 * we must discard the partial match and try to match the whole
+			 * chunk again. Note that it is correct to then increase the log
+			 * offset in any case because continuing with the partial match
+			 * would not have failed if (_log_offset - pattern_chunk_offset)
+			 * would point to a match for the whole pattern chunk.
+			 */
 			_pattern_offset -= pattern_chunk_offset;
 			_log_offset     -= pattern_chunk_offset;
 			_log_offset     += 1;
+
 		} else {
+
 			_pattern_offset += cmp_size;
 			_log_offset     += cmp_size;
 		}
@@ -991,7 +1101,7 @@ Log_event::Plain_string::Plain_string(Allocator         &alloc,
 	_size       { size }
 {
 	memcpy(_base, base, size);
-	_size = sanitize_pattern(_base, _size);
+	_size = pattern_filters.apply_to(_base, _size);
 }
 
 
@@ -1009,11 +1119,27 @@ Log_event::~Log_event()
 }
 
 
+Log_prefix Log_event::_init_log_prefix(Xml_node const &xml)
+{
+	auto const log_prefix = xml.attribute_value("log_prefix", Log_prefix { });
+	if (log_prefix.length() <= 1)
+		return Log_prefix { };
+
+	char buf[Log_prefix::size()] { }; /* mutable buffer for filter operation */
+	memcpy(buf, log_prefix.string(), log_prefix.length());
+	size_t const filtered_len = pattern_filters.apply_to(buf, log_prefix.length());
+
+	return Log_prefix { Cstring { buf, filtered_len } };
+}
+
+
 Log_event::Log_event(Allocator      &alloc,
                      Xml_node const &xml)
 :
-	Event  { xml, Type::LOG },
-	_alloc { alloc }
+	Event             { xml, Type::LOG },
+	_alloc            { alloc },
+	_log_prefix       { _init_log_prefix(xml) },
+	_log_prefix_valid { _log_prefix != Log_prefix { } }
 {
 	char const *const base   { xml_content_base(xml) };
 	size_t      const size   { xml_content_size(xml) };
@@ -1043,7 +1169,16 @@ Log_event::Log_event(Allocator      &alloc,
 Event::Event(Xml_node const &node,
              Type            type)
 :
-	_meaning { node.attribute_value("meaning", Meaning_string()) },
+	/*
+	 * The check for the types "timeout" and "log" is made only for
+	 * compatibility with the old (< Genode 23.08) success-criterion syntax
+	 * and can be removed after an appropriate transition period.
+	 */
+	_meaning { node.type() == "succeed" ? "succeeded" :
+	           node.type() == "fail" ? "failed" :
+	           node.type() == "timeout" || node.type() == "log" ?
+	               node.attribute_value("meaning", Meaning_string()) : "" },
+
 	_type    { type }
 {
 	if (_meaning != Meaning_string("failed") &&

@@ -39,7 +39,10 @@ class Genode::Service : public Ram_transfer::Account,
 {
 	public:
 
-		typedef Session_state::Name Name;
+		using Name = Session_state::Name;
+
+		using Ram_transfer_result = Ram_transfer::Account::Transfer_result;
+		using Cap_transfer_result = Cap_transfer::Account::Transfer_result;
 
 	private:
 
@@ -47,7 +50,7 @@ class Genode::Service : public Ram_transfer::Account,
 
 	protected:
 
-		typedef Session_state::Factory Factory;
+		using Factory = Session_state::Factory;
 
 		/**
 		 * Return factory to use for creating 'Session_state' objects
@@ -77,8 +80,7 @@ class Genode::Service : public Ram_transfer::Account,
 		 * session state. All subsequent 'Session_state' arguments correspond
 		 * to the forwarded 'args'.
 		 */
-		template <typename... ARGS>
-		Session_state &create_session(Factory &client_factory, ARGS &&... args)
+		Session_state &create_session(Factory &client_factory, auto &&... args)
 		{
 			return _factory(client_factory).create(*this, args...);
 		}
@@ -112,7 +114,7 @@ class Genode::Local_service : public Service
 
 		struct Factory : Interface
 		{
-			typedef Session_state::Args Args;
+			using Args = Session_state::Args;
 
 			/**
 			 * Create session
@@ -134,7 +136,7 @@ class Genode::Local_service : public Service
 		{
 			private:
 
-				typedef Session_state::Args Args;
+				using Args = Session_state::Args;
 
 				SESSION &_s;
 
@@ -151,8 +153,7 @@ class Genode::Local_service : public Service
 
 		Factory &_factory;
 
-		template <typename FUNC>
-		void _apply_to_rpc_obj(Session_state &session, FUNC const &fn)
+		void _apply_to_rpc_obj(Session_state &session, auto const &fn)
 		{
 			SESSION *rpc_obj = dynamic_cast<SESSION *>(session.local_ptr);
 
@@ -357,6 +358,8 @@ class Genode::Parent_service : public Try_parent_service
 
 		void initiate_request(Session_state &session) override
 		{
+			Session_state::Phase original_phase = session.phase;
+
 			for (unsigned i = 0; i < 10; i++) {
 
 				try {
@@ -367,11 +370,13 @@ class Genode::Parent_service : public Try_parent_service
 					Ram_quota ram_quota { ram_quota_from_args(session.args().string()) };
 					Parent::Resource_args args(String<64>("ram_quota=", ram_quota));
 					_env.parent().resource_request(args);
+					session.phase = original_phase;
 				}
 				catch (Out_of_caps) {
 					Cap_quota cap_quota { cap_quota_from_args(session.args().string()) };
 					Parent::Resource_args args(String<64>("cap_quota=", cap_quota));
 					_env.parent().resource_request(args);
+					session.phase = original_phase;
 				}
 			}
 
@@ -471,9 +476,10 @@ class Genode::Child_service : public Async_service
 		/**
 		 * Ram_transfer::Account interface
 		 */
-		void transfer(Pd_session_capability to, Ram_quota amount) override
+		Ram_transfer_result transfer(Pd_session_capability to, Ram_quota amount) override
 		{
-			if (to.valid()) _pd.transfer_quota(to, amount);
+			return to.valid() ? _pd.transfer_quota(to, amount)
+			                  : Ram_transfer_result::OK;
 		}
 
 		/**
@@ -484,9 +490,10 @@ class Genode::Child_service : public Async_service
 		/**
 		 * Cap_transfer::Account interface
 		 */
-		void transfer(Pd_session_capability to, Cap_quota amount) override
+		Cap_transfer_result transfer(Pd_session_capability to, Cap_quota amount) override
 		{
-			if (to.valid()) _pd.transfer_quota(to, amount);
+			return to.valid() ? _pd.transfer_quota(to, amount)
+			                  : Cap_transfer_result::OK;
 		}
 
 		/**

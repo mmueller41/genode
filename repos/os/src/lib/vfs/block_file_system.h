@@ -29,7 +29,7 @@ namespace Vfs { class Block_file_system; }
 
 struct Vfs::Block_file_system
 {
-	typedef String<64> Name;
+	using Name = String<64>;
 
 	struct Local_factory;
 	struct Data_file_system;
@@ -49,13 +49,8 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 		Vfs::Env &_env;
 
-		/*
-		 * Serialize access to packet stream of the block session
-		 */
-		Mutex _mutex { };
-
-		char                 *_block_buffer;
-		unsigned              _block_buffer_count;
+		char     *_block_buffer;
+		unsigned  _block_buffer_count;
 
 		Block::Connection<>        &_block;
 		Block::Session::Info const &_info;
@@ -69,7 +64,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 				Genode::Entrypoint                &_ep;
 				Genode::Allocator                 &_alloc;
-				Mutex                             &_mutex;
 				char                              *_block_buffer;
 				unsigned                          &_block_buffer_count;
 				Block::Connection<>               &_block;
@@ -90,8 +84,8 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 				Block_vfs_handle(Block_vfs_handle const &);
 				Block_vfs_handle &operator = (Block_vfs_handle const &);
 
-				file_size _block_io(file_size nr, void *buf, file_size sz,
-				                    bool write, bool bulk = false)
+				size_t _block_io(file_size nr, void *buf, file_size sz,
+				                 bool write, bool bulk = false)
 				{
 					Block::Packet_descriptor::Opcode op;
 					op = write ? Block::Packet_descriptor::WRITE : Block::Packet_descriptor::READ;
@@ -107,8 +101,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 					while (true) {
 						try {
-							Mutex::Guard guard(_mutex);
-
 							packet = _block.alloc_packet(packet_count * _block_size);
 							break;
 						} catch (Block::Session::Tx::Source::Packet_alloc_failed) {
@@ -121,7 +113,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 							}
 						}
 					}
-					Mutex::Guard guard(_mutex);
 
 					Block::Packet_descriptor p(packet, op, nr, packet_count);
 
@@ -153,7 +144,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 				                 File_io_service                   &fs,
 				                 Genode::Entrypoint                &ep,
 				                 Genode::Allocator                 &alloc,
-				                 Mutex                             &mutex,
 				                 char                              *block_buffer,
 				                 unsigned                          &block_buffer_count,
 				                 Block::Connection<>               &block,
@@ -165,7 +155,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 					Single_vfs_handle(ds, fs, alloc, 0),
 					_ep(ep),
 					_alloc(alloc),
-					_mutex(mutex),
 					_block_buffer(block_buffer),
 					_block_buffer_count(block_buffer_count),
 					_block(block),
@@ -175,22 +164,23 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 					_writeable(writeable)
 				{ }
 
-				Read_result read(char *dst, file_size count,
-				                 file_size &out_count) override
+				Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 				{
 					file_size seek_offset = seek();
 
-					file_size read = 0;
+					size_t count = dst.num_bytes;
+					size_t read = 0;
+
 					while (count > 0) {
 						file_size displ   = 0;
-						file_size length  = 0;
-						file_size nbytes  = 0;
 						file_size blk_nr  = seek_offset / _block_size;
+
+						size_t length = 0;
 
 						displ = seek_offset % _block_size;
 
 						if ((displ + count) > _block_size)
-							length = (_block_size - displ);
+							length = size_t(_block_size - displ);
 						else
 							length = count;
 
@@ -206,7 +196,7 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 						if (displ == 0 && !(count < _block_size)) {
 							file_size bytes_left = count - (count % _block_size);
 
-							nbytes = _block_io(blk_nr, dst + read, bytes_left, false, true);
+							size_t const nbytes = _block_io(blk_nr, dst.start + read, bytes_left, false, true);
 							if (nbytes == 0) {
 								Genode::error("error while reading block:", blk_nr, " from block device");
 								return READ_ERR_INVALID;
@@ -219,13 +209,13 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 							continue;
 						}
 
-						nbytes = _block_io(blk_nr, _block_buffer, _block_size, false);
-						if ((unsigned)nbytes != _block_size) {
+						size_t const nbytes = _block_io(blk_nr, _block_buffer, _block_size, false);
+						if (nbytes != _block_size) {
 							Genode::error("error while reading block:", blk_nr, " from block device");
 							return READ_ERR_INVALID;
 						}
 
-						Genode::memcpy(dst + read, _block_buffer + displ, (size_t)length);
+						Genode::memcpy(dst.start + read, _block_buffer + displ, length);
 
 						read  += length;
 						count -= length;
@@ -238,8 +228,7 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 				}
 
-				Write_result write(char const *buf, file_size count,
-				                   file_size &out_count) override
+				Write_result write(Const_byte_range_ptr const &src, size_t &out_count) override
 				{
 					if (!_writeable) {
 						Genode::error("block device is not writeable");
@@ -248,17 +237,19 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 					file_size seek_offset = seek();
 
-					file_size written = 0;
+					size_t written = 0;
+					size_t count = src.num_bytes;
+
 					while (count > 0) {
-						file_size displ   = 0;
-						file_size length  = 0;
-						file_size nbytes  = 0;
-						file_size blk_nr  = seek_offset / _block_size;
+						file_size displ  = 0;
+						file_size blk_nr = seek_offset / _block_size;
+
+						size_t length = 0;
 
 						displ = seek_offset % _block_size;
 
 						if ((displ + count) > _block_size)
-							length = (_block_size - displ);
+							length = size_t(_block_size - displ);
 						else
 							length = count;
 
@@ -274,8 +265,8 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 						if (displ == 0 && !(count < _block_size)) {
 							file_size bytes_left = count - (count % _block_size);
 
-							nbytes = _block_io(blk_nr, (void*)(buf + written),
-							                   bytes_left, true, true);
+							size_t const nbytes = _block_io(blk_nr, (void*)(src.start + written),
+							                                bytes_left, true, true);
 							if (nbytes == 0) {
 								Genode::error("error while write block:", blk_nr, " to block device");
 								return WRITE_ERR_INVALID;
@@ -298,10 +289,10 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 						if (displ > 0 || length < _block_size)
 							_block_io(blk_nr, _block_buffer, _block_size, false);
 
-						Genode::memcpy(_block_buffer + displ, buf + written, (size_t)length);
+						Genode::memcpy(_block_buffer + displ, src.start + written, length);
 
-						nbytes = _block_io(blk_nr, _block_buffer, _block_size, true);
-						if ((unsigned)nbytes != _block_size) {
+						size_t const nbytes = _block_io(blk_nr, _block_buffer, _block_size, true);
+						if (nbytes != _block_size) {
 							Genode::error("error while writing block:", blk_nr, " to block_device");
 							return WRITE_ERR_INVALID;
 						}
@@ -341,14 +332,20 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 					_tx_source->release_packet(p);
 
 					if (!p.succeeded()) {
-						Genode::error("vfs_block: syncing blocks failed");
+						/* only warn once if sync is not supported */
+						static bool print_sync_failed = true;
+						if (print_sync_failed) {
+							Genode::warning("vfs_block: syncing blocks failed");
+							print_sync_failed = false;
+						}
 						return SYNC_ERR_INVALID;
 					}
 
 					return SYNC_OK;
 				}
 
-				bool read_ready() override { return true; }
+				bool read_ready()  const override { return true; }
+				bool write_ready() const override { return true; }
 		};
 
 	public:
@@ -397,7 +394,6 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 				*out_handle = new (alloc) Block_vfs_handle(*this, *this,
 				                                           _env.env().ep(),
 				                                           alloc,
-				                                           _mutex,
 				                                           _block_buffer,
 				                                           _block_buffer_count,
 				                                           _block,
@@ -432,7 +428,7 @@ class Vfs::Block_file_system::Data_file_system : public Single_file_system
 
 struct Vfs::Block_file_system::Local_factory : File_system_factory
 {
-	typedef Genode::String<64> Label;
+	using Label = Genode::String<64>;
 	Label const _label;
 
 	Name const _name;
@@ -449,7 +445,7 @@ struct Vfs::Block_file_system::Local_factory : File_system_factory
 	Genode::Io_signal_handler<Local_factory> _block_signal_handler {
 		_env.env().ep(), *this, &Local_factory::_handle_block_signal };
 
-	void _handle_block_signal() { }
+	void _handle_block_signal() { _env.user().wakeup_vfs_user(); }
 
 	Data_file_system _data_fs;
 	

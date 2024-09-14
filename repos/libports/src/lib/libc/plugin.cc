@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright (C) 2010-2017 Genode Labs GmbH
+ * Copyright (C) 2010-2024 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -14,12 +14,10 @@
 /* Genode includes */
 #include <base/log.h>
 
-/* libc plugin interface */
-#include <libc-plugin/fd_alloc.h>
-#include <libc-plugin/plugin_registry.h>
-#include <libc-plugin/plugin.h>
-
 /* local includes */
+#include <internal/fd_alloc.h>
+#include <internal/plugin_registry.h>
+#include <internal/plugin.h>
 #include <internal/init.h>
 #include <internal/resume.h>
 
@@ -107,13 +105,6 @@ bool Plugin::supports_rename(const char *, const char *)
 
 
 bool Plugin::supports_rmdir(const char*)
-{
-	return false;
-}
-
-
-bool Plugin::supports_select(int, fd_set *, fd_set *,
-                             fd_set *, struct timeval *)
 {
 	return false;
 }
@@ -208,11 +199,10 @@ DUMMY(void *, (void *)(-1), mmap, (void *addr, ::size_t length, int prot, int fl
 DUMMY(int, -1, munmap,       (void *, ::size_t));
 DUMMY(int, -1, msync,        (void *addr, ::size_t len, int flags));
 DUMMY(int, -1, pipe,         (File_descriptor*[2]));
-DUMMY(bool, 0, poll,         (File_descriptor &, struct pollfd &));
+DUMMY(int, -1, poll,         (Pollfd[], int));
 DUMMY(ssize_t, -1, readlink, (const char *, char *, ::size_t));
 DUMMY(int, -1, rename,       (const char *, const char *));
 DUMMY(int, -1, rmdir,        (const char*));
-DUMMY(int, -1, select,       (int, fd_set *, fd_set *, fd_set *, struct timeval *));
 DUMMY(int, -1, stat,         (const char*, struct stat*));
 DUMMY(int, -1, symlink,      (const char*, const char*));
 DUMMY(int, -1, unlink,       (const char*));

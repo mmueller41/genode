@@ -13,6 +13,16 @@
 
 #include <lx_emul.h>
 
+
+#include <asm/processor.h>
+unsigned long __end_init_task[0];
+
+#include <asm/current.h>
+DEFINE_PER_CPU(struct pcpu_hot, pcpu_hot);
+
+/* arch/x86/kernel/head64.c */
+unsigned long vmalloc_base;
+
 #include <asm-generic/sections.h>
 
 char __start_rodata[] = {};
@@ -43,11 +53,17 @@ const struct trace_print_flags vmaflag_names[]  = { {0,NULL}};
 const struct trace_print_flags pageflag_names[] = { {0,NULL}};
 
 
+/* mm/debug.c */
+const struct trace_print_flags pagetype_names[] = {
+	{0, NULL}
+};
+
+
 #include <asm/processor.h>
 
 /*
- * Early_identify_cpu() in linux sets this up normally, used by drm_cache
- * as well as arch/x86/lib/delay.c.
+ * Early_identify_cpu() in linux sets this up normally, used by drm_cache,
+ * arch/x86/lib/delay.c, and slub allocator.
  */
 struct cpuinfo_x86 boot_cpu_data =
 {
@@ -58,6 +74,10 @@ struct cpuinfo_x86 boot_cpu_data =
 };
 
 unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
+
+
+/* kernel/sched/sched.h */
+bool sched_smp_initialized = true;
 
 
 /*
@@ -103,14 +123,6 @@ void ignore_signals(struct task_struct * t)
 }
 
 
-#include <linux/sched/loadavg.h>
-
-void calc_global_load(void)
-{
-	lx_emul_trace(__func__);
-}
-
-
 #include <linux/kernel_stat.h>
 
 void account_process_tick(struct task_struct * p,int user_tick)
@@ -143,6 +155,7 @@ void kernfs_put(struct kernfs_node * kn)
 
 #include <linux/random.h>
 
+struct random_ready_callback;
 int add_random_ready_callback(struct random_ready_callback * rdy)
 {
 	lx_emul_trace(__func__);
@@ -150,7 +163,7 @@ int add_random_ready_callback(struct random_ready_callback * rdy)
 }
 
 
-void add_device_randomness(const void * buf,unsigned int size)
+void add_device_randomness(const void * buf, size_t size)
 {
 	lx_emul_trace(__func__);
 }
@@ -158,7 +171,7 @@ void add_device_randomness(const void * buf,unsigned int size)
 
 #include <linux/random.h>
 
-void add_interrupt_randomness(int irq,int irq_flags)
+void add_interrupt_randomness(int irq)
 {
 	lx_emul_trace(__func__);
 }
@@ -170,14 +183,6 @@ bool irq_wait_for_poll(struct irq_desc * desc)
 	lx_emul_trace_and_stop(__func__);
 }
 
-
-#include <linux/fs.h>
-
-int __register_chrdev(unsigned int major,unsigned int baseminor,unsigned int count,const char * name,const struct file_operations * fops)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
 
 
 int register_chrdev_region(dev_t from,unsigned count,const char * name)
@@ -201,13 +206,7 @@ void register_irq_proc(unsigned int irq,struct irq_desc * desc)
 }
 
 
-#include <linux/cdev.h>
-
-void cdev_init(struct cdev * cdev,const struct file_operations * fops)
-{
-	lx_emul_trace(__func__);
-}
-
+struct cdev;
 
 int cdev_add(struct cdev * p,dev_t dev,unsigned count)
 {
@@ -263,15 +262,6 @@ void seq_vprintf(struct seq_file * m,const char * f,va_list args)
 }
 
 
-#include <linux/property.h>
-
-int software_node_notify(struct device * dev,unsigned long action)
-{
-	lx_emul_trace(__func__);
-	return 0;
-}
-
-
 extern void pci_allocate_vc_save_buffers(struct pci_dev * dev);
 void pci_allocate_vc_save_buffers(struct pci_dev * dev)
 {
@@ -300,6 +290,12 @@ bool parse_option_str(const char * str,const char * option)
 {
 	lx_emul_trace(__func__);
 	return false;
+}
+
+
+int get_option(char ** str,int * pint)
+{
+	lx_emul_trace_and_stop(__func__);
 }
 
 
@@ -408,4 +404,74 @@ DEFINE_PER_CPU(bool, hardirq_stack_inuse);
 DEFINE_PER_CPU_READ_MOSTLY(struct cpuinfo_x86, cpu_info);
 EXPORT_PER_CPU_SYMBOL(cpu_info);
 
+
+struct dl_bw;
+void init_dl_bw(struct dl_bw *dl_b)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+struct irq_work;
+extern void rto_push_irq_work_func(struct irq_work *work);
+void rto_push_irq_work_func(struct irq_work *work)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+/* kernel/sched/cpudeadline.h */
+struct cpudl;
+int  cpudl_init(struct cpudl *cp)
+{
+	lx_emul_trace_and_stop(__func__);
+	return -1;
+}
+
+
+void cpudl_cleanup(struct cpudl *cp)
+{
+	lx_emul_trace_and_stop(__func__);
+}
+
+
+/* include/linux/sched/topology.h */
+int arch_asym_cpu_priority(int cpu)
+{
+	lx_emul_trace_and_stop(__func__);
+	return 0;
+}
+
+
+#include <linux/swiotlb.h>
+
+void swiotlb_dev_init(struct device * dev)
+{
+	lx_emul_trace(__func__);
+}
+
+
+bool is_swiotlb_allocated(void)
+{
+	lx_emul_trace(__func__);
+	return false;
+}
+
+
+#include <linux/random.h>
+
+int __cold execute_with_initialized_rng(struct notifier_block * nb)
+{
+	lx_emul_trace(__func__);
+	return 0;
+}
+
+
+#include <linux/sysctl.h>
+
+struct ctl_table_header *register_sysctl_sz(const char *path, struct ctl_table *table,
+                                            size_t table_size)
+{
+	lx_emul_trace(__func__);
+	return NULL;
+}
 

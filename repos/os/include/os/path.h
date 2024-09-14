@@ -86,7 +86,7 @@ class Genode::Path_base
 			for (; *path; path++) {
 				if (path[0] != '/') continue;
 
-				/* strip superfluous dots, e.g., "/abs/./path/" -> "/abs/path" */
+				/* strip superfluous dots, e.g., "/abs/./path/" -> "/abs/path/" */
 				while (path[1] == '.' && path[2] == '/') {
 					remove_char(path);
 					remove_char(path);
@@ -99,7 +99,7 @@ class Genode::Path_base
 			for (; *path; path++) {
 				if (path[0] != '/') continue;
 
-				/* strip superfluous slashes, e.g., "//path/" -> "/path" */
+				/* strip superfluous slashes, e.g., "//path/" -> "/path/" */
 				while (path[1] == '/')
 					remove_char(path);
 			}
@@ -130,6 +130,12 @@ class Genode::Path_base
 
 		static void strip_double_dot_dirs(char *path)
 		{
+			bool path_was_absolute = absolute(path);
+
+			/*
+			 * Strip any occurrence of "/.." and the previous path
+			 * element (including leading slash) if one exists.
+			 */
 			unsigned i;
 			while ((i = find_double_dot_dir(path))) {
 
@@ -141,11 +147,26 @@ class Genode::Path_base
 				while (cut_start > 0 && path[cut_start - 1] != '/')
 					cut_start--;
 
-				/* skip slash in front of the pair of dots */
+				/* skip slash in front of the previous path element */
 				if (cut_start > 0)
 					cut_start--;
 
 				strip(path + cut_start, cut_end - cut_start);
+			}
+
+			if (path_was_absolute) {
+				/* restore the leading slash if it got stripped */
+				if (empty(path))
+					copy_cstring(path, "/", 2);
+			} else {
+				/* remove leading ".." if present */
+				if (path[0] == '.' && path[1] == '.'
+				 && (path[2] == 0 || path[2] == '/'))
+					strip(path, 2);
+
+				/* remove leading slash if one is present now */
+				if (path[0] == '/')
+					strip(path, 1);
 			}
 		}
 

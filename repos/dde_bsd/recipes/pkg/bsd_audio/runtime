@@ -1,0 +1,17 @@
+<runtime ram="2M" caps="105" binary="pci_audio">
+
+	<requires> <platform/> <rm/> <timer/> </requires>
+
+	<provides>
+		<audio_out/>
+		<audio_in/>
+	</provides>
+
+	<config/>
+
+	<content>
+		<rom label="ld.lib.so"/>
+		<rom label="pci_audio"/>
+	</content>
+
+</runtime>

@@ -16,6 +16,7 @@
 
 /* Genode includes */
 #include <util/xml_generator.h>
+#include <base/attached_rom_dataspace.h>
 #include <base/log.h>
 
 /* local includes */
@@ -23,11 +24,10 @@
 
 namespace Sculpt {
 
-	template <typename FN>
 	static inline void gen_named_node(Xml_generator &xml,
-	                                  char const *type, char const *name, FN const &fn)
+	                                  char const *type, char const *name, auto const &fn)
 	{
-		xml.node(type, [&] () {
+		xml.node(type, [&] {
 			xml.attribute("name", name);
 			fn();
 		});
@@ -35,24 +35,22 @@ namespace Sculpt {
 
 	static inline void gen_named_node(Xml_generator &xml, char const *type, char const *name)
 	{
-		xml.node(type, [&] () { xml.attribute("name", name); });
+		xml.node(type, [&] { xml.attribute("name", name); });
 	}
 
-	template <size_t N, typename FN>
 	static inline void gen_named_node(Xml_generator &xml,
-	                                  char const *type, String<N> const &name, FN const &fn)
+	                                  char const *type, auto const &name, auto const &fn)
 	{
 		gen_named_node(xml, type, name.string(), fn);
 	}
 
-	template <size_t N>
-	static inline void gen_named_node(Xml_generator &xml, char const *type, String<N> const &name)
+	static inline void gen_named_node(Xml_generator &xml, char const *type, auto const &name)
 	{
 		gen_named_node(xml, type, name.string());
 	}
 
-	template <typename SESSION, typename FN>
-	static inline void gen_service_node(Xml_generator &xml, FN const &fn)
+	template <typename SESSION>
+	static inline void gen_service_node(Xml_generator &xml, auto const &fn)
 	{
 		gen_named_node(xml, "service", SESSION::service_name(), fn);
 	}
@@ -66,17 +64,17 @@ namespace Sculpt {
 	template <typename SESSION>
 	static inline void gen_parent_route(Xml_generator &xml)
 	{
-		gen_named_node(xml, "service", SESSION::service_name(), [&] () {
-			xml.node("parent", [&] () { }); });
+		gen_named_node(xml, "service", SESSION::service_name(), [&] {
+			xml.node("parent", [&] { }); });
 	}
 
 	static inline void gen_parent_rom_route(Xml_generator  &xml,
 	                                        Rom_name const &name,
-	                                        Label    const &label)
+	                                        auto     const &label)
 	{
-		gen_service_node<Rom_session>(xml, [&] () {
+		gen_service_node<Rom_session>(xml, [&] {
 			xml.attribute("label_last", name);
-			xml.node("parent", [&] () {
+			xml.node("parent", [&] {
 				xml.attribute("label", label); });
 		});
 	}
@@ -90,8 +88,18 @@ namespace Sculpt {
 	template <typename SESSION>
 	static inline void gen_provides(Xml_generator &xml)
 	{
-		xml.node("provides", [&] () {
+		xml.node("provides", [&] {
 			gen_named_node(xml, "service", SESSION::service_name()); });
+	}
+
+	static inline void gen_common_routes(Xml_generator &xml)
+	{
+		gen_parent_rom_route(xml, "ld.lib.so");
+		gen_parent_route<Cpu_session>    (xml);
+		gen_parent_route<Pd_session>     (xml);
+		gen_parent_route<Log_session>    (xml);
+		gen_parent_route<Timer::Session> (xml);
+		gen_parent_route<Report::Session>(xml);
 	}
 
 	static inline void gen_common_start_content(Xml_generator   &xml,
@@ -103,7 +111,7 @@ namespace Sculpt {
 		xml.attribute("name", name);
 		xml.attribute("caps", caps.value);
 		xml.attribute("priority", (int)priority);
-		gen_named_node(xml, "resource", "RAM", [&] () {
+		gen_named_node(xml, "resource", "RAM", [&] {
 			xml.attribute("quantum", String<64>(Number_of_bytes(ram.value))); });
 	}
 
@@ -113,8 +121,8 @@ namespace Sculpt {
 		return node.attribute_value(attr_name, T{});
 	}
 
-	template <typename T, typename... ARGS>
-	static T _attribute_value(Xml_node node, char const *sub_node_type, ARGS... args)
+	template <typename T>
+	static T _attribute_value(Xml_node node, char const *sub_node_type, auto &&... args)
 	{
 		if (!node.has_sub_node(sub_node_type))
 			return T{};
@@ -128,11 +136,79 @@ namespace Sculpt {
 	 * The list of arguments except for the last one refer to XML path into the
 	 * XML structure. The last argument denotes the queried attribute name.
 	 */
-	template <typename T, typename... ARGS>
-	static T query_attribute(Xml_node node, ARGS &&... args)
+	template <typename T>
+	static T query_attribute(Xml_node node, auto &&... args)
 	{
 		return _attribute_value<T>(node, args...);
 	}
+
+	static inline void copy_attributes(Xml_generator &xml, Xml_node const &from)
+	{
+		using Value = String<64>;
+		from.for_each_attribute([&] (Xml_attribute const &attr) {
+			Value value { };
+			attr.value(value);
+			xml.attribute(attr.name().string(), value);
+		});
+	}
+
+	struct Xml_max_depth { unsigned value; };
+
+	static inline void copy_node(Xml_generator &xml, Xml_node const &from,
+	                             Xml_max_depth max_depth = { 5 })
+	{
+		if (max_depth.value)
+			xml.node(from.type().string(), [&] {
+				copy_attributes(xml, from);
+				from.for_each_sub_node([&] (Xml_node const &sub_node) {
+					copy_node(xml, sub_node, { max_depth.value - 1 }); }); });
+	}
+
+	struct Rom_data : Noncopyable
+	{
+		protected:
+
+			Xml_node _node { "<empty/>" };
+
+		public:
+
+			void with_xml(auto const &fn) const { fn(_node); }
+
+			bool valid() const { return !_node.has_type("empty"); }
+	};
+
+	template <typename T>
+	class Rom_handler : public Rom_data
+	{
+		private:
+
+			Attached_rom_dataspace _rom;
+
+			T &_obj;
+
+			void (T::*_member) (Xml_node const &);
+
+			Signal_handler<Rom_handler> _handler;
+
+			void _handle()
+			{
+				_rom.update();
+				_node = _rom.xml();
+				(_obj.*_member)(_node);
+			}
+
+		public:
+
+			Rom_handler(Env &env, Session_label const &label,
+			            T &obj, void (T::*member)(Xml_node const &))
+			:
+				_rom(env, label.string()), _obj(obj), _member(member),
+				_handler(env.ep(), *this, &Rom_handler::_handle)
+			{
+				_rom.sigh(_handler);
+				_handler.local_submit();
+			}
+	};
 }
 
 #endif /* _XML_H_ */

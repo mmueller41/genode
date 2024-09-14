@@ -85,6 +85,11 @@ proc autopilot_create_tar_from_depot_binaries { archive_path args } {
 
 	check_for_missing_depot_archives
 
+	if {[llength $content] == 0} {
+		puts stderr "Error: no content for depot.tar"
+		exit -1
+	}
+
 	eval "exec tar cf $archive_path -T /dev/null -C [depot_dir] [lsort -unique $content]"
 }
 
@@ -259,7 +264,6 @@ proc prepare_to_run_genode { } {
 		} [depot_user] {/src/report_rom
 		} [depot_user] {/src/fs_rom
 		} [depot_user] {/src/vfs
-		} [depot_user] {/src/loader
 		} [depot_user] {/src/init
 		} [depot_user] {/src/depot_query
 	}
@@ -342,7 +346,7 @@ proc prepare_to_run_genode { } {
 		</start>
 
 		<start name="fs_rom" priority="-1" caps="300">
-			<resource name="RAM" quantum="16M"/>
+			<resource name="RAM" quantum="32M"/>
 			<provides> <service name="ROM"/> </provides>
 		</start>
 
@@ -447,9 +451,7 @@ proc prepare_to_run_genode { } {
 	# Build boot image from boot modules
 	#
 
-	set boot_modules { depot_autopilot }
-	append boot_modules $test_modules
-	build_boot_image $boot_modules
+	build_boot_image [list {*}[build_artifacts] {*}$test_modules]
 
 	set last_test_pkg ""
 	set run_genode_failed 0
@@ -649,15 +651,17 @@ set default_test_pkgs {
 	test-spark
 	test-spark_exception
 	test-spark_secondary_stack
+	test-alarm
 	test-black_hole
 	test-clipboard
 	test-depot_query_index
 	test-ds_ownership
 	test-dynamic_config
-	test-dynamic_config_loader
 	test-entrypoint
 	test-expat
 	test-fault_detection
+	test-file_vault
+	test-file_vault_no_entropy
 	test-fs_packet
 	test-fs_report
 	test-fs_rom_update
@@ -692,6 +696,8 @@ set default_test_pkgs {
 	test-nic_loopback
 	test-part_block_gpt
 	test-part_block_mbr
+	test-path
+	test-pipe_read_ready
 	test-pthread
 	test-ram_fs_chunk
 	test-read_only_rom
@@ -752,16 +758,36 @@ proc non_executable_supported { } {
 	return false
 }
 
+proc skip_test_if { condition test } {
+
+	global skip_test
+	if {$condition} {
+		set skip_test($test) true
+	}
+}
+
 #
 # Whether to skip a test - if undefined for a test, the test is not skipped
 #
+
+#
+# pbxa9 and zynq_qemu don't support jitterentropy
+#
+skip_test_if [expr  ([have_board pbxa9] || [have_board zynq_qemu])] test-file_vault
+skip_test_if [expr !([have_board pbxa9] || [have_board zynq_qemu])] test-file_vault_no_entropy
+
+# rpi has a quite limited amount of RAM
+skip_test_if [have_board rpi] test-file_vault
+skip_test_if [have_board rpi] test-file_vault_no_entropy
+
 set skip_test(test-fault_detection) [expr [have_spec pistachio] || [have_spec fiasco]]
 set skip_test(test-fs_packet)       [expr ![interactive] && [have_include "power_on/qemu"]]
 set skip_test(test-libc)            [expr [have_spec sel4] || [have_board rpi] || [have_board imx53_qsb_tz]]
 set skip_test(test-lx_block)        [expr ![have_board linux]]
+set skip_test(test-read_only_rom)   [expr [have_board linux]]
 set skip_test(test-rm_fault)        [expr [have_board linux] || ![non_executable_supported]]
 set skip_test(test-rm_fault_no_nox) [expr [have_board linux] || ![skip_test test-rm_fault]]
-set skip_test(test-rm_nested)       [expr [have_board linux]]
+set skip_test(test-rm_nested)       [expr [have_board linux] || [have_spec pistachio]]
 set skip_test(test-slab)            [expr ![interactive] && [have_include "power_on/qemu"]]
 set skip_test(test-spark_exception) [expr [have_spec arm]]
 set skip_test(test-tcp_bulk_lwip)   [expr ![have_spec x86] && ![have_include "power_on/qemu"]]
@@ -771,6 +797,9 @@ if {[have_spec foc]} {
 	set skip_test(test-entrypoint)    [have_board pbxa9]
 	set skip_test(test-libc)          [have_board pbxa9]
 	set skip_test(test-tcp_bulk_lxip) [have_board pbxa9]
+	# foc on pbxa9 caps RAM at 256 MiB - skip tests with excessive RAM demand
+	skip_test_if [have_board pbxa9] test-file_vault
+	skip_test_if [have_board pbxa9] test-file_vault_no_entropy
 }
 if {[have_spec riscv]} {
 	set skip_test(gcov)                              true
@@ -783,6 +812,7 @@ if {[have_spec riscv]} {
 	set skip_test(test-tcp_bulk_lxip)                true
 	set skip_test(test-trace_logger)                 true
 	set skip_test(test-xml_generator)                true
+	set skip_test(test-file_vault)                   true
 }
 
 #

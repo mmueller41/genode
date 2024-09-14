@@ -1,13 +1,17 @@
-<!--
-  Manually maintained rules for assigning USB devices to clients.
+<config bios_handoff="no">
 
-  The content is indented with two tabs because it is incorporated as is
-  into the <raw> sub node of the the USB driver configuration.
-  -->
+	<!-- available devices are listed at /report/runtime/usb/devices -->
 
-<usb>
+	<!-- example for a hypothetical development VM -->
+	<policy label_prefix="vbox6-dev ->">
+		<device vendor_id="0x1f3a" product_id="0x1010"/> <!-- pinephone fastboot -->
+		<device vendor_id="0x403"  product_id="0x6001"/> <!-- pinephone uart -->
+		<device vendor_id="0x16d0" product_id="0xe88"/>  <!-- joulescope -->
+	</policy>
 
-		<!-- rule for flashing the ergodox firmware
-		<policy label_suffix="teensy" vendor_id="0x16c0" product_id="0x0478"/>
-		-->
-</usb>
+	<policy label_prefix="usb_webcam ->">
+		<device vendor_id="0x5986" product_id="0x366"/>  <!-- x250 webcam -->
+		<device vendor_id="0x5986" product_id="0x706"/>  <!-- x260 webcam -->
+	</policy>
+
+</config>

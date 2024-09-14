@@ -37,9 +37,9 @@ namespace Gui_fader {
 	class Framebuffer_session_component;
 	class Gui_session_component;
 
-	typedef Genode::Surface_base::Area  Area;
-	typedef Genode::Surface_base::Point Point;
-	typedef Genode::Surface_base::Rect  Rect;
+	using Area  = Genode::Surface_base::Area;
+	using Point = Genode::Surface_base::Point;
+	using Rect  = Genode::Surface_base::Rect;
 
 	using Genode::size_t;
 	using Genode::Xml_node;
@@ -50,8 +50,8 @@ namespace Gui_fader {
 	using Genode::Reconstructible;
 	using Genode::Constructible;
 
-	typedef Genode::Pixel_rgb888 Pixel_rgb888;
-	typedef Genode::Pixel_alpha8 Pixel_alpha8;
+	using Pixel_rgb888 = Genode::Pixel_rgb888;
+	using Pixel_alpha8 = Genode::Pixel_alpha8;
 }
 
 
@@ -62,7 +62,7 @@ class Gui_fader::Src_buffer
 {
 	private:
 
-		typedef Pixel_rgb888 Pixel;
+		using Pixel = Pixel_rgb888;
 
 		bool             const _use_alpha;
 		Attached_ram_dataspace _ds;
@@ -171,7 +171,7 @@ class Gui_fader::Framebuffer_session_component
 
 			Texture_painter::paint(_dst_buffer->pixel_surface(),
 			                       _src_buffer.texture(),
-			                       Genode::Color(0, 0, 0),
+			                       Genode::Color::black(),
 			                       Point(0, 0),
 			                       Texture_painter::SOLID,
 			                       false);
@@ -207,7 +207,7 @@ class Gui_fader::Framebuffer_session_component
 
 			transfer_src_to_dst_alpha(rect);
 
-			_gui.framebuffer()->refresh(rect.x1(), rect.y1(), rect.w(), rect.h());
+			_gui.framebuffer.refresh(rect.x1(), rect.y1(), rect.w(), rect.h());
 
 			/* keep animating as long as the destination value is not reached */
 			return _fade != _fade.dst();
@@ -230,12 +230,12 @@ class Gui_fader::Framebuffer_session_component
 
 		Framebuffer::Mode mode() const override
 		{
-			return _gui.framebuffer()->mode();
+			return _gui.framebuffer.mode();
 		}
 
 		void mode_sigh(Genode::Signal_context_capability sigh) override
 		{
-			_gui.framebuffer()->mode_sigh(sigh);
+			_gui.framebuffer.mode_sigh(sigh);
 		}
 
 		void refresh(int x, int y, int w, int h) override
@@ -243,12 +243,12 @@ class Gui_fader::Framebuffer_session_component
 			transfer_src_to_dst_pixel(Rect(Point(x, y), Area(w, h)));
 			transfer_src_to_dst_alpha(Rect(Point(x, y), Area(w, h)));
 
-			_gui.framebuffer()->refresh(x, y, w, h);
+			_gui.framebuffer.refresh(x, y, w, h);
 		}
 
 		void sync_sigh(Genode::Signal_context_capability sigh) override
 		{
-			_gui.framebuffer()->sync_sigh(sigh);
+			_gui.framebuffer.sync_sigh(sigh);
 		}
 };
 
@@ -259,8 +259,8 @@ class Gui_fader::Gui_session_component
 {
 	private:
 
-		typedef Gui::View_capability      View_capability;
-		typedef Gui::Session::View_handle View_handle;
+		using View_capability = Gui::View_capability;
+		using View_id         = Gui::View_id;
 
 		Genode::Env &_env;
 
@@ -278,22 +278,22 @@ class Gui_fader::Gui_session_component
 
 		Framebuffer::Session_capability _fb_cap { _env.ep().manage(_fb_session) };
 
-		Gui::Session::View_handle _view_handle { };
+		Constructible<Gui::View_id> _view_id { };
 
 		bool _view_visible = false;
 		Rect _view_geometry { };
 
 		void _update_view_visibility()
 		{
-			if (!_view_handle.valid() || (_view_visible == _fb_session.visible()))
+			if (!_view_id.constructed() || (_view_visible == _fb_session.visible()))
 				return;
 
-			typedef Gui::Session::Command Command;
+			using Command = Gui::Session::Command;
 
 			if (_fb_session.visible())
-				_gui.enqueue<Command::Geometry>(_view_handle, _view_geometry);
+				_gui.enqueue<Command::Geometry>(*_view_id, _view_geometry);
 			else
-				_gui.enqueue<Command::Geometry>(_view_handle, Rect());
+				_gui.enqueue<Command::Geometry>(*_view_id, Rect());
 
 			_gui.execute();
 
@@ -335,42 +335,51 @@ class Gui_fader::Gui_session_component
 		 ** Gui::Session interface **
 		 ****************************/
 
-		Framebuffer::Session_capability framebuffer_session() override
+		Framebuffer::Session_capability framebuffer() override
 		{
 			return _fb_cap;
 		}
 
-		Input::Session_capability input_session() override
+		Input::Session_capability input() override
 		{
-			return _gui.input_session();
+			return _gui.input.rpc_cap();
 		}
 
-		View_handle create_view(View_handle parent) override
+		View_result view(View_id id, View_attr const &attr) override
 		{
-			_view_handle = _gui.create_view(parent);
+			_view_id.construct(id);
+			_gui.view(id, attr);
 			_update_view_visibility();
-			return _view_handle;
+			return View_result::OK;
 		}
 
-		void destroy_view(View_handle handle) override
+		Child_view_result child_view(View_id id, View_id parent, View_attr const &attr) override
 		{
-			return _gui.destroy_view(handle);
+			_view_id.construct(id);
+			_gui.child_view(id, parent, attr);
+			_update_view_visibility();
+			return Child_view_result::OK;
 		}
 
-		View_handle view_handle(View_capability view_cap,
-		                        View_handle handle) override
+		void destroy_view(View_id id) override
 		{
-			return _gui.view_handle(view_cap, handle);
+			return _gui.destroy_view(id);
 		}
 
-		View_capability view_capability(View_handle handle) override
+		Associate_result associate(View_id id, View_capability view_cap) override
 		{
-			return _gui.view_capability(handle);
+			_gui.associate(id, view_cap);
+			return Associate_result::OK;
 		}
 
-		void release_view_handle(View_handle handle) override
+		View_capability_result view_capability(View_id id) override
 		{
-			_gui.release_view_handle(handle);
+			return _gui.view_capability(id);
+		}
+
+		void release_view_id(View_id id) override
+		{
+			_gui.release_view_id(id);
 		}
 
 		Dataspace_capability command_dataspace() override
@@ -386,7 +395,7 @@ class Gui_fader::Gui_session_component
 
 				bool forward_command = true;
 
-				if (command.opcode == Gui::Session::Command::OP_GEOMETRY) {
+				if (command.opcode == Gui::Session::Command::GEOMETRY) {
 
 					/* remember view geometry as defined by the client */
 					_view_geometry = command.geometry.rect;
@@ -413,7 +422,7 @@ class Gui_fader::Gui_session_component
 			_gui.mode_sigh(sigh);
 		}
 
-		void buffer(Framebuffer::Mode mode, bool use_alpha) override
+		Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) override
 		{
 			Area const size = mode.area;
 
@@ -421,7 +430,8 @@ class Gui_fader::Gui_session_component
 
 			_gui.buffer(mode, true);
 
-			_fb_session.dst_buffer(_gui.framebuffer()->dataspace(), size);
+			_fb_session.dst_buffer(_gui.framebuffer.dataspace(), size);
+			return Buffer_result::OK;
 		}
 
 		void focus(Genode::Capability<Session> focused) override
@@ -500,11 +510,9 @@ void Gui_fader::Main::handle_config_update()
 {
 	config.update();
 
-	Genode::Xml_node config_xml = config.xml();
+	Genode::Xml_node const config_xml = config.xml();
 
-	unsigned new_alpha = alpha;
-	if (config_xml.has_attribute("alpha"))
-		config_xml.attribute("alpha").value(new_alpha);
+	unsigned const new_alpha = config_xml.attribute_value("alpha", 255u);
 
 	fade_in_steps         = config_xml.attribute_value("fade_in_steps",  20U);
 	fade_out_steps        = config_xml.attribute_value("fade_out_steps", 50U);

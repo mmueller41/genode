@@ -21,13 +21,14 @@ namespace Sculpt { struct Service; }
 
 struct Sculpt::Service
 {
-	typedef String<16> Type_name;
-	typedef String<32> Info;
+	using Type_name = String<16>;
+	using Info      = String<32>;
+	using Label     = String<64>;
 
 	enum class Type {
 		AUDIO_IN, AUDIO_OUT, BLOCK, EVENT, CAPTURE, FILE_SYSTEM, NIC, GUI, GPU,
-		RM, IO_MEM, IO_PORT, IRQ, REPORT, ROM, TERMINAL, TRACE, USB, RTC,
-		PLATFORM, VM, PD, UPLINK, UNDEFINED };
+		RM, IO_MEM, IO_PORT, IRQ, REPORT, ROM, TERMINAL, TRACE, USB, RTC, I2C,
+		PLATFORM, PIN_STATE, PIN_CONTROL, VM, PD, UPLINK, PLAY, RECORD, UNDEFINED };
 
 	enum class Match_label { EXACT, LAST };
 
@@ -54,6 +55,7 @@ struct Sculpt::Service
 		case Type::GUI:         return "Gui";
 		case Type::GPU:         return "Gpu";
 		case Type::RM:          return "RM";
+		case Type::I2C:         return "I2C";
 		case Type::IO_MEM:      return "IO_MEM";
 		case Type::IO_PORT:     return "IO_PORT";
 		case Type::IRQ:         return "IRQ";
@@ -64,8 +66,12 @@ struct Sculpt::Service
 		case Type::USB:         return "Usb";
 		case Type::RTC:         return "Rtc";
 		case Type::PLATFORM:    return "Platform";
+		case Type::PIN_STATE:   return "Pin_state";
+		case Type::PIN_CONTROL: return "Pin_control";
 		case Type::VM:          return "VM";
 		case Type::PD:          return "PD";
+		case Type::PLAY:        return "Play";
+		case Type::RECORD:      return "Record";
 		case Type::UNDEFINED:   break;
 		}
 		return "undefined";
@@ -96,7 +102,7 @@ struct Sculpt::Service
 	{
 		bool const parent = !server.valid();
 
-		xml.node(parent ? "parent" : "child", [&] () {
+		xml.node(parent ? "parent" : "child", [&] {
 
 			if (!parent)
 				xml.attribute("name", server);

@@ -47,7 +47,7 @@ struct Capture::Session : Genode::Session
 	 * session-object allocation, a session capability, and a dataspace
 	 * capability for the pixel buffer.
 	 */
-	enum { CAP_QUOTA = 3 };
+	static constexpr unsigned CAP_QUOTA = 3;
 
 	/**
 	 * Return number of bytes needed for pixel buffer of specified size
@@ -98,8 +98,7 @@ struct Capture::Session : Genode::Session
 
 		Rect rects[NUM_RECTS];
 
-		template <typename FN>
-		void for_each_rect(FN const &fn) const
+		void for_each_rect(auto const &fn) const
 		{
 			for (unsigned i = 0; i < NUM_RECTS; i++)
 				if (rects[i].valid())

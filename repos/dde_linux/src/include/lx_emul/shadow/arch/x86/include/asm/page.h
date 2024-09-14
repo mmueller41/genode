@@ -61,7 +61,7 @@ typedef struct page *pgtable_t;
 #define pfn_to_virt(pfn)	__va((pfn) << PAGE_SHIFT)
 #define pfn_to_kaddr(pfn) __va((pfn) << PAGE_SHIFT)
 
-static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_pages(v, 1U); }
+static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_page(v); }
 #define page_to_virt(p) ((p)->virtual)
 
 #define virt_addr_valid(kaddr) ((unsigned long)kaddr != 0UL)
@@ -70,5 +70,8 @@ static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_
 
 #include <asm/memory_model.h>
 #include <asm-generic/getorder.h>
+
+/* referenced in pgtable_64_types.h by VMALLOC_START */
+extern unsigned long vmalloc_base;
 
 #endif /* __ASM_GENERIC_PAGE_H */

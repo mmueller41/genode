@@ -27,6 +27,8 @@
 extern "C" {
 #include "acpi.h"
 #include "acpiosxf.h"
+#include "accommon.h"
+#include "actables.h"
 }
 
 #define FAIL(retval) \
@@ -178,14 +180,23 @@ class Acpica::Io_mem
 				/* create managed dataspace to let virt region reserved */
 				Genode::Region_map_client managed_region(rm_conn->create(io_mem._size));
 				/* remember virt, since it get invalid during invalidate() */
-				Genode::addr_t const re_attach_virt = reinterpret_cast<Genode::addr_t>(io_mem._virt);
+				Genode::addr_t const orig_virt = reinterpret_cast<Genode::addr_t>(io_mem._virt);
 
 				/* drop I/O mem and virt region get's freed */
 				io_mem.invalidate();
 
 				/* re-attach dummy managed dataspace to virt region */
-				Genode::addr_t const re_attached_virt = Acpica::env().rm().attach_at(managed_region.dataspace(), re_attach_virt);
-				if (re_attach_virt != re_attached_virt)
+				Genode::addr_t const re_attached_virt =
+					Acpica::env().rm().attach(managed_region.dataspace(), {
+						.size       = { },    .offset    = { },
+						.use_at     = true,   .at        = orig_virt,
+						.executable = false,  .writeable = true
+					}).convert<Genode::addr_t>(
+						[&] (Genode::Region_map::Range range)  { return range.start; },
+						[&] (Genode::Region_map::Attach_error) { return 0UL; }
+					);
+
+				if (orig_virt != re_attached_virt)
 					FAIL(0);
 
 				if (!io_mem.unused() || io_mem.stale())
@@ -232,8 +243,10 @@ class Acpica::Io_mem
 			if (ref_dec())
 				return;
 
-			if (!stale())
+			if (!stale()) {
+				Acpica::env().rm().detach(Genode::addr_t(_virt));
 				Genode::destroy(Acpica::heap(), _io_mem);
+			}
 
 			_phys   = _size = 0;
 			_virt   = nullptr;
@@ -290,16 +303,24 @@ class Acpica::Io_mem
 			if (!io_mem)
 				return 0UL;
 
-			io_mem->_virt = Acpica::env().rm().attach(io_mem->_io_mem->dataspace(),
-			                                          io_mem->_size);
+			io_mem->_virt = Acpica::env().rm().attach(io_mem->_io_mem->dataspace(), {
+				.size       = io_mem->_size,  .offset    = { },
+				.use_at     = { },            .at        = { },
+				.executable = { },            .writeable = true
+			}).convert<Genode::uint8_t *>(
+				[&] (Genode::Region_map::Range r)      { return (Genode::uint8_t *)r.start; },
+				[&] (Genode::Region_map::Attach_error) { return nullptr; }
+			);
 
 			return reinterpret_cast<Genode::addr_t>(io_mem->_virt);
 		}
 
 		Genode::addr_t pre_expand(ACPI_PHYSICAL_ADDRESS p, ACPI_SIZE s)
 		{
-			if (_io_mem)
+			if (_io_mem) {
+				Acpica::env().rm().detach(Genode::addr_t(_virt));
 				Genode::destroy(Acpica::heap(), _io_mem);
+			}
 
 			Genode::addr_t xsize = _phys - p + _size;
 			if (!allocate(p, xsize, _ref))
@@ -310,8 +331,10 @@ class Acpica::Io_mem
 
 		Genode::addr_t post_expand(ACPI_PHYSICAL_ADDRESS p, ACPI_SIZE s)
 		{
-			if (_io_mem)
+			if (_io_mem) {
+				Acpica::env().rm().detach(Genode::addr_t(_virt));
 				Genode::destroy(Acpica::heap(), _io_mem);
+			}
 
 			ACPI_SIZE xsize = p + s - _phys;
 			if (!allocate(_phys, xsize, _ref))
@@ -343,14 +366,29 @@ class Acpica::Io_mem
 
 					Genode::addr_t virt = reinterpret_cast<Genode::addr_t>(io2._virt);
 
-					Acpica::env().rm().attach_at(io_ds, virt, io2._size, off_phys);
+					Acpica::env().rm().detach(virt);
+					if (Acpica::env().rm().attach(io_ds, {
+						.size       = io2._size,  .offset    = off_phys,
+						.use_at     = true,       .at        = virt,
+						.executable = { },        .writeable = true
+					}).failed()) Genode::error("re-attach io2 failed");
 				});
 
 				if (io_mem._virt)
 					FAIL(0UL);
 
 				/* attach whole memory */
-				io_mem._virt = Acpica::env().rm().attach(io_ds);
+				io_mem._virt = Acpica::env().rm().attach(io_ds, {
+					.size       = { },  .offset    = { },
+					.use_at     = { },  .at        = { },
+					.executable = { },  .writeable = true
+				}).convert<Genode::uint8_t *>(
+					[&] (Genode::Region_map::Range range)  { return (Genode::uint8_t *)range.start; },
+					[&] (Genode::Region_map::Attach_error) {
+						Genode::error("attaching while io_ds failed");
+						return nullptr;
+					}
+				);
 				return io_mem.to_virt(p);
 			});
 
@@ -375,12 +413,20 @@ ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer (void)
 	/* try platform_info ROM provided by core */
 	try {
 		Genode::Attached_rom_dataspace info(env, "platform_info");
-		Genode::Xml_node xml(info.local_addr<char>(), info.size());
-		Genode::Xml_node acpi_node = xml.sub_node("acpi");
+		Genode::Xml_node acpi_node = info.xml().sub_node("acpi");
 
+		using Genode::memcpy;
+
+		ACPI_MAKE_RSDP_SIG(faked_rsdp.Signature);
+		memcpy(faked_rsdp.OemId, "Faked", 6);
+		faked_rsdp.Checksum = 0;
 		faked_rsdp.Revision = acpi_node.attribute_value("revision", 0U);
 		faked_rsdp.RsdtPhysicalAddress = acpi_node.attribute_value("rsdt", 0UL);
+		faked_rsdp.Length = sizeof(ACPI_TABLE_RSDP);
 		faked_rsdp.XsdtPhysicalAddress = acpi_node.attribute_value("xsdt", 0UL);
+
+		/* update checksum */
+		faked_rsdp.Checksum = (UINT8) -AcpiTbChecksum((UINT8 *)&faked_rsdp, ACPI_RSDP_CHECKSUM_LENGTH);
 
 		if (faked_rsdp.XsdtPhysicalAddress || faked_rsdp.RsdtPhysicalAddress)
 			return FAKED_PHYS_RSDP_ADDR;

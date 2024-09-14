@@ -20,9 +20,9 @@
 
 #include <util/xml_generator.h>
 
-#include "focus.h"
-#include "view_stack.h"
-#include "global_keys.h"
+#include <focus.h>
+#include <view_stack.h>
+#include <global_keys.h>
 
 namespace Nitpicker { class User_state; }
 
@@ -150,7 +150,7 @@ class Nitpicker::User_state
 				return (key <= Input::KEY_MAX) && _states[key].pressed;
 			}
 
-			void report_state(Genode::Xml_generator &xml) const
+			void report_state(Xml_generator &xml) const
 			{
 				for (unsigned i = 0; i <= Input::KEY_MAX; i++)
 					if (_states[i].pressed)
@@ -221,14 +221,14 @@ class Nitpicker::User_state
 
 			/* center pointer initially */
 			if (!_initial_pointer_position_defined) {
-				_pointer_pos = Point(screen_size.w()/2, screen_size.h()/2);
+				_pointer_pos = Point(screen_size.w/2, screen_size.h/2);
 				_initial_pointer_position_defined = true;
 			}
 
 			/* ensure that pointer remains within screen boundaries */
 			if (screen_size.count() > 0)
-				_pointer_pos = Point(min((int)screen_size.w() - 1, _pointer_pos.x()),
-				                     min((int)screen_size.h() - 1, _pointer_pos.y()));
+				_pointer_pos = Point(min((int)screen_size.w - 1, _pointer_pos.x),
+				                     min((int)screen_size.h - 1, _pointer_pos.y));
 		}
 
 

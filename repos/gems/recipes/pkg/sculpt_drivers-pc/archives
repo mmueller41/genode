@@ -1,0 +1,16 @@
+_/pkg/pc_wifi
+_/src/acpi
+_/src/ahci
+_/src/boot_fb
+_/src/intel_gpu
+_/src/nvme
+_/src/pci_decode
+_/src/pc_intel_fb
+_/src/pc_nic
+_/src/pc_platform
+_/src/pc_usb_host
+_/src/ps2
+_/src/usb_block
+_/src/usb_hid
+_/src/vesa_fb
+_/src/rom_reporter

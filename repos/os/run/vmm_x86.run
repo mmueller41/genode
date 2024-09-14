@@ -1,8 +1,8 @@
 #
 # \brief  rudimentary x86 virtual-machine monitor interface test
 # \author Alexander Boettcher
+# \author Benjamin Lamowski
 # \date   2018-08-26
-#
 
 assert_spec x86
 
@@ -28,12 +28,8 @@ if { [get_cmd_switch --autopilot] } {
 # ia32_tsc_aux with rdtscp
 set test_rdtscp [have_spec nova]
 
-set build_components {
-	core init
-	timer
-	test/vmm_x86
-}
-build $build_components
+build { core init timer lib/ld test/vmm_x86 }
+
 create_boot_directory
 
 install_config {
@@ -65,12 +61,6 @@ install_config {
 </config>
 }
 
-set boot_modules {
-	core ld.lib.so init
-	timer
-	test-vmm_x86
-}
-
 #
 # Generate artificial platform info to allow for executing the scenario on
 # base-linux
@@ -94,14 +84,14 @@ if {[have_spec linux]} {
 	close $fd
 }
 
-build_boot_image $boot_modules
+build_boot_image [build_artifacts]
 
-append qemu_args " -cpu phenom -smp 2"
+append qemu_args " -cpu EPYC -smp 2"
 append qemu_args " -nographic "
 
 #run_genode_until {.*vcpu 1 : 7\. vm exit -.*\n} 20
 #run_genode_until forever
-run_genode_until "vmm test finished" 25
+run_genode_until "vmm test finished" 40
 
 set output_saved $output
 grep_output {^\[init -> vmm\] vcpu 0 :.*}
@@ -208,7 +198,7 @@ compare_output_to {
 [init -> vmm] vcpu 0 : created
 vcpu 0 : XX. vm exit - reason 0xfe handled by 'ep'
 vcpu 0 : XX. vm exit - reason 0x78 handled by 'ep'
-vcpu 0 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 0 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 }
 
 puts $output_1
@@ -217,19 +207,19 @@ compare_output_to {
 [init -> vmm] vcpu 1 : created
 vcpu 1 : XX. vm exit - reason 0xfe handled by 'ep'
 vcpu 1 : XX. vm exit - reason 0x78 handled by 'ep'
-vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 vcpu 1 : XX. vm exit - reason 0xff handled by 'ep'
-vcpu 1 : XX. vm exit -  due to pause() request - ip=0xfff3
+vcpu 1 : XX. vm exit -  due to pause() request - ip=0xff81
 vcpu 1 : XX. vm exit - reason 0x78 handled by 'ep'
-vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 vcpu 1 : XX. vm exit - reason 0xff handled by 'ep'
-vcpu 1 : XX. vm exit -  due to pause() request - ip=0xfff3
+vcpu 1 : XX. vm exit -  due to pause() request - ip=0xff81
 vcpu 1 : XX. vm exit - reason 0xff handled by 'ep'
-vcpu 1 : XX. vm exit -  due to pause() request - ip=0xfff5
+vcpu 1 : XX. vm exit -  due to pause() request - ip=0xff83
 vcpu 1 : XX. vm exit - reason 0x78 handled by 'ep'
-vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff7
+vcpu 1 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff85
 vcpu 1 : XX. vm exit - reason 0xff handled by 'ep'
-vcpu 1 : XX. vm exit -  due to pause() request - ip=0xfff7
+vcpu 1 : XX. vm exit -  due to pause() request - ip=0xff85
 }
 
 puts $output_2
@@ -238,17 +228,19 @@ compare_output_to {
 [init -> vmm] vcpu 2 : created
 vcpu 2 : XX. vm exit - reason 0xfe handled by 'second ep'
 vcpu 2 : XX. vm exit - reason 0x78 handled by 'second ep'
-vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 vcpu 2 : XX. vm exit - reason 0xff handled by 'second ep'
-vcpu 2 : XX. vm exit -  due to pause() request - ip=0xfff3
+vcpu 2 : XX. vm exit -  due to pause() request - ip=0xff81
+vcpu 2 : XX. vm exit - reason 0xff handled by 'second ep'
 vcpu 2 : XX. vm exit - reason 0x78 handled by 'second ep'
-vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 vcpu 2 : XX. vm exit - reason 0xff handled by 'second ep'
-vcpu 2 : XX. vm exit -  due to pause() request - ip=0xfff3
+vcpu 2 : XX. vm exit -  due to pause() request - ip=0xff81
+vcpu 2 : XX. vm exit - reason 0xff handled by 'second ep'
 vcpu 2 : XX. vm exit - reason 0x78 handled by 'second ep'
-vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff4
+vcpu 2 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff82
 vcpu 2 : XX. vm exit - reason 0xff handled by 'second ep'
-vcpu 2 : XX. vm exit -  due to pause() request - ip=0xfff4
+vcpu 2 : XX. vm exit -  due to pause() request - ip=0xff82
 }
 
 puts $output_3
@@ -257,7 +249,7 @@ compare_output_to {
 [init -> vmm] vcpu 3 : created
 vcpu 3 : XX. vm exit - reason 0xfe handled by 'second ep'
 vcpu 3 : XX. vm exit - reason 0x78 handled by 'second ep'
-vcpu 3 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xfff3
+vcpu 3 : XX. vm exit -  halting vCPU - guest called HLT - ip=0xff81
 }
 
 set output $output_saved

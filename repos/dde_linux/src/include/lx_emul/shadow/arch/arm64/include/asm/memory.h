@@ -18,6 +18,7 @@
 
 #include <asm/page-def.h>
 #include <linux/sizes.h>
+#include <linux/pfn.h>
 #include <lx_emul/debug.h>
 #include <lx_emul/alloc.h>
 #include <lx_emul/page_virt.h>
@@ -52,7 +53,7 @@ extern u64 vabits_actual;
 #define page_to_phys(p) __pa((p)->virtual)
 #define page_to_virt(p)     ((p)->virtual)
 
-static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_pages(v, 1U); }
+static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_page(v); }
 
 #define pfn_to_page(pfn) ( (struct page *)(__va(pfn << PAGE_SHIFT)) )
 #define page_to_pfn(page) ( page_to_phys(page) >> PAGE_SHIFT )
@@ -60,5 +61,19 @@ static inline struct page *virt_to_page(void const *v) { return lx_emul_virt_to_
 #define PCI_IO_START 0
 
 #endif /* __ASSEMBLY__ */
+
+/*
+ * Normally included from <asm-generic/memory_model.h> and
+ * implemented via PHYS_PFN()
+ */
+#define __phys_to_pfn(paddr) PHYS_PFN(paddr)
+
+/*
+ * Normally included from <asm-generic/memory_model.h> and
+ * implemented via PFN_PHYS()
+ */
+#define   __pfn_to_phys(pfn) PFN_PHYS(pfn)
+
+#define __phys_to_virt(x) ( lx_emul_trace_and_stop("__phys_to_virt"), 0UL )
 
 #endif /* __ASM_MEMORY_H */

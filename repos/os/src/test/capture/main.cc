@@ -25,34 +25,8 @@ namespace Test {
 
 	using namespace Genode;
 
-	struct View;
 	struct Main;
 }
-
-
-class Test::View
-{
-	private:
-
-		using View_handle = Gui::Session::View_handle;
-
-		Gui::Session_client &_gui;
-		View_handle   const _handle = _gui.create_view(View_handle{});
-		Gui::Rect     const _rect;
-
-	public:
-
-		View(Gui::Session_client &gui, Gui::Rect rect) : _gui(gui), _rect(rect)
-		{
-			using Command = Gui::Session::Command;
-
-			_gui.enqueue<Command::Geometry>(_handle, rect);
-			_gui.enqueue<Command::To_front>(_handle, View_handle());
-			_gui.execute();
-		}
-
-		virtual ~View() { }
-};
 
 
 struct Test::Main
@@ -66,16 +40,10 @@ struct Test::Main
 
 	Heap _heap { _env.ram(), _env.rm() };
 
-	static Gui::Point _point_from_xml(Xml_node node)
-	{
-		return Gui::Point((int)node.attribute_value("xpos", 0L),
-		                  (int)node.attribute_value("ypos", 0L));
-	}
-
 	static Gui::Area _area_from_xml(Xml_node node, Gui::Area default_area)
 	{
-		return Gui::Area(node.attribute_value("width",  default_area.w()),
-		                 node.attribute_value("height", default_area.h()));
+		return Gui::Area(node.attribute_value("width",  default_area.w),
+		                 node.attribute_value("height", default_area.h));
 	}
 
 	struct Output
@@ -100,9 +68,9 @@ struct Test::Main
 
 		bool _gui_buffer_init = ( _validate_mode(), _gui.buffer(_mode, false), true );
 
-		Attached_dataspace _fb_ds { _env.rm(), _gui.framebuffer()->dataspace() };
+		Attached_dataspace _fb_ds { _env.rm(), _gui.framebuffer.dataspace() };
 
-		Registry<Registered<View>> _views { };
+		Registry<Registered<Gui::Top_level_view>> _views { };
 
 		Output(Env &env, Allocator &alloc, Xml_node const &config)
 		:
@@ -111,18 +79,18 @@ struct Test::Main
 		{
 			auto view_rect = [&] (Xml_node node)
 			{
-				return Gui::Rect(_point_from_xml(node),
+				return Gui::Rect(Gui::Point::from_xml(node),
 				                 _area_from_xml(node, _mode.area));
 			};
 
 			config.for_each_sub_node("view", [&] (Xml_node node) {
 				new (_alloc)
-					Registered<View>(_views, _gui, view_rect(node)); });
+					Registered<Gui::Top_level_view>(_views, _gui, view_rect(node)); });
 		}
 
 		~Output()
 		{
-			_views.for_each([&] (Registered<View> &view) {
+			_views.for_each([&] (Registered<Gui::Top_level_view> &view) {
 				destroy(_alloc, &view); });
 		}
 
@@ -155,7 +123,7 @@ struct Test::Main
 
 		Capture_input(Env &env, Gui::Area area, Xml_node const &config)
 		:
-			_env(env), _area(area), _at(_point_from_xml(config))
+			_env(env), _area(area), _at(Gui::Point::from_xml(config))
 		{ }
 
 		Affected_rects capture() { return _capture.capture_at(_at); }
@@ -196,8 +164,8 @@ struct Test::Main
 				});
 
 				affected.for_each_rect([&] (Gui::Rect const rect) {
-					_output->_gui.framebuffer()->refresh(rect.x1(), rect.y1(),
-					                                     rect.w(), rect.h());
+					_output->_gui.framebuffer.refresh(rect.x1(), rect.y1(),
+					                                  rect.w(), rect.h());
 				});
 			});
 		});

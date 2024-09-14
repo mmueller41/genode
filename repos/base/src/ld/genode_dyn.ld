@@ -34,16 +34,15 @@ SECTIONS
 
     /*
      * The ELF entry point is unused for dynamically linked components. The
-     * dynamic linker determined the entry point by looking up the symbol of
-     * the 'Component::construct' function or - if it does not exist - the
-     * 'main' function (for legacy components).
+     * dynamic linker determines the entry point by looking up the symbol of
+     * the 'Component::construct' function.
      *
      * \deprecated  The support for legacy main functions will be removed.
      *
      * The 'KEEP' directive prevents text that is reachable from one of the
      * possible entry points from being garbage collected.
      */
-    KEEP(*(.text._ZN9Component9constructERN6Genode3EnvE .text.main))
+    KEEP(*(.text._ZN9Component9constructERN6Genode3EnvE))
 
     *(.text
       .stub .text.* .gnu.linkonce.t.*)
@@ -212,17 +211,6 @@ SECTIONS
   }
   .jcr            : { KEEP (*(.jcr)) }
   .data.rel.ro : { *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*) *(.data.rel.ro* .gnu.linkonce.d.rel.ro.*) }
-  .dynamic        :
-  {
-    *(.dynamic)
-
-    /*
-     * Make sure to have a least one entry within the dynamic section, so the
-     * dynamic sgement point to something valid in case there are no dynamic
-     * symbols
-     */
-    LONG(0x0);
-   } : rw : dynamic
 
   /* merge .got.plt and .got into .got, since the ARM toolchain for OKL4
    * set's * DT_PLTGOT to .got instead of .got.plt */
@@ -247,6 +235,20 @@ SECTIONS
     LONG(0x0);
   }
   .data1          : { *(.data1) }
+
+  .dynamic        :
+  {
+    *(.dynamic)
+
+    /*
+     * Make sure to have a least one entry within the dynamic section, so the
+     * dynamic segment points to something valid in case there are no dynamic
+     * symbols in a binary. These semi-static binaries are not supported by
+     * our dynamic linker that depends on the .dynamic section.
+     */
+    LONG(0x0);
+   } : rw : dynamic
+
   _edata = .; PROVIDE (edata = .);
   __bss_start = .;
   .bss            :
@@ -264,7 +266,7 @@ SECTIONS
     * pad the .data section.
     */
    . = ALIGN(. != 0 ? 32 / 8 : 1);
-  }
+  } : rw
   . = ALIGN(32 / 8);
   . = ALIGN(32 / 8);
   _end = .; PROVIDE (end = .);

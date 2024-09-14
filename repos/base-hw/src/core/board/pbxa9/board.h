@@ -18,15 +18,15 @@
 #include <hw/spec/arm/gicv2.h>
 #include <hw/spec/arm/pbxa9_board.h>
 
-/* base-hw Core includes */
-#include <spec/arm/cortex_a9_private_timer.h>
-#include <spec/cortex_a9/cpu.h>
+/* base-hw core includes */
+#include <spec/arm/cortex_a9_global_timer.h>
+#include <spec/arm/cortex_a9_cpu.h>
 
 namespace Board {
 
 	using namespace Hw::Pbxa9_board;
 
-	class Global_interrupt_controller { };
+	class Global_interrupt_controller { public: void init() {} };
 	class Pic : public Hw::Gicv2 { public: Pic(Global_interrupt_controller &) { } };
 
 	L2_cache & l2_cache();

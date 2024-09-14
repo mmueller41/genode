@@ -1,6 +1,8 @@
 /*
  * \brief  Replaces kernel/locking/spinlock.c
  * \author Stefan Kalkowski
+ * \author Johannes Schlatow
+ * \author Christian Helmuth
  * \date   2021-03-16
  *
  * We run single-core, cooperatively scheduled. We should never spin.
@@ -14,6 +16,9 @@
  */
 
 #include <linux/spinlock.h>
+
+#ifdef CONFIG_SMP
+
 #include <linux/rwlock_api_smp.h>
 #include <asm/spinlock.h>
 
@@ -65,6 +70,19 @@ int __lockfunc _raw_spin_trylock(raw_spinlock_t * lock)
 #endif
 
 
+#ifndef CONFIG_INLINE_SPIN_TRYLOCK_BH
+noinline int __lockfunc _raw_spin_trylock_bh(raw_spinlock_t *lock)
+{
+	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+	if (_raw_spin_trylock(lock))
+		return 1;
+
+	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
+	return 0;
+}
+#endif
+
+
 #ifdef CONFIG_UNINLINE_SPIN_UNLOCK
 void __lockfunc _raw_spin_unlock(raw_spinlock_t * lock)
 {
@@ -103,7 +121,15 @@ void __lockfunc _raw_spin_unlock_irqrestore(raw_spinlock_t * lock,
 #ifndef CONFIG_INLINE_READ_LOCK
 void __lockfunc _raw_read_lock(rwlock_t * lock)
 {
-	lx_emul_trace_and_stop(__func__);
+	arch_read_lock(&(lock)->raw_lock);
+}
+#endif
+
+
+#ifndef CONFIG_INLINE_READ_UNLOCK
+void __lockfunc _raw_read_unlock(rwlock_t * lock)
+{
+	arch_read_unlock(&(lock)->raw_lock);
 }
 #endif
 
@@ -123,6 +149,7 @@ unsigned long __lockfunc _raw_read_lock_irqsave(rwlock_t * lock)
 void __lockfunc _raw_write_unlock_bh(rwlock_t * lock)
 {
 	arch_write_unlock(&(lock)->raw_lock);
+	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
 #endif
 
@@ -131,6 +158,7 @@ void __lockfunc _raw_write_unlock_bh(rwlock_t * lock)
 void __lockfunc _raw_read_unlock_bh(rwlock_t * lock)
 {
 	arch_read_unlock(&(lock)->raw_lock);
+	__local_bh_enable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 }
 #endif
 
@@ -163,6 +191,7 @@ void __lockfunc _raw_read_unlock_irqrestore(rwlock_t * lock,unsigned long flags)
 #ifndef CONFIG_INLINE_WRITE_LOCK_BH
 void __lockfunc _raw_write_lock_bh(rwlock_t * lock)
 {
+	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 	arch_write_lock(&(lock)->raw_lock);
 }
 #endif
@@ -179,6 +208,29 @@ void __lockfunc _raw_write_lock_irq(rwlock_t * lock)
 #ifndef CONFIG_INLINE_READ_LOCK_BH
 void __lockfunc _raw_read_lock_bh(rwlock_t * lock)
 {
+	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_LOCK_OFFSET);
 	arch_read_lock(&(lock)->raw_lock);
 }
 #endif
+
+
+#ifndef CONFIG_INLINE_WRITE_LOCK_IRQSAVE
+unsigned long __lockfunc _raw_write_lock_irqsave(rwlock_t *lock)
+{
+	unsigned long flags;
+	local_irq_save(flags);
+	arch_write_lock(&(lock)->raw_lock);
+	return flags;
+}
+#endif
+
+
+#ifndef CONFIG_INLINE_WRITE_UNLOCK_IRQRESTORE
+void __lockfunc _raw_write_unlock_irqrestore(rwlock_t *lock, unsigned long flags)
+{
+	arch_write_unlock(&(lock)->raw_lock);
+	local_irq_restore(flags);
+}
+#endif
+
+#endif /* CONFIG_SMP */

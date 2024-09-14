@@ -288,6 +288,8 @@ class Test::Parent
 			Ram_quota   const _ram_quota { 10*1024*1024 };
 			Binary_name const _binary_name { "test-resource_yield" };
 
+			Id_space<Genode::Parent::Server> _server_ids { };
+
 			/*
 			 * Config ROM service
 			 */
@@ -305,7 +307,7 @@ class Test::Parent
 			                                      ref_pd(), _env.rm(),
 			                                      _config_producer };
 
-			typedef Genode::Local_service<Dynamic_rom_session> Config_service;
+			using Config_service = Genode::Local_service<Dynamic_rom_session>;
 
 			Config_service::Single_session_factory _config_factory { _config_session };
 			Config_service                         _config_service { _config_factory };
@@ -353,6 +355,8 @@ class Test::Parent
 
 				return route(*service_ptr);
 			}
+
+			Id_space<Genode::Parent::Server> &server_id_space() override { return _server_ids; }
 		};
 
 		Policy _policy { *this, _env };

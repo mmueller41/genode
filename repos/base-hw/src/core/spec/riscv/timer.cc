@@ -5,13 +5,13 @@
  */
 
 /*
- * Copyright (C) 2021 Genode Labs GmbH
+ * Copyright (C) 2021-2022 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
  */
 
-/* Core includes */
+/* core includes */
 #include <kernel/timer.h>
 #include <platform.h>
 #include <hw/spec/riscv/sbi.h>
@@ -21,6 +21,12 @@ using namespace Kernel;
 
 
 Board::Timer::Timer(unsigned)
+{
+	init();
+}
+
+
+void Board::Timer::init()
 {
 	/* enable timer interrupt */
 	enum { STIE = 0x20 };
@@ -39,8 +45,7 @@ time_t Board::Timer::stime() const
 
 void Timer::_start_one_shot(time_t const ticks)
 {
-	_device.last_time = _device.stime();
-	Sbi::set_timer(_device.last_time + ticks);
+	Sbi::set_timer(_time + ticks);
 }
 
 
@@ -58,7 +63,7 @@ time_t Timer::_max_value() const {
 
 time_t Timer::_duration() const
 {
-	return _device.stime() - _device.last_time;
+	return _device.stime() - _time;
 }
 
 

@@ -15,18 +15,22 @@
  */
 
 /* base includes */
+#include <base/internal/native_utcb.h>
 #include <base/thread_state.h>
 
 /* core includes */
 #include <thread_sel4.h>
 #include <platform_thread.h>
 
-void Genode::start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp,
-                               unsigned cpu)
+using namespace Core;
+
+
+void Core::start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp,
+                             unsigned cpu, addr_t const virt_utcb)
 {
 	/* set register values for the instruction pointer and stack pointer */
 	seL4_UserContext regs;
-	Genode::memset(&regs, 0, sizeof(regs));
+	memset(&regs, 0, sizeof(regs));
 	size_t const num_regs = sizeof(regs)/sizeof(seL4_Word);
 
 	regs.pc = ip;
@@ -38,16 +42,26 @@ void Genode::start_sel4_thread(Cap_sel tcb_sel, addr_t ip, addr_t sp,
 
 	affinity_sel4_thread(tcb_sel, cpu);
 
+	/*
+	 * Set tls pointer to location, where ipcbuffer address is stored, so
+	 * that it can be used by seL4_GetIPCBuffer()
+	 */
+	auto error = seL4_TCB_SetTLSBase(tcb_sel.value(),
+	                                 virt_utcb + Native_utcb::tls_ipcbuffer_offset);
+	ASSERT(not error);
+
 	seL4_TCB_Resume(tcb_sel.value());
 }
 
-void Genode::affinity_sel4_thread(Cap_sel const &, unsigned cpu)
+
+void Core::affinity_sel4_thread(Cap_sel const &, unsigned cpu)
 {
 	if (cpu != 0)
 		error("could not set affinity of thread");
 }
 
-Genode::Thread_state Genode::Platform_thread::state()
+
+Thread_state Platform_thread::state()
 {
 	seL4_TCB   const thread         = _info.tcb_sel.value();
 	seL4_Bool  const suspend_source = false;
@@ -57,32 +71,29 @@ Genode::Thread_state Genode::Platform_thread::state()
 
 	long const ret = seL4_TCB_ReadRegisters(thread, suspend_source, arch_flags,
 	                                        register_count, &registers);
-	if (ret != seL4_NoError) {
-		error("reading thread state ", ret);
-		throw Cpu_thread::State_access_failed();
-	}
+	if (ret != seL4_NoError)
+		return { .state = Thread_state::State::UNAVAILABLE, .cpu = { } };
 
-	Thread_state state;
-	Genode::memset(&state, 0, sizeof(state));
+	Thread_state state { };
 
-	state.r0   = registers.r0;
-	state.r1   = registers.r1;
-	state.r2   = registers.r2;
-	state.r3   = registers.r3;
-	state.r4   = registers.r4;
-	state.r5   = registers.r5;
-	state.r6   = registers.r6;
-	state.r7   = registers.r7;
-	state.r8   = registers.r8;
-	state.r9   = registers.r9;
-	state.r10  = registers.r10;
-	state.r11  = registers.r11;
-	state.r12  = registers.r12;
-	state.sp   = registers.sp;
-	state.lr   = registers.r14;
-	state.ip   = registers.pc;
-	state.cpsr = registers.cpsr;
-	state.cpu_exception = 0; /* XXX detect/track if in exception and report here */
+	state.cpu.r0   = registers.r0;
+	state.cpu.r1   = registers.r1;
+	state.cpu.r2   = registers.r2;
+	state.cpu.r3   = registers.r3;
+	state.cpu.r4   = registers.r4;
+	state.cpu.r5   = registers.r5;
+	state.cpu.r6   = registers.r6;
+	state.cpu.r7   = registers.r7;
+	state.cpu.r8   = registers.r8;
+	state.cpu.r9   = registers.r9;
+	state.cpu.r10  = registers.r10;
+	state.cpu.r11  = registers.r11;
+	state.cpu.r12  = registers.r12;
+	state.cpu.sp   = registers.sp;
+	state.cpu.lr   = registers.r14;
+	state.cpu.ip   = registers.pc;
+	state.cpu.cpsr = registers.cpsr;
+	state.cpu.cpu_exception = 0; /* XXX detect/track if in exception and report here */
 
 	return state;
 }

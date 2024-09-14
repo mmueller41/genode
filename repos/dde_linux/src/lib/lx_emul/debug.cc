@@ -23,14 +23,13 @@ using namespace Genode;
 extern "C" void lx_emul_trace_and_stop(const char * func)
 {
 	error("Function ", func, " not implemented yet!");
-	log("Backtrace follows:");
 	backtrace();
 	log("Will sleep forever...");
 	sleep_forever();
 }
 
 
-extern "C" void lx_emul_trace(const char *) {}
+extern "C" void lx_emul_trace(const char *s) { trace(s); }
 
 
 extern "C" void lx_emul_backtrace()

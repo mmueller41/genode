@@ -133,7 +133,7 @@ struct Depot_deploy::Main
 			_children.apply_blueprint(_blueprint.xml());
 
 			/* determine CPU architecture of deployment */
-			typedef String<16> Arch;
+			using Arch = String<16>;
 			Arch const arch = config.attribute_value("arch", Arch());
 			if (!arch.valid())
 				warning("config lacks 'arch' attribute");
@@ -167,7 +167,7 @@ struct Depot_deploy::Main
 				_children.conclusion(result);
 				int exit_code = result.failed ? -1 : 0;
 
-				typedef String<12> Repeat;
+				using Repeat = String<12>;
 				Repeat repeat = config.attribute_value("repeat", Repeat("false"));
 				if (repeat == Repeat("until_forever") ||
 				    (repeat == Repeat("until_failed") && exit_code == 0)) {
@@ -242,6 +242,8 @@ struct Depot_deploy::Main
 
 void Component::construct(Genode::Env &env)
 {
+	/* see log_*_filters and pattern_filters in child.cc */
+	env.exec_static_constructors();
 	static Depot_deploy::Main main(env);
 }
 

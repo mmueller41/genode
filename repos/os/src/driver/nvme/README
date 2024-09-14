@@ -1,0 +1,47 @@
+This directory contains the implementation of a NVMe driver component.
+
+
+Brief
+=====
+
+The driver supports PCIe NVMe devices matching at least revision 1.1 of
+the NVMe specification. For now it only supports one name space and uses
+one completion and one submission queue to handle all I/O requests; one
+request is limited to 1MiB of data. It lacks any name space management
+functionality.
+
+
+Configuration
+=============
+
+The following config illustrates how the driver is configured:
+
+!<start name="nvme">
+!  <resource name="ram" quantum="24M"/>
+!  <provides><service name="Block"/></provides>
+!  <config max_hmb_size="16M">
+!    <policy label_prefix="client1" writeable="yes"/>
+!  </config>
+!</start>
+
+The 'max_hmb_size' attribute instructs the driver to setup the
+host-memory-buffer with at most 16 MiB of DMA-capable memory if such a
+buffer is needed by the device. Should the value be less than the minimal
+required amount of memory it will not be used and a warning is issued. On
+the other hand, if the specified value is larger than the preferred amount
+of memory as favored by the device it will be capped to that amount instead.
+
+
+Report
+======
+
+The driver supports reporting of active name spaces, which can be enabled
+via the configuration 'report' sub-node:
+
+!<report namespace="yes"/>
+
+The report structure is depicted by the following example:
+
+!<controller model="QEMU NVMe Ctrl" serial="FNRD">
+! <namespace id="0" block_count="32768" block_size="512"/>
+!</controller>

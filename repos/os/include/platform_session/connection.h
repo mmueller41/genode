@@ -55,8 +55,7 @@ class Platform::Connection : public Genode::Connection<Session>,
 
 		void _handle_io() {}
 
-		template <typename FN>
-		Capability<Device_interface> _wait_for_device(FN const & fn)
+		Capability<Device_interface> _wait_for_device(auto const &fn)
 		{
 			for (;;) {
 				/* repeatedly check for availability of device */
@@ -72,9 +71,7 @@ class Platform::Connection : public Genode::Connection<Session>,
 
 		Connection(Env &env)
 		:
-			Genode::Connection<Session>(env, session(env.parent(),
-			                                         "ram_quota=%u, cap_quota=%u",
-			                                         RAM_QUOTA, CAP_QUOTA)),
+			Genode::Connection<Session>(env, Label(), Ram_quota { 84*1024 }, Args()),
 			Client(cap()),
 			_env(env)
 		{
@@ -100,7 +97,7 @@ class Platform::Connection : public Genode::Connection<Session>,
 		Capability<Device_interface> acquire_device(Device_name const &name) override
 		{
 			return _wait_for_device([&] () {
-				return retry_with_upgrade(Ram_quota{6*1024}, Cap_quota{6}, [&] () {
+				return retry_with_upgrade(Ram_quota{20*1024}, Cap_quota{6}, [&] () {
 					return Client::acquire_device(name); });
 			});
 		}
@@ -108,19 +105,18 @@ class Platform::Connection : public Genode::Connection<Session>,
 		Capability<Device_interface> acquire_device()
 		{
 			return _wait_for_device([&] () {
-				return retry_with_upgrade(Ram_quota{6*1024}, Cap_quota{6}, [&] () {
+				return retry_with_upgrade(Ram_quota{20*1024}, Cap_quota{6}, [&] () {
 					return Client::acquire_single_device(); });
 			});
 		}
 
 		Ram_dataspace_capability alloc_dma_buffer(size_t size, Cache cache) override
 		{
-			return retry_with_upgrade(Ram_quota{size}, Cap_quota{2}, [&] () {
+			return retry_with_upgrade(Ram_quota{max((size_t)4096, size)}, Cap_quota{2}, [&] () {
 				return Client::alloc_dma_buffer(size, cache); });
 		}
 
-		template <typename FN>
-		void with_xml(FN const & fn)
+		void with_xml(auto const &fn)
 		{
 			try {
 				if (_ds.constructed() && _ds->local_addr<void const>()) {
@@ -139,6 +135,7 @@ class Platform::Connection : public Genode::Connection<Session>,
 
 				Capability<Device_interface> cap;
 
+				update();
 				with_xml([&] (Xml_node & xml) {
 					xml.for_each_sub_node("device", [&] (Xml_node node) {
 

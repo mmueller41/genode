@@ -11,7 +11,10 @@
  * version 2.
  */
 
+#include <linux/sched/cputime.h>
 #include <../kernel/sched/sched.h>
 #include <linux/sched/nohz.h>
 
+#ifdef CONFIG_SMP
 void nohz_balance_enter_idle(int cpu) { }
+#endif

@@ -2,11 +2,9 @@
 
 	<requires> <timer/> </requires>
 
-	<events>
-		<timeout meaning="failed" sec="30" />
-		<log meaning="succeeded">child "test-libc_counter-sink" exited with exit value 0</log>
-		<log meaning="failed">Error: </log>
-	</events>
+	<fail after_seconds="30"/>
+	<succeed>child "test-libc_counter-sink" exited with exit value 0</succeed>
+	<fail>Error: </fail>
 
 	<content>
 		<rom label="ld.lib.so"/>
@@ -34,7 +32,7 @@
 		</default-route>
 		<default caps="100"/>
 		<start name="terminal_crosslink">
-			<resource name="RAM" quantum="1M"/>
+			<resource name="RAM" quantum="2M"/>
 			<provides> <service name="Terminal"/> </provides>
 		</start>
 		<start name="vfs">

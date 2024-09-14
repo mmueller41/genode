@@ -33,8 +33,8 @@
 namespace Decorator {
 
 	class Window;
-	typedef Genode::String<200> Window_title;
-	typedef Genode::Attached_dataspace Attached_dataspace;
+	using Window_title = Genode::String<200>;
+	using Attached_dataspace = Genode::Attached_dataspace;
 }
 
 
@@ -141,86 +141,70 @@ class Decorator::Window : public Window_base, public Animator::Item
 			func(_maximizer);
 		}
 
-		struct Gui_view
+		struct Gui_view : Genode::Noncopyable
 		{
-			typedef Gui::Session::Command Command;
+			using Command = Gui::Session::Command;
 
-			bool const _view_is_remote;
+			Gui::Connection       &_gui;
+			Gui::View_ref          _view_ref { };
+			Gui::View_ids::Element _id { _view_ref, _gui.view_ids };
 
-			Gui::Session_client &_gui;
+			Gui_view(Gui::Connection &gui) : _gui(gui) { }
 
-			View_handle _handle;
+			Gui::View_id id() const { return _id.id(); }
 
-			Gui_view(Gui::Session_client &gui, unsigned id = 0)
-			:
-				_view_is_remote(false),
-				_gui(gui),
-				_handle(_gui.create_view())
+			void stack(Gui::View_id neighbor)
 			{
-				/*
-				 * We supply the window ID as label for the anchor view.
-				 */
-				if (id) {
-					char buf[128];
-					Genode::snprintf(buf, sizeof(buf), "%d", id);
-
-					_gui.enqueue<Command::Title>(_handle, Genode::Cstring(buf));
-				}
+				_gui.enqueue<Command::Front_of>(id(), neighbor);
 			}
 
-			View_handle _create_remote_view(Gui::Session_client &remote_gui)
-			{
-				/* create view at the remote GUI session */
-				View_handle handle = remote_gui.create_view();
-				Gui::View_capability view_cap = remote_gui.view_capability(handle);
+			void stack_front_most() { _gui.enqueue<Command::Front>(id()); }
 
-				/* import remote view into local GUI session */
-				return _gui.view_handle(view_cap);
-			}
-
-			/**
-			 * Constructor called for creating a view that refers to a buffer
-			 * of another GUI session
-			 */
-			Gui_view(Gui::Session_client &gui,
-			         Gui::Session_client &remote_gui)
-			:
-				_view_is_remote(true),
-				_gui(gui),
-				_handle(_create_remote_view(remote_gui))
-			{ }
-
-			~Gui_view()
-			{
-				if (_view_is_remote)
-					_gui.release_view_handle(_handle);
-				else
-					_gui.destroy_view(_handle);
-			}
-
-			View_handle handle() const { return _handle; }
-
-			void stack(View_handle neighbor)
-			{
-				_gui.enqueue<Command::To_front>(_handle, neighbor);
-			}
-
-			void stack_back_most()
-			{
-				_gui.enqueue<Command::To_back>(_handle, View_handle());
-			}
+			void stack_back_most()  { _gui.enqueue<Command::Back>(id()); }
 
 			void place(Rect rect, Point offset)
 			{
-				_gui.enqueue<Command::Geometry>(_handle, rect);
-				_gui.enqueue<Command::Offset>(_handle, offset);
+				_gui.enqueue<Command::Geometry>(id(), rect);
+				_gui.enqueue<Command::Offset>(id(), offset);
+			}
+		};
+
+		struct Content_view : Gui_view
+		{
+			Content_view(Gui::Connection &gui, unsigned win_id = 0) : Gui_view(gui)
+			{
+				/* supply the window ID as label for the anchor view */
+				_gui.view(id(), { .title = { win_id },
+				                  .rect  = { },
+				                  .front = false });
+			}
+
+			~Content_view() { _gui.destroy_view(id()); }
+		};
+
+		struct Remote_view : Gui_view
+		{
+			Gui::Connection &_remote_gui;
+
+			Remote_view(Gui::Connection &gui, Gui::Connection &remote_gui)
+			:
+				Gui_view(gui), _remote_gui(remote_gui)
+			{
+				remote_gui.view(id(), { });
+				gui.associate(id(), remote_gui.view_capability(id()));
+			}
+
+			~Remote_view()
+			{
+				_gui.release_view_id(id());
+				_remote_gui.destroy_view(id());
 			}
 		};
 
 		/**
-		 * GUI session used as a global namespace of view handles
+		 * GUI session used as a global namespace of view ID
 		 */
-		Gui::Session_client &_gui;
+		Gui::Connection &_gui;
 
 		Config const &_config;
 
@@ -233,7 +217,7 @@ class Decorator::Window : public Window_base, public Animator::Item
 		 */
 		Lazy_value<int> _r { }, _g { }, _b { };
 
-		Color _color() const { return Color(_r >> 4, _g >> 4, _b >> 4); }
+		Color _color() const { return Color::clamped_rgb(_r >> 4, _g >> 4, _b >> 4); }
 
 		bool _show_decoration = _config.show_decoration(_title);
 
@@ -264,22 +248,22 @@ class Decorator::Window : public Window_base, public Animator::Item
 		{
 			Area const outer_size = _outer_from_inner_size(inner_size);
 
-			return Area(outer_size.w(), _theme.background_size().h());
+			return Area(outer_size.w, _theme.background_size().h);
 		}
 
 		Area _visible_left_right_area(Area const inner_size) const
 		{
 			Area const outer_size = _outer_from_inner_size(inner_size);
 
-			return Area(outer_size.w() - inner_size.w(), outer_size.h());
+			return Area(outer_size.w - inner_size.w, outer_size.h);
 		}
 
-		Gui_view _bottom_view { _gui, _gui_top_bottom },
-		         _right_view  { _gui, _gui_left_right },
-		         _left_view   { _gui, _gui_left_right },
-		         _top_view    { _gui, _gui_top_bottom };
+		Remote_view _bottom_view { _gui, _gui_top_bottom },
+		            _right_view  { _gui, _gui_left_right },
+		            _left_view   { _gui, _gui_left_right },
+		            _top_view    { _gui, _gui_top_bottom };
 
-		Gui_view _content_view { _gui, (unsigned)id() };
+		Content_view _content_view { _gui, (unsigned)id() };
 
 		void _repaint_decorations(Gui_buffer &buffer, Area area)
 		{
@@ -296,19 +280,19 @@ class Decorator::Window : public Window_base, public Animator::Item
 					_theme.draw_element(pixel, alpha, area, element.type, element.alpha); });
 
 				Color const tint_color = _color();
-				if (tint_color != Color(0, 0, 0))
+				if (tint_color != Color::black())
 					Tint_painter::paint(pixel, Rect(Point(0, 0), area),
 					                    tint_color);
 			});
 
 			buffer.flush_surface();
 
-			buffer.gui.framebuffer()->refresh(0, 0, buffer.size().w(), buffer.size().h());
+			buffer.gui.framebuffer.refresh(0, 0, buffer.size().w, buffer.size().h);
 		}
 
 		void _repaint_decorations()
 		{
-			Area const inner_size = _curr_inner_geometry().area();
+			Area const inner_size = _curr_inner_geometry().area;
 
 			_repaint_decorations(*_buffer_top_bottom, _visible_top_bottom_area(inner_size));
 			_repaint_decorations(*_buffer_left_right, _visible_left_right_area(inner_size));
@@ -318,14 +302,14 @@ class Decorator::Window : public Window_base, public Animator::Item
 		{
 			bool const use_alpha = true;
 
-			Area const size_top_bottom = _visible_top_bottom_area(geometry().area());
+			Area const size_top_bottom = _visible_top_bottom_area(geometry().area);
 
-			if (size_top_bottom.w() > _size_top_bottom.w()
-			 || size_top_bottom.h() > _size_top_bottom.h()
+			if (size_top_bottom.w > _size_top_bottom.w
+			 || size_top_bottom.h > _size_top_bottom.h
 			 || !_buffer_top_bottom.constructed()) {
 
-				_gui_top_bottom.buffer(Framebuffer::Mode { .area = { size_top_bottom.w(),
-				                                                     size_top_bottom.h() } },
+				_gui_top_bottom.buffer(Framebuffer::Mode { .area = { size_top_bottom.w,
+				                                                     size_top_bottom.h } },
 				                       use_alpha);
 
 				_buffer_top_bottom.construct(_gui_top_bottom, size_top_bottom,
@@ -334,14 +318,14 @@ class Decorator::Window : public Window_base, public Animator::Item
 				_size_top_bottom = size_top_bottom;
 			}
 
-			Area const size_left_right = _visible_left_right_area(geometry().area());
+			Area const size_left_right = _visible_left_right_area(geometry().area);
 
-			if (size_left_right.w() > _size_left_right.w()
-			 || size_left_right.h() > _size_left_right.h()
+			if (size_left_right.w > _size_left_right.w
+			 || size_left_right.h > _size_left_right.h
 			 || !_buffer_left_right.constructed()) {
 
-				_gui_left_right.buffer(Framebuffer::Mode { .area = { size_left_right.w(),
-				                                                     size_left_right.h() } },
+				_gui_left_right.buffer(Framebuffer::Mode { .area = { size_left_right.w,
+				                                                     size_left_right.h } },
 				                       use_alpha);
 
 				_buffer_left_right.construct(_gui_left_right, size_left_right,
@@ -363,16 +347,16 @@ class Decorator::Window : public Window_base, public Animator::Item
 		void _stack_decoration_views()
 		{
 			if (_show_decoration) {
-				_top_view.stack(_content_view.handle());
-				_left_view.stack(_top_view.handle());
-				_right_view.stack(_left_view.handle());
-				_bottom_view.stack(_right_view.handle());
+				_top_view.stack(_content_view.id());
+				_left_view.stack(_top_view.id());
+				_right_view.stack(_left_view.id());
+				_bottom_view.stack(_right_view.id());
 			}
 		}
 
 	public:
 
-		Window(Genode::Env &env, unsigned id, Gui::Session_client &gui,
+		Window(Genode::Env &env, unsigned id, Gui::Connection &gui,
 		       Animator &animator, Theme const &theme, Config const &config)
 		:
 			Window_base(id),
@@ -385,7 +369,7 @@ class Decorator::Window : public Window_base, public Animator::Item
 			animate();
 		}
 
-		void stack(View_handle neighbor) override
+		void stack(Gui::View_id neighbor) override
 		{
 			_content_view.stack(neighbor);
 			_stack_decoration_views();
@@ -393,7 +377,7 @@ class Decorator::Window : public Window_base, public Animator::Item
 		}
 		void stack_front_most() override
 		{
-			_content_view.stack(View_handle());
+			_content_view.stack_front_most();
 			_stack_decoration_views();
 		}
 
@@ -403,9 +387,9 @@ class Decorator::Window : public Window_base, public Animator::Item
 			_stack_decoration_views();
 		}
 
-		View_handle frontmost_view() const override
+		Gui::View_id frontmost_view() const override
 		{
-			return _show_decoration ? _bottom_view.handle() : _content_view.handle();
+			return _show_decoration ? _bottom_view.id() : _content_view.id();
 		}
 
 		/**
@@ -425,8 +409,8 @@ class Decorator::Window : public Window_base, public Animator::Item
 		{
 			Theme::Margins const decor = _theme.decor_margins();
 
-			return Rect(_curr_inner_geometry().p1() - Point(decor.left, decor.top),
-			            _curr_inner_geometry().p2() + Point(decor.right, decor.bottom));
+			return Rect::compound(_curr_inner_geometry().p1() - Point(decor.left,  decor.top),
+			                      _curr_inner_geometry().p2() + Point(decor.right, decor.bottom));
 		}
 
 		Rect _outer_from_inner_geometry(Rect inner) const
@@ -439,13 +423,13 @@ class Decorator::Window : public Window_base, public Animator::Item
 			unsigned const top    = aura.top    + decor.top;
 			unsigned const bottom = aura.bottom + decor.bottom;
 
-			return Rect(inner.p1() - Point(left, top),
-			            inner.p2() + Point(right, bottom));
+			return Rect::compound(inner.p1() - Point(left, top),
+			                      inner.p2() + Point(right, bottom));
 		}
 
 		Area _outer_from_inner_size(Area inner) const
 		{
-			return _outer_from_inner_geometry(Rect(Point(0, 0), inner)).area();
+			return _outer_from_inner_geometry(Rect(Point(0, 0), inner)).area;
 		}
 
 		Rect outer_geometry() const override
@@ -466,14 +450,13 @@ class Decorator::Window : public Window_base, public Animator::Item
 				Rect const outer      = _outer_from_inner_geometry(inner);
 
 				/* update view positions */
-				Rect top, left, right, bottom;
-				outer.cut(inner, &top, &left, &right, &bottom);
+				Rect::Cut_remainder const r = outer.cut(inner);
 
 				_content_view.place(inner,  Point(0, 0));
-				_top_view    .place(top,    Point(0, 0));
-				_left_view   .place(left,   Point(0, -top.h()));
-				_right_view  .place(right,  Point(-right.w(), -top.h()));
-				_bottom_view .place(bottom, Point(0, -theme_size.h() + bottom.h()));
+				_top_view    .place(r.top,    Point(0, 0));
+				_left_view   .place(r.left,   Point(0, -r.top.h()));
+				_right_view  .place(r.right,  Point(-r.right.w(), -r.top.h()));
+				_bottom_view .place(r.bottom, Point(0, -theme_size.h + r.bottom.h()));
 
 				_gui.execute();
 

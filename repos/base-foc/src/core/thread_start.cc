@@ -27,7 +27,7 @@
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 void Thread::_deinit_platform_thread()
@@ -39,7 +39,7 @@ void Thread::_deinit_platform_thread()
 void Thread::_init_platform_thread(size_t, Type) { }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	using namespace Foc;
 
@@ -65,9 +65,9 @@ void Thread::start()
 
 	pt.start((void *)_thread_start, stack_top());
 
-	struct Core_trace_source : public  Trace::Source::Info_accessor,
-	                           private Trace::Control,
-	                           private Trace::Source
+	struct Core_trace_source : public  Core::Trace::Source::Info_accessor,
+	                           private Core::Trace::Control,
+	                           private Core::Trace::Source
 	{
 		Thread &thread;
 		Platform_thread &platform_thread;
@@ -101,16 +101,18 @@ void Thread::start()
 			         thread._affinity };
 		}
 
-		Core_trace_source(Trace::Source_registry &registry, Thread &t,
+		Core_trace_source(Core::Trace::Source_registry &registry, Thread &t,
 		                  Platform_thread &pt)
 		:
-			Trace::Control(),
-			Trace::Source(*this, *this), thread(t), platform_thread(pt)
+			Core::Trace::Control(),
+			Core::Trace::Source(*this, *this), thread(t), platform_thread(pt)
 		{
 			registry.insert(this);
 		}
 	};
 
-	new (platform().core_mem_alloc()) Core_trace_source(Trace::sources(),
+	new (platform().core_mem_alloc()) Core_trace_source(Core::Trace::sources(),
 	                                                    *this, pt);
+
+	return Start_result::OK;
 }

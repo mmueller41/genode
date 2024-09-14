@@ -43,7 +43,7 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 			: Registry<Member>::Element(registry, *this), window(window) { }
 		};
 
-		typedef String<80> Label;
+		using Label = String<80>;
 
 	private:
 
@@ -60,6 +60,7 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 		bool _ypos_any     = false;
 		bool _size_defined = false;
 		bool _maximized    = false;
+		bool _visible      = false;
 
 		Point _pos  { };
 		Area  _size { };
@@ -79,20 +80,29 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 			_pos_defined  = assign.has_attribute("xpos")  && assign.has_attribute("ypos");
 			_size_defined = assign.has_attribute("width") && assign.has_attribute("height");
 			_maximized    = assign.attribute_value("maximized", false);
+			_visible      = assign.attribute_value("visible", true);
 			_xpos_any     = assign.attribute_value("xpos", String<20>()) == "any";
 			_ypos_any     = assign.attribute_value("ypos", String<20>()) == "any";
 			_pos          = Point::from_xml(assign);
 			_size         = Area::from_xml(assign);
 		}
 
-		/*
-		 * Used by 'Assign_list::update_from_xml'
+		/**
+		 * List_model::Element
 		 */
 		bool matches(Xml_node node) const
 		{
 			return node.attribute_value("label",        Label()) == _label
 			    && node.attribute_value("label_prefix", Label()) == _label_prefix
 			    && node.attribute_value("label_suffix", Label()) == _label_suffix;
+		}
+
+		/**
+		 * List_model::Element
+		 */
+		static bool type_matches(Xml_node const &node)
+		{
+			return node.has_type("assign");
 		}
 
 		/**
@@ -106,16 +116,17 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 
 			Point const any_pos(150*win_id % 800, 30 + (100*win_id % 500));
 
-			Point const pos(_xpos_any ? any_pos.x() : _pos.x(),
-			                _ypos_any ? any_pos.y() : _pos.y());
+			Point const pos(_xpos_any ? any_pos.x : _pos.x,
+			                _ypos_any ? any_pos.y : _pos.y);
 
 			Rect const inner(pos, _size_defined ? _size : client_size);
 			Rect const outer = decorator_margins.outer_geometry(inner);
 
-			return Rect(outer.p1() + target_geometry.p1(), outer.area());
+			return Rect(outer.p1() + target_geometry.p1(), outer.area);
 		}
 
 		bool maximized() const { return _maximized; }
+		bool visible()   const { return _visible; }
 
 		/**
 		 * Call 'fn' with 'Registry<Member>' if label matches assignment
@@ -193,19 +204,22 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 		{
 			if (_pos_defined) {
 				if (_xpos_any) xml.attribute("xpos", "any");
-				else           xml.attribute("xpos", _pos.x());
+				else           xml.attribute("xpos", _pos.x);
 
 				if (_ypos_any) xml.attribute("ypos", "any");
-				else           xml.attribute("ypos", _pos.y());
+				else           xml.attribute("ypos", _pos.y);
 			}
 
 			if (_size_defined) {
-				xml.attribute("width",  _size.w());
-				xml.attribute("height", _size.h());
+				xml.attribute("width",  _size.w);
+				xml.attribute("height", _size.h);
 			}
 
 			if (_maximized)
 				xml.attribute("maximized", "yes");
+
+			if (!_visible)
+				xml.attribute("visible", "no");
 		}
 
 		struct Window_state
@@ -227,6 +241,9 @@ class Window_layouter::Assign : public List_model<Assign>::Element
 
 			if (window.maximized)
 				xml.attribute("maximized", "yes");
+
+			if (!_visible)
+				xml.attribute("visible", "no");
 		}
 
 		template <typename FN>

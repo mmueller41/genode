@@ -91,8 +91,8 @@ class Polygon::Painter_base
 
 	public:
 
-		typedef Genode::Rect<> Rect;
-		typedef Genode::Area<> Area;
+		using Rect = Genode::Rect<>;
+		using Area = Genode::Area<>;
 
 		/**
 		 * Buffers used for storing interpolated attribute values along a left
@@ -191,7 +191,7 @@ class Polygon::Painter_base
 			c0[num_points] = c0[0];
 
 			/* clip against top, left, bottom, and right clipping boundaries */
-			typedef Clipper_2d<POINT> Clipper;
+			using Clipper = Clipper_2d<POINT>;
 			num_points = _clip_1d<typename Clipper::Top>   (c0, num_points, c1, clip.y1());
 			num_points = _clip_1d<typename Clipper::Left>  (c1, num_points, c0, clip.x1());
 			num_points = _clip_1d<typename Clipper::Bottom>(c0, num_points, c1, clip.y2());
@@ -209,17 +209,17 @@ class Polygon::Painter_base
 		template <typename POINT>
 		static Rect bounding_box(POINT const points[], int num_points, Area area)
 		{
-			int x_min = area.w() - 1, x_max = 0;
-			int y_min = area.h() - 1, y_max = 0;
+			int x_min = area.w - 1, x_max = 0;
+			int y_min = area.h - 1, y_max = 0;
 
 			for (int i = 0; i < num_points; i++) {
-				x_min = Genode::min(x_min, points[i].x());
-				x_max = Genode::max(x_max, points[i].x());
-				y_min = Genode::min(y_min, points[i].y());
-				y_max = Genode::max(y_max, points[i].y());
+				x_min = Genode::min(x_min, points[i].x);
+				x_max = Genode::max(x_max, points[i].x);
+				y_min = Genode::min(y_min, points[i].y);
+				y_max = Genode::max(y_max, points[i].y);
 			}
 
-			return Rect(Point_base(x_min, y_min), Point_base(x_max, y_max));
+			return Rect::compound(Point_base(x_min, y_min), Point_base(x_max, y_max));
 		}
 
 
@@ -248,15 +248,15 @@ class Polygon::Painter_base
 					int const p2_attr = p2.edge_attr(i);
 
 					/* horizontal edge */
-					if (p1.y() == p2.y());
+					if (p1.y == p2.y);
 
 					/* right edge */
-					else if (p1.y() < p2.y())
-						_interpolate(p1_attr, p2_attr, r_edge + p1.y(), p2.y() - p1.y());
+					else if (p1.y < p2.y)
+						_interpolate(p1_attr, p2_attr, r_edge + p1.y, p2.y - p1.y);
 
 					/* left edge */
 					else
-						_interpolate(p2_attr, p1_attr, l_edge + p2.y(), p1.y() - p2.y());
+						_interpolate(p2_attr, p1_attr, l_edge + p2.y, p1.y - p2.y);
 				}
 			}
 		}

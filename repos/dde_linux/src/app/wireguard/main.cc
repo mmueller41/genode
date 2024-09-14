@@ -19,13 +19,18 @@
 #include <base/component.h>
 #include <base/attached_rom_dataspace.h>
 #include <base/session_label.h>
+#include <rtc_session/connection.h>
 #include <timer_session/connection.h>
+
+/* musl-tm includes */
+#include <tm.h>
 
 /* lx-kit includes */
 #include <lx_kit/env.h>
 
 /* lx-emul includes */
 #include <lx_emul/init.h>
+#include <lx_emul/time.h>
 
 /* lx-user includes */
 #include <lx_user/io.h>
@@ -50,7 +55,7 @@ class Wireguard::Main : private Entrypoint::Io_progress_handler,
 		Heap                              _heap                  { _env.ram(), _env.rm() };
 		Attached_rom_dataspace            _config_rom            { _env, "config" };
 		Signal_handler<Main>              _config_handler        { _env.ep(), *this, &Main::_handle_config };
-		Io_signal_handler<Main>           _signal_handler        { _env.ep(), *this, &Main::_handle_signal };
+		Signal_handler<Main>              _signal_handler        { _env.ep(), *this, &Main::_handle_signal };
 		Config_model                      _config_model          { _heap };
 		Signal_handler<Main>              _nic_ip_config_handler { _env.ep(), *this, &Main::_handle_nic_ip_config };
 		Nic_connection                    _nic_connection        { _env, _heap, _signal_handler, _config_rom.xml(), _timer, *this };
@@ -59,12 +64,15 @@ class Wireguard::Main : private Entrypoint::Io_progress_handler,
 		void _handle_signal()
 		{
 			lx_user_handle_io();
-			Lx_kit::env().scheduler.schedule();
+			Lx_kit::env().scheduler.execute();
 		}
 
-		void _handle_config() { _config_rom.update(); }
+		void _set_initial_time_only_once();
+		void _handle_config();
 
 		void _handle_nic_ip_config();
+
+		int64_t _rtc_timestamp_to_seconds(Rtc::Timestamp const &ts);
 
 
 		/*****************************
@@ -82,13 +90,7 @@ class Wireguard::Main : private Entrypoint::Io_progress_handler,
 		:
 			_env(env)
 		{
-			Lx_kit::initialize(_env);
-
-			/*
-			 * We have to call the static constructors because otherwise the
-			 * initcall list of the LX kit won't get populated.
-			 */
-			_env.exec_static_constructors();
+			Lx_kit::initialize(_env, _signal_handler);
 
 			_config_rom.sigh(_config_handler);
 			_handle_config();
@@ -138,6 +140,49 @@ class Wireguard::Main : private Entrypoint::Io_progress_handler,
 			genode_wg_u8_t const *ip_base,
 			genode_wg_size_t      ip_size);
 };
+
+
+int64_t Wireguard::Main::_rtc_timestamp_to_seconds(Rtc::Timestamp const &ts)
+{
+   tm tm { .tm_sec      = static_cast<int>(ts.second),
+           .tm_min      = static_cast<int>(ts.minute),
+           .tm_hour     = static_cast<int>(ts.hour),
+           .tm_mday     = static_cast<int>(ts.day),
+           .tm_mon      = static_cast<int>(ts.month - 1),
+           .tm_year     = static_cast<int>(ts.year - 1900),
+           .tm_wday     = 0,
+           .tm_yday     = 0,
+           .tm_isdst    = 0,
+           .__tm_gmtoff = 0,
+           .__tm_zone   = 0 };
+
+   return tm_to_secs(&tm);
+}
+
+void Wireguard::Main::_set_initial_time_only_once()
+{
+	static bool time_already_set { false };
+
+	if (!time_already_set) {
+		Rtc::Connection rtc { _env };
+		Rtc::Timestamp const rtc_current_time { rtc.current_time() };
+
+		lx_emul_time_initial(_rtc_timestamp_to_seconds(rtc_current_time));
+		time_already_set = true;
+	}
+}
+
+void Wireguard::Main::_handle_config()
+{
+	_config_rom.update();
+
+	if (!_config_rom.valid()) return;
+
+	if (_config_rom.xml().attribute_value("use_rtc", false) == true) {
+		_set_initial_time_only_once();
+	}
+
+}
 
 
 void Wireguard::Main::_handle_nic_ip_config()

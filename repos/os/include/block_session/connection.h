@@ -19,7 +19,7 @@
  */
 
 /*
- * Copyright (C) 2019 Genode Labs GmbH
+ * Copyright (C) 2019-2023 Genode Labs GmbH
  *
  * This file is part of the Genode OS framework, which is distributed
  * under the terms of the GNU Affero General Public License version 3.
@@ -44,7 +44,7 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 
 		class Job;
 
-		typedef Genode::size_t size_t;
+		using size_t = Genode::size_t;
 
 	private:
 
@@ -53,14 +53,14 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 		 * template argument but falls back to 'Job' if no template argument
 		 * is given.
 		 */
-		template <typename T, typename> struct Fallback           { typedef T  Type; };
-		template <typename FB>          struct Fallback<void, FB> { typedef FB Type; };
+		template <typename T, typename> struct Fallback           { using Type = T; };
+		template <typename FB>          struct Fallback<void, FB> { using Type = FB; };
 
-		typedef typename Fallback<JOB, Job>::Type _JOB;
+		using _JOB = typename Fallback<JOB, Job>::Type;
 
-		typedef Genode::Id_space<_JOB> Tag_id_space;
+		using Tag_id_space = Genode::Id_space<_JOB>;
 
-		typedef Packet_descriptor::Payload Payload;
+		using Payload = Packet_descriptor::Payload;
 
 	public:
 
@@ -118,8 +118,7 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 						                            _operation.count - _position) };
 				}
 
-				template <typename FN>
-				static void _with_offset_and_length(Job &job, FN const &fn)
+				static void _with_offset_and_length(Job &job, auto const &fn)
 				{
 					if (!Operation::has_payload(job._operation.type))
 						return;
@@ -131,8 +130,7 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 					   Genode::min(job._payload.bytes, operation.count * block_size));
 				}
 
-				template <typename POLICY>
-				void _submit(POLICY &policy, _JOB &job, Tx::Source &tx)
+				void _submit(auto &policy, _JOB &job, Tx::Source &tx)
 				{
 					if (!_tag.constructed())
 						return;
@@ -210,16 +208,14 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 		 *
 		 * \return true if progress was made
 		 */
-		template <typename POLICY>
-		bool _try_process_ack(POLICY &, Tx::Source &);
+		bool _try_process_ack(auto &, Tx::Source &);
 
 		/**
 		 * Submit next pending job to server, if possible
 		 *
 		 * \return true if a job was successfully submitted
 		 */
-		template <typename POLICY>
-		bool _try_submit_pending_job(POLICY &, Tx::Source &);
+		bool _try_submit_pending_job(auto &, Tx::Source &);
 
 	public:
 
@@ -233,12 +229,11 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 		Connection(Genode::Env             &env,
 		           Genode::Range_allocator *tx_block_alloc,
 		           Genode::size_t           tx_buf_size = 128*1024,
-		           const char              *label = "")
+		           Label             const &label = Label())
 		:
-			Genode::Connection<Session>(env,
-				session(env.parent(),
-				        "ram_quota=%ld, cap_quota=%ld, tx_buf_size=%ld, label=\"%s\"",
-				        14*1024 + tx_buf_size, CAP_QUOTA, tx_buf_size, label)),
+			Genode::Connection<Session>(env, label,
+			                            Ram_quota { 14*1024 + tx_buf_size },
+			                            Args("tx_buf_size=", tx_buf_size)),
 			Session_client(cap(), *tx_block_alloc, env.rm()),
 			_max_block_count(_init_max_block_count(_tx.source()->bulk_buffer_size()))
 		{ }
@@ -261,8 +256,7 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 		 *
 		 * \return  true if progress was made
 		 */
-		template <typename POLICY>
-		bool update_jobs(POLICY &policy)
+		bool update_jobs(auto &policy)
 		{
 			Tx::Source &tx = *_tx.source();
 
@@ -331,8 +325,7 @@ struct Block::Connection : Genode::Connection<Session>, Session_client
 		 * This method is intended for the destruction of the jobs associated
 		 * with the connection before destructing the 'Connection' object.
 		 */
-		template <typename FN>
-		void dissolve_all_jobs(FN const &fn)
+		void dissolve_all_jobs(auto const &fn)
 		{
 			_pending.dequeue_all([&] (Genode::Fifo_element<_JOB> &elem) {
 				fn(elem.object()); });

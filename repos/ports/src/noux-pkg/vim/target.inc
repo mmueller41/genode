@@ -1,7 +1,7 @@
 CONFIGURE_ARGS = --disable-selinux --disable-xsmp --disable-xsmp-interact \
                  --disable-netbeans --disable-gtktest --disable-largefile \
                  --disable-acl --disable-gpm --disable-sysmouse \
-                 --disable-nls
+                 --disable-nls --enable-multibyte
 
 #
 # configure: error: cross-compiling: please set 'vim_cv_toupper_broken'
@@ -45,17 +45,3 @@ mirror_vim_src.tag:
 flush_config_cache.tag:
 	$(VERBOSE)rm -f $(PWD)/src/auto/config.cache
 	@touch $@
-
-#
-# Make the ncurses linking test succeed
-#
-Makefile: dummy_libs
-
-LDFLAGS += -L$(PWD)
-
-.SECONDARY: dummy_libs
-dummy_libs: libncurses.a
-
-libncurses.a:
-	$(VERBOSE)$(AR) -rc $@
-

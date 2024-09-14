@@ -16,7 +16,6 @@
 
 /* local includes */
 #include <list.h>
-#include <pointer.h>
 
 /* Genode includes */
 #include <util/reconstructible.h>
@@ -47,13 +46,10 @@ class Net::Dns_server : private Genode::Noncopyable,
 
 	public:
 
-		template <typename HANDLE_SUCCESS_FN,
-		          typename HANDLE_FAILURE_FN>
-
 		static void construct(Genode::Allocator       &alloc,
 		                      Net::Ipv4_address const &ip,
-		                      HANDLE_SUCCESS_FN     && handle_success,
-		                      HANDLE_FAILURE_FN     && handle_failure)
+		                      auto              const &handle_success,
+		                      auto              const &handle_failure)
 		{
 			if (!ip.valid()) {
 				handle_failure();
@@ -84,7 +80,13 @@ class Net::Dns_domain_name : private Genode::Noncopyable
 	private:
 
 		Genode::Allocator &_alloc;
-		Pointer<String>    _string { };
+		String            *_string_ptr { };
+
+		/*
+		 * Noncopyable
+		 */
+		Dns_domain_name(Dns_domain_name const &);
+		Dns_domain_name &operator = (Dns_domain_name const &);
 
 	public:
 
@@ -100,14 +102,12 @@ class Net::Dns_domain_name : private Genode::Noncopyable
 
 		void set_invalid();
 
-		bool valid() const { return _string.valid(); }
+		bool valid() const { return _string_ptr; }
 
-		template <typename FUNC>
-		void with_string(FUNC && func) const
+		void with_string(auto const &func) const
 		{
-			if (_string.valid()) {
-				func(_string());
-			}
+			if (_string_ptr)
+				func(*_string_ptr);
 		}
 
 		bool equal_to(Dns_domain_name const &other) const;

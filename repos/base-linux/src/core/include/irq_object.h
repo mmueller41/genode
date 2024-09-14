@@ -14,12 +14,16 @@
 #ifndef _IRQ_OBJECT_H_
 #define _IRQ_OBJECT_H_
 
+/* Genode includes */
 #include <base/thread.h>
 
-namespace Genode { class Irq_object; };
+/* core includes */
+#include <types.h>
+
+namespace Core { class Irq_object; };
 
 
-class Genode::Irq_object : public Thread
+class Core::Irq_object : public Thread
 {
 	private:
 
@@ -39,7 +43,7 @@ class Genode::Irq_object : public Thread
 		void sigh(Signal_context_capability cap);
 		void ack_irq();
 
-		void start() override;
+		Start_result start() override;
 
 };
 

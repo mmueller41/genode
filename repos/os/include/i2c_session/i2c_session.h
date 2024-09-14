@@ -32,12 +32,7 @@ struct I2c::Session : public Genode::Session
 	 */
 	static char const *service_name() { return "I2c"; }
 
-	enum { CAP_QUOTA = 2 };
-
-
-	/***************
-	 ** Exception **
-	 ***************/
+	static constexpr unsigned CAP_QUOTA = 2;
 
 	/**
 	 * Exception thrown in case of a bus error
@@ -60,8 +55,7 @@ struct I2c::Session : public Genode::Session
 
 		Message() {}
 
-		template<typename ... ARGS>
-		Message(Type type, ARGS ... args)
+		Message(Type type, auto ... args)
 		: Byte_array(args...), type(type) {}
 	};
 

@@ -18,8 +18,8 @@
 
 namespace Genode {
 
-	template <size_t, typename FUNC>
-	static inline void print_lines(char const *, size_t, FUNC const &);
+	template <size_t>
+	static inline void print_lines(char const *, size_t, auto const &);
 }
 
 
@@ -30,7 +30,7 @@ namespace Genode {
  *                      on the stack
  * \param string        character buffer, not necessarily null-terminated
  * \param len           number of characters to print
- * \param func          functor called for each line with 'char const *' as
+ * \param fn            functor called for each line with 'char const *' as
  *                      argument
  *
  * In situations where a string is supplied by an untrusted client, we cannot
@@ -42,8 +42,8 @@ namespace Genode {
  * The output stops when reaching the end of the buffer or when a null
  * character is encountered.
  */
-template <Genode::size_t MAX_LINE_LEN, typename FUNC>
-void Genode::print_lines(char const *string, size_t len, FUNC const &func)
+template <Genode::size_t MAX_LINE_LEN>
+void Genode::print_lines(char const *string, size_t len, auto const &fn)
 {
 	/* skip leading line breaks */
 	for (; *string == '\n'; string++);
@@ -67,17 +67,16 @@ void Genode::print_lines(char const *string, size_t len, FUNC const &func)
 			string += num_indent_chars;
 
 		size_t line_len  = 0;
-		size_t skip_char = 1;
+		size_t skip_char = 0;
 
 		for (; line_len < len; line_len++) {
 			if (string[line_len] == '\0' || string[line_len] == '\n') {
 				line_len++;
+				skip_char = 1;
 				break;
 			}
-			if (line_len == MAX_LINE_LEN) {
-				skip_char = 0;
+			if (line_len == MAX_LINE_LEN)
 				break;
-			}
 		}
 
 		if (!line_len)
@@ -90,7 +89,7 @@ void Genode::print_lines(char const *string, size_t len, FUNC const &func)
 		copy_cstring(line_buf, string, line_len - skip_char + 1);
 
 		/* process null-terminated string in buffer */
-		func(line_buf);
+		fn(line_buf);
 
 		/* move forward to the next sub-string to process */
 		string += line_len;

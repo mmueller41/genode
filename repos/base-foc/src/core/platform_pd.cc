@@ -26,7 +26,7 @@
 #include <foc/syscall.h>
 
 using namespace Foc;
-using namespace Genode;
+using namespace Core;
 
 
 static addr_t core_utcb_base()
@@ -86,7 +86,6 @@ bool Platform_pd::bind_thread(Platform_thread &thread)
 		return true;
 	}
 
-	error("thread alloc failed");
 	return false;
 }
 

@@ -27,22 +27,22 @@
 #include <platform_thread.h>
 #include <trace/source_registry.h>
 
-using namespace Genode;
+using namespace Core;
 
 namespace Hw { extern Untyped_capability _main_thread_cap; }
 
 
-void Thread::start()
+Thread::Start_result Thread::start()
 {
 	/* start thread with stack pointer at the top of stack */
-	if (native_thread().platform_thread->start((void *)&_thread_start, stack_top())) {
-		error("failed to start thread");
-		return;
-	}
+	native_thread().platform_thread->start((void *)&_thread_start, stack_top());
 
-	struct Trace_source : public  Trace::Source::Info_accessor,
-	                      private Trace::Control,
-	                      private Trace::Source
+	if (_thread_cap.failed())
+		return Start_result::DENIED;
+
+	struct Trace_source : public  Core::Trace::Source::Info_accessor,
+	                      private Core::Trace::Control,
+	                      private Core::Trace::Source
 	{
 		Genode::Thread &thread;
 
@@ -61,10 +61,10 @@ void Thread::start()
 			         execution_time, thread.affinity() };
 		}
 
-		Trace_source(Trace::Source_registry &registry, Genode::Thread &thread)
+		Trace_source(Core::Trace::Source_registry &registry, Genode::Thread &thread)
 		:
-			Trace::Control(),
-			Trace::Source(*this, *this),
+			Core::Trace::Control(),
+			Core::Trace::Source(*this, *this),
 			thread(thread)
 		{
 			registry.insert(this);
@@ -72,7 +72,9 @@ void Thread::start()
 	};
 
 	/* create trace sources for core threads */
-	new (platform().core_mem_alloc()) Trace_source(Trace::sources(), *this);
+	new (platform().core_mem_alloc()) Trace_source(Core::Trace::sources(), *this);
+
+	return Start_result::OK;
 }
 
 
@@ -92,9 +94,9 @@ void Thread::_init_platform_thread(size_t, Type type)
 	}
 
 	/* remap initial main-thread UTCB according to stack-area spec */
-	Genode::map_local(Platform::core_main_thread_phys_utcb(),
-	                  (addr_t)&_stack->utcb(),
-	                  max(sizeof(Native_utcb) / get_page_size(), (size_t)1));
+	map_local(Platform::core_main_thread_phys_utcb(),
+	          (addr_t)&_stack->utcb(),
+	          max(sizeof(Native_utcb) / get_page_size(), (size_t)1));
 
 	/* adjust initial object state in case of a main thread */
 	native_thread().cap = Hw::_main_thread_cap;

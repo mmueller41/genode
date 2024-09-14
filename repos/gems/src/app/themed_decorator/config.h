@@ -25,7 +25,7 @@ namespace Decorator {
 
 	class Config;
 
-	typedef Genode::String<200> Window_title;
+	using Window_title = Genode::String<200>;
 }
 
 
@@ -67,7 +67,7 @@ class Decorator::Config
 		 */
 		Color base_color(Window_title const &title) const
 		{
-			Color result(0, 0, 0);
+			Color result = Color::black();
 
 			try {
 				Genode::Session_policy policy(title, _config);

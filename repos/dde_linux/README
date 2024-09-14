@@ -8,22 +8,22 @@ Host controller
 
 The driver will start all USB controller types a platform offers.
 
-Please consult repos/dde_linux/drivers/usb_host/README for a description.
+Please consult repos/dde_linux/driver/usb_host/README for a description.
 
 HID
 ~~~
 
-Please consult repos/dde_linux/drivers/usb_hid/README for a description.
+Please consult repos/dde_linux/driver/usb_hid/README for a description.
 
 Storage
 ~~~~~~~
 
-Please consult repos/os/src/drivers/usb_block/README for a description.
+Please consult repos/os/src/driver/usb_block/README for a description.
 
 Network (Nic)
 ~~~~~~~~~~~~~
 
-Please consolut repos/dde_linux/src/drivers/usb_net/README for a description.
+Please consolut repos/dde_linux/src/driver/usb_net/README for a description.
 
 LXIP
 ####
@@ -32,6 +32,12 @@ LXIP is a port of the Linux TCP/IP stack to Genode. It is build as a shared
 library named 'lxip.lib.so'. The IP stack can be interfaced using Genode's
 version of 'libc' by linking your application to 'lxip_libc' plugin in your
 'target.mk' file.
+
+Wifi
+####
+
+The 'wifi' driver consists of a port of the mac802.11 stack, platform-specific
+drivers and the 'wpa_supplicant' to Genode.
 
 
 lx_kit

@@ -61,7 +61,7 @@ struct Backdrop::Main
 			/* setup virtual framebuffer mode */
 			gui.buffer(mode, false);
 
-			return gui.framebuffer()->dataspace();
+			return gui.framebuffer.dataspace();
 		}
 
 		Attached_dataspace fb_ds;
@@ -110,18 +110,17 @@ struct Backdrop::Main
 
 	Constructible<Buffer> _buffer { };
 
-	Gui::Session::View_handle _view_handle = _gui.create_view();
+	Gui::View_id const _view_id { 1 };
 
 	void _update_view()
 	{
 		/* display view behind all others */
-		typedef Gui::Session::Command     Command;
-		typedef Gui::Session::View_handle View_handle;
+		using Command = Gui::Session::Command;
 
-		_gui.enqueue<Command::Background>(_view_handle);
+		_gui.enqueue<Command::Background>(_view_id);
 		Gui::Rect rect(Gui::Point(), _buffer->size());
-		_gui.enqueue<Command::Geometry>(_view_handle, rect);
-		_gui.enqueue<Command::To_back>(_view_handle, View_handle());
+		_gui.enqueue<Command::Geometry>(_view_id, rect);
+		_gui.enqueue<Command::Back>(_view_id);
 		_gui.execute();
 	}
 
@@ -149,6 +148,8 @@ struct Backdrop::Main
 
 	Main(Genode::Env &env) : _env(env)
 	{
+		_gui.view(_view_id, { });
+
 		_gui.mode_sigh(_config_handler);
 
 		_config.sigh(_config_handler);
@@ -169,6 +170,8 @@ static Surface_base::Area calc_scaled_size(Xml_node operation,
 	if (!operation.has_attribute(attr))
 		return image_size;
 
+	auto const value = operation.attribute_value("scale", String<16>());
+
 	/* prevent division by zero, below */
 	if (image_size.count() == 0)
 		return image_size;
@@ -176,21 +179,20 @@ static Surface_base::Area calc_scaled_size(Xml_node operation,
 	/*
 	 * Determine scale ratio (in 16.16 fixpoint format)
 	 */
-	unsigned const ratio =
-		operation.attribute(attr).has_value("fit") ?
-			min((mode_size.w() << 16) / image_size.w(),
-			    (mode_size.h() << 16) / image_size.h()) :
-		operation.attribute(attr).has_value("zoom") ?
-			max((mode_size.w() << 16) / image_size.w(),
-			    (mode_size.h() << 16) / image_size.h()) :
-		1 << 16;
+	unsigned const ratio = (value == "fit")
+	                     ? min((mode_size.w << 16) / image_size.w,
+	                           (mode_size.h << 16) / image_size.h)
+	                     : (value == "zoom")
+	                     ? max((mode_size.w << 16) / image_size.w,
+	                           (mode_size.h << 16) / image_size.h)
+	                     : 1 << 16;
 
 	/*
 	 * We add 0.5 (1 << 15) to round instead of truncating the fractional
 	 * part when converting the fixpoint numbers to integers.
 	 */
-	return Surface_base::Area((image_size.w()*ratio + (1 << 15)) >> 16,
-	                          (image_size.h()*ratio + (1 << 15)) >> 16);
+	return Surface_base::Area((image_size.w*ratio + (1 << 15)) >> 16,
+	                          (image_size.h*ratio + (1 << 15)) >> 16);
 }
 
 
@@ -205,12 +207,12 @@ void Backdrop::Main::_paint_texture(Surface<PT> &surface, Texture<PT> const &tex
 	if (tiled) {
 
 		/* shortcuts */
-		int const w = texture.size().w(), surface_w = surface.size().w();
-		int const h = texture.size().h(), surface_h = surface.size().h();
+		int const w = texture.size().w, surface_w = surface.size().w;
+		int const h = texture.size().h, surface_h = surface.size().h;
 
 		/* draw tiles across the whole surface */
-		for (int y = (pos.y() % h) - h; y < surface_h + h; y += h)
-			for (int x = (pos.x() % w) - w; x < surface_w + w; x += w)
+		for (int y = (pos.y % h) - h; y < surface_h + h; y += h)
+			for (int x = (pos.x % w) - w; x < surface_w + w; x += w)
 				Texture_painter::paint(surface, texture, Color(),
 				                       Texture_painter::Point(x, y),
 				                       Texture_painter::SOLID,
@@ -226,15 +228,15 @@ void Backdrop::Main::_paint_texture(Surface<PT> &surface, Texture<PT> const &tex
 
 void Backdrop::Main::_apply_image(Xml_node operation)
 {
-	typedef Surface_base::Point Point;
-	typedef Surface_base::Area  Area;
+	using Point = Surface_base::Point;
+	using Area  = Surface_base::Area;
 
 	if (!operation.has_attribute("png")) {
 		Genode::warning("missing 'png' attribute in <image> node");
 		return;
 	}
 
-	typedef String<256> File_name;
+	using File_name = String<256>;
 	File_name const png_file_name = operation.attribute_value("png", File_name());
 
 	File file(png_file_name.string(), _heap);
@@ -248,8 +250,8 @@ void Backdrop::Main::_apply_image(Xml_node operation)
 	/*
 	 * Determine parameters of graphics operation
 	 */
-	int const h_gap = (int)_buffer->mode.area.w() - scaled_size.w(),
-	          v_gap = (int)_buffer->mode.area.h() - scaled_size.h();
+	int const h_gap = (int)_buffer->mode.area.w - scaled_size.w,
+	          v_gap = (int)_buffer->mode.area.h - scaled_size.h;
 
 	int const anchored_xpos = anchor.horizontal == Anchor::LOW    ? 0
 	                        : anchor.horizontal == Anchor::CENTER ? h_gap/2
@@ -283,7 +285,7 @@ void Backdrop::Main::_apply_image(Xml_node operation)
 	 */
 
 	/* create texture with down-sampled scaled image */
-	typedef Pixel_rgb888 PT;
+	using PT = Pixel_rgb888;
 	Chunky_texture<PT> texture(_env.ram(), _env.rm(), scaled_size);
 	convert_pixel_format(scaled_texture, texture, alpha, _heap);
 
@@ -301,9 +303,9 @@ void Backdrop::Main::_apply_fill(Xml_node operation)
 	 */
 
 	/* create texture with down-sampled scaled image */
-	typedef Pixel_rgb888 PT;
+	using PT = Pixel_rgb888;
 
-	Color const color = operation.attribute_value("color", Color(0, 0, 0));
+	Color const color = operation.attribute_value("color", Color::black());
 
 	_buffer->apply_to_surface<PT>([&] (Surface<PT> &surface) {
 		Box_painter::paint(surface, Surface_base::Rect(Surface_base::Point(0, 0),
@@ -318,8 +320,8 @@ void Backdrop::Main::_handle_config()
 
 	Framebuffer::Mode const phys_mode = _gui.mode();
 	Framebuffer::Mode const
-		mode { .area = { _config.xml().attribute_value("width",  phys_mode.area.w()),
-		                 _config.xml().attribute_value("height", phys_mode.area.h()) } };
+		mode { .area = { _config.xml().attribute_value("width",  phys_mode.area.w),
+		                 _config.xml().attribute_value("height", phys_mode.area.h) } };
 
 	_buffer.construct(_env, _gui, mode);
 
@@ -344,7 +346,7 @@ void Backdrop::Main::_handle_config()
 	});
 
 	/* schedule buffer refresh */
-	_gui.framebuffer()->sync_sigh(_sync_handler);
+	_gui.framebuffer.sync_sigh(_sync_handler);
 }
 
 
@@ -356,7 +358,7 @@ void Backdrop::Main::_handle_sync()
 	});
 
 	/* disable sync signal until the next call of 'handle_config' */
-	_gui.framebuffer()->sync_sigh(Signal_context_capability());
+	_gui.framebuffer.sync_sigh(Signal_context_capability());
 }
 
 

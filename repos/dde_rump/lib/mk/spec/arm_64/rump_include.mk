@@ -2,7 +2,7 @@ ifeq ($(called_from_lib_mk),yes)
 
 include $(REP_DIR)/lib/mk/rump_common.inc
 
-BACKPORT := $(call select_from_ports,dde_rump)/src/lib/dde_rump_aarch64_backport
+BACKPORT := $(call select_from_ports,dde_rump)/src/lib/dde_rump_backport
 
 $(RUMP_BASE):
 	mkdir -p $@

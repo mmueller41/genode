@@ -16,10 +16,11 @@
 
 #include <util/misc_math.h>
 #include <util/register.h>
-#include <hw/page_flags.h>
+#include <cpu/page_flags.h>
 #include <hw/page_table_allocator.h>
 
 namespace Hw {
+	using Genode::Page_flags;
 
 	enum {
 		SIZE_LOG2_4KB   = 12,
@@ -206,7 +207,7 @@ class Hw::Long_translation_table
 
 				static typename Descriptor::access_t create(Page_flags const &f)
 				{
-					if (f.type == Hw::DEVICE)
+					if (f.type == Genode::DEVICE)
 						return Attribute_index::bits(DEVICE);
 
 					switch (f.cacheable) {
@@ -387,7 +388,8 @@ class Hw::Level_3_translation_table :
 					using Block_descriptor = typename Stage_trait<Base, STAGE>::Type;
 					if (!Descriptor::valid(desc))
 						return;
-					phys = Block_descriptor::Output_address::masked(desc);
+					phys =
+						(addr_t)Block_descriptor::Output_address::masked(desc);
 					typename Block_descriptor::access_t ap =
 						Block_descriptor::Access_permission::get(desc);
 					found = ap == Block_descriptor::Access_permission::PRIVILEGED_RW ||
@@ -477,8 +479,13 @@ class Hw::Level_x_translation_table :
 					[[fallthrough]];
 				case Descriptor::TABLE: /* table already available */
 					{
-						/* use allocator to retrieve virt address of table */
-						E & table = alloc.virt_addr<E>(Nt::masked(desc));
+						/**
+						 * Use allocator to retrieve virt address of table
+						 * (we do not have physical memory above 4G on 32bit
+						 *  yet, therefore we can downcast here)
+						 */
+						E & table =
+							alloc.virt_addr<E>((addr_t)Nt::masked(desc));
 						table.insert_translation(vo - (vo & Base::BLOCK_MASK),
 						                         pa, size, flags, alloc);
 						break;
@@ -510,8 +517,12 @@ class Hw::Level_x_translation_table :
 				switch (Descriptor::type(desc)) {
 				case Descriptor::TABLE:
 					{
-						/* use allocator to retrieve virt address of table */
-						E & table = alloc.virt_addr<E>(Nt::masked(desc));
+						/**
+						 * Use allocator to retrieve virt address of table
+						 * (we do not have physical memory above 4G on 32bit
+						 *  yet, therefore we can downcast here)
+						 */
+						E & table = alloc.virt_addr<E>((addr_t)Nt::masked(desc));
 						table.remove_translation(vo - (vo & Base::BLOCK_MASK),
 						                         size, alloc);
 						if (!table.empty()) break;
@@ -544,7 +555,8 @@ class Hw::Level_x_translation_table :
 				switch (Descriptor::type(desc)) {
 				case Descriptor::BLOCK:
 					{
-						phys = Block_descriptor::Output_address::masked(desc);
+						/* downcast: no phys memory above 4G on 32bit yet */
+						phys = (addr_t)Block_descriptor::Output_address::masked(desc);
 						typename Block_descriptor::access_t ap =
 							Block_descriptor::Access_permission::get(desc);
 						found = ap == Block_descriptor::Access_permission::PRIVILEGED_RW ||
@@ -553,8 +565,12 @@ class Hw::Level_x_translation_table :
 					};
 				case Descriptor::TABLE:
 					{
-						/* use allocator to retrieve virt address of table */
-						E & table = alloc.virt_addr<E>(Nt::masked(desc));
+						/*
+						 * Use allocator to retrieve virt address of table
+						 * (we do not have physical memory above 4G on 32bit
+						 *  yet, therefore we can downcast here)
+						 */
+						E & table = alloc.virt_addr<E>((addr_t)Nt::masked(desc));
 						found = table.lookup_rw_translation(vo - (vo & Base::BLOCK_MASK),
 						                                    phys, alloc);
 						return;

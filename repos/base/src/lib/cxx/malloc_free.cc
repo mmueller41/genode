@@ -15,7 +15,6 @@
  */
 
 /* Genode includes */
-#include <base/env.h>
 #include <base/heap.h>
 #include <util/string.h>
 #include <util/reconstructible.h>
@@ -33,8 +32,11 @@ static Heap *cxx_heap_ptr;
 Heap &cxx_heap()
 {
 	class Cxx_heap_uninitialized : Exception { };
-	if (!cxx_heap_ptr)
+	if (!cxx_heap_ptr) {
+		raw("Cxx_heap_uninitialized");
+		for (;;);
 		throw Cxx_heap_uninitialized();
+	}
 
 	return *cxx_heap_ptr;
 }
@@ -47,7 +49,7 @@ Heap &cxx_heap()
  * '__cxa_allocate_exception', which, in turn, calls 'malloc'. The cxx library
  * uses a local implementation of 'malloc' using a dedicated heap instance.
  */
-void Genode::init_cxx_heap(Env &env)
+void Genode::init_cxx_heap(Ram_allocator &ram, Region_map &rm)
 {
 	/*
 	 * Exception frames are small. Hence, a small static backing store suffices
@@ -56,12 +58,12 @@ void Genode::init_cxx_heap(Env &env)
 	 */
 	static char initial_block[1024*sizeof(long)];
 
-	cxx_heap_ptr = unmanaged_singleton<Heap>(&env.ram(), &env.rm(), Heap::UNLIMITED,
+	cxx_heap_ptr = unmanaged_singleton<Heap>(&ram, &rm, Heap::UNLIMITED,
 	                                         initial_block, sizeof(initial_block));
 }
 
 
-typedef unsigned long Block_header;
+using Block_header = unsigned long;
 
 
 extern "C" void *malloc(size_t size)

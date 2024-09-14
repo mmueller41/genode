@@ -1,16 +1,13 @@
 LICENSE   := OpenSSL
-VERSION   := 1.1.1i
+VERSION   := 1.1.1w
 DOWNLOADS := openssl.archive
 
 URL(openssl) := https://www.openssl.org/source/openssl-$(VERSION).tar.gz
-SHA(openssl) := e8be6a35fe41d10603c3cc635e93289ed00bf34b79671a3a4de64fcee00d5242
+SHA(openssl) := cf3098950cb4d853ad95c0841f1f9c6d3dc102dccfcacd521d93925208b76ac8
 DIR(openssl) := src/lib/openssl
 
 DIRS := include
 DIR_CONTENT(include) = src/lib/openssl/include/openssl
-
-#PATCHES   := $(addprefix src/lib/openssl/,rand_unix_c.patch ssl.patch constant_time_locl.patch)
-#PATCH_OPT := -p1 -d src/lib/openssl
 
 PATCHES   := src/lib/openssl/crypto.patch
 PATCH_OPT := -p1

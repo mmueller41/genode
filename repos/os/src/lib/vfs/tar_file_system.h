@@ -27,7 +27,7 @@ class Vfs::Tar_file_system : public File_system
 	Genode::Env       &_env;
 	Genode::Allocator &_alloc;
 
-	typedef Genode::String<64> Rom_name;
+	using Rom_name = Genode::String<64>;
 	Rom_name _rom_name;
 
 	Genode::Attached_rom_dataspace _tar_ds { _env, _rom_name.string() };
@@ -165,8 +165,7 @@ class Vfs::Tar_file_system : public File_system
 			: Vfs_handle(fs, fs, alloc, status_flags), _node(node)
 			{ }
 
-			virtual Read_result read(char *dst, file_size count,
-			                         file_size &out_count) = 0;
+			virtual Read_result read(Byte_range_ptr const &dst, size_t &out_count) = 0;
 	};
 
 
@@ -174,19 +173,18 @@ class Vfs::Tar_file_system : public File_system
 	{
 		using Tar_vfs_handle::Tar_vfs_handle;
 
-		Read_result read(char *dst, file_size count,
-		                 file_size &out_count) override
+		Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 		{
 			file_size const record_size = _node->record->size();
 
 			file_size const record_bytes_left = record_size >= seek()
 			                                  ? record_size  - seek() : 0;
 
-			count = min(record_bytes_left, count);
+			size_t const count = min(size_t(record_bytes_left), dst.num_bytes);
 
 			char const *data = (char *)_node->record->data() + seek();
 
-			memcpy(dst, data, (size_t)count);
+			memcpy(dst.start, data, count);
 
 			out_count = count;
 			return READ_OK;
@@ -197,13 +195,12 @@ class Vfs::Tar_file_system : public File_system
 	{
 		using Tar_vfs_handle::Tar_vfs_handle;
 
-		Read_result read(char *dst, file_size count,
-		                 file_size &out_count) override
+		Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 		{
-			if (count < sizeof(Dirent))
+			if (dst.num_bytes < sizeof(Dirent))
 				return READ_ERR_INVALID;
 
-			Dirent &dirent = *(Dirent*)dst;
+			Dirent &dirent = *(Dirent*)dst.start;
 
 			unsigned const index = (unsigned)(seek() / sizeof(Dirent));
 
@@ -272,14 +269,13 @@ class Vfs::Tar_file_system : public File_system
 	{
 		using Tar_vfs_handle::Tar_vfs_handle;
 
-		Read_result read(char *buf, file_size buf_size,
-		                 file_size &out_count) override
+		Read_result read(Byte_range_ptr const &dst, size_t &out_count) override
 		{
 			Record const *record = _node->record;
 
-			file_size const count = min(buf_size, 100ULL);
+			size_t const count = min(dst.num_bytes, 100UL);
 
-			memcpy(buf, record->linked_name(), (size_t)count);
+			memcpy(dst.start, record->linked_name(), count);
 
 			out_count = count;
 
@@ -288,7 +284,7 @@ class Vfs::Tar_file_system : public File_system
 	};
 
 
-	typedef Genode::Token<Scanner_policy_path_element> Path_element_token;
+	using Path_element_token = Genode::Token<Scanner_policy_path_element>;
 
 
 	struct Node : List<Node>, List<Node>::Element
@@ -484,19 +480,16 @@ class Vfs::Tar_file_system : public File_system
 
 	struct Num_dirent_cache
 	{
-		Mutex            mutex { };
-		Node            &root_node;
-		bool             valid;              /* true after first lookup */
-		char             key[256];           /* key used for lookup */
-		file_size        cached_num_dirent;  /* cached value */
+		Node     &root_node;
+		bool      valid;              /* true after first lookup */
+		char      key[256];           /* key used for lookup */
+		file_size cached_num_dirent;  /* cached value */
 
 		Num_dirent_cache(Node &root_node)
 		: root_node(root_node), valid(false), cached_num_dirent(0) { }
 
 		file_size num_dirent(char const *path)
 		{
-			Mutex::Guard guard(mutex);
-
 			/* check for cache miss */
 			if (!valid || strcmp(path, key) != 0) {
 				Node *node = root_node.lookup(path);
@@ -570,19 +563,30 @@ class Vfs::Tar_file_system : public File_system
 				return Dataspace_capability();
 			}
 
-			try {
-				Ram_dataspace_capability ds_cap =
-					_env.ram().alloc((size_t)record->size());
+			size_t const len = size_t(record->size());
 
-				void *local_addr = _env.rm().attach(ds_cap);
-				memcpy(local_addr, record->data(), (size_t)record->size());
-				_env.rm().detach(local_addr);
+			using Region_map = Genode::Region_map;
 
-				return ds_cap;
-			}
-			catch (...) { Genode::warning(__func__, " could not create new dataspace"); }
-
-			return Dataspace_capability();
+			return _env.ram().try_alloc(len).convert<Dataspace_capability>(
+				[&] (Ram_dataspace_capability ds_cap) {
+					return _env.rm().attach(ds_cap, {
+						.size = { },  .offset     = { },  .use_at    = { },
+						.at   = { },  .executable = { },  .writeable = true
+					}).convert<Dataspace_capability>(
+						[&] (Region_map::Range const range) {
+							memcpy((void *)range.start, record->data(), len);
+							_env.rm().detach(range.start);
+							return ds_cap;
+						},
+						[&] (Region_map::Attach_error) {
+							_env.ram().free(ds_cap);
+							return Dataspace_capability();
+						}
+					);
+				},
+				[&] (Genode::Ram_allocator::Alloc_error) {
+					return Dataspace_capability(); }
+			);
 		}
 
 		void release(char const *, Dataspace_capability ds_cap) override
@@ -754,23 +758,19 @@ class Vfs::Tar_file_system : public File_system
 		 ** File I/O service interface **
 		 ********************************/
 
-		Write_result write(Vfs_handle *, char const *, file_size,
-		                   file_size &) override
+		Write_result write(Vfs_handle *, Const_byte_range_ptr const &, size_t &) override
 		{
 			return WRITE_ERR_INVALID;
 		}
 
-		Read_result complete_read(Vfs_handle *vfs_handle, char *dst,
-		                          file_size count, file_size &out_count) override
+		Read_result complete_read(Vfs_handle *vfs_handle, Byte_range_ptr const &dst,
+		                          size_t &out_count) override
 		{
 			out_count = 0;
 
-			Tar_vfs_handle *handle = static_cast<Tar_vfs_handle *>(vfs_handle);
+			Tar_vfs_handle &handle = *static_cast<Tar_vfs_handle *>(vfs_handle);
 
-			if (!handle)
-				return READ_ERR_INVALID;
-
-			return handle->read(dst, count, out_count);
+			return handle.read(dst, out_count);
 		}
 
 		Ftruncate_result ftruncate(Vfs_handle *, file_size) override
@@ -778,7 +778,8 @@ class Vfs::Tar_file_system : public File_system
 			return FTRUNCATE_ERR_NO_PERM;
 		}
 
-		bool read_ready(Vfs_handle *) override { return true; }
+		bool read_ready (Vfs_handle const &) const override { return true; }
+		bool write_ready(Vfs_handle const &) const override { return false; }
 };
 
 #endif /* _INCLUDE__VFS__TAR_FILE_SYSTEM_H_ */

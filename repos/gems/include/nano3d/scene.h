@@ -48,7 +48,7 @@ class Nano3d::Scene
 
 		class Unsupported_color_depth { };
 
-		typedef Genode::Pixel_alpha8 Pixel_alpha8;
+		using Pixel_alpha8 = Genode::Pixel_alpha8;
 
 		virtual void render(Genode::Surface<PT>           &pixel_surface,
 		                    Genode::Surface<Pixel_alpha8> &alpha_surface) = 0;
@@ -87,11 +87,11 @@ class Nano3d::Scene
 				 * front buffer, and the back buffer.
 				 */
 				bool     const use_alpha = true;
-				unsigned const height    = size.h()*NUM_BUFFERS;
-				gui.buffer(Framebuffer::Mode { .area = { size.w(), height } },
+				unsigned const height    = size.h*NUM_BUFFERS;
+				gui.buffer(Framebuffer::Mode { .area = { size.w, height } },
 				                 use_alpha);
 
-				return *gui.framebuffer();
+				return gui.framebuffer;
 			}
 
 			Framebuffer::Session &framebuffer;
@@ -103,7 +103,7 @@ class Nano3d::Scene
 			 */
 			Gui::Area size() const
 			{
-				return Gui::Area(mode.area.w(), mode.area.h()/NUM_BUFFERS);
+				return Gui::Area(mode.area.w, mode.area.h/NUM_BUFFERS);
 			}
 
 			Genode::Attached_dataspace ds { rm, framebuffer.dataspace() };
@@ -144,10 +144,10 @@ class Nano3d::Scene
 
 		} _framebuffer { _gui, _size, _env.rm() };
 
-		Gui::Session::View_handle _view_handle = _gui.create_view();
+		Gui::Top_level_view _view { _gui, { _pos, _size } };
 
-		typedef Genode::Surface<PT>                   Pixel_surface;
-		typedef Genode::Surface<Genode::Pixel_alpha8> Alpha_surface;
+		using Pixel_surface = Genode::Surface<PT>;
+		using Alpha_surface = Genode::Surface<Genode::Pixel_alpha8>;
 
 		struct Surface
 		{
@@ -192,7 +192,7 @@ class Nano3d::Scene
 
 		Timer::Connection _timer { _env };
 
-		Genode::Attached_dataspace _input_ds { _env.rm(), _gui.input()->dataspace() };
+		Genode::Attached_dataspace _input_ds { _env.rm(), _gui.input.dataspace() };
 
 		Input_handler *_input_handler_callback = nullptr;
 
@@ -201,7 +201,7 @@ class Nano3d::Scene
 			if (!_input_handler_callback)
 				return;
 
-			while (int num = _gui.input()->flush()) {
+			while (int num = _gui.input.flush()) {
 
 				auto const *ev_buf = _input_ds.local_addr<Input::Event>();
 
@@ -254,14 +254,14 @@ class Nano3d::Scene
 			_swap_visible_and_front_surfaces();
 			_swap_back_and_front_surfaces();
 
-			int const h = _framebuffer.size().h();
+			int const h = _framebuffer.size().h;
 
 			int const buf_y = (_surface_visible == &_surface_0) ? 0
 			                : (_surface_visible == &_surface_1) ? -h
 			                : -2*h;
 
 			Gui::Point const offset(0, buf_y);
-			_gui.enqueue<Command::Offset>(_view_handle, offset);
+			_gui.enqueue<Command::Offset>(_view.id(), offset);
 			_gui.execute();
 
 			_do_sync = false;
@@ -270,7 +270,7 @@ class Nano3d::Scene
 		Genode::Signal_handler<Scene> _sync_handler {
 			_env.ep(), *this, &Scene::_handle_sync };
 
-		typedef Gui::Session::Command Command;
+		using Command = Gui::Session::Command;
 
 	public:
 
@@ -279,14 +279,7 @@ class Nano3d::Scene
 		:
 			_env(env), _pos(pos), _size(size)
 		{
-			typedef Gui::Session::View_handle View_handle;
-
-			Gui::Rect rect(_pos, _size);
-			_gui.enqueue<Command::Geometry>(_view_handle, rect);
-			_gui.enqueue<Command::To_front>(_view_handle, View_handle());
-			_gui.execute();
-
-			_gui.input()->sigh(_input_handler);
+			_gui.input.sigh(_input_handler);
 
 			_timer.sigh(_periodic_handler);
 			_timer.trigger_periodic(1000*update_rate_ms);

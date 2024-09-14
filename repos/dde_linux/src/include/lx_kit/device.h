@@ -23,6 +23,7 @@
 #include <util/list.h>
 #include <util/xml_node.h>
 
+
 namespace Lx_kit {
 	using namespace Genode;
 
@@ -43,14 +44,14 @@ class Lx_kit::Device : List<Device>::Element
 
 		struct Io_mem : List<Io_mem>::Element
 		{
-			using Index = Platform::Device::Mmio::Index;
+			using Index = Platform::Device::Mmio<0>::Index;
 
 			Index    idx;
 			addr_t   addr;
 			size_t   size;
 			unsigned pci_bar;
 
-			Constructible<Platform::Device::Mmio> io_mem {};
+			Constructible<Platform::Device::Mmio<0> > io_mem {};
 
 			bool match(addr_t addr, size_t size);
 
@@ -62,18 +63,21 @@ class Lx_kit::Device : List<Device>::Element
 		{
 			using Index = Platform::Device::Irq::Index;
 
+			enum State { IDLE, PENDING, MASKED, MASKED_PENDING };
+
 			Index                  idx;
 			unsigned               number;
 			Io_signal_handler<Irq> handler;
-			bool                   masked  { true  };
-			bool                   occured { false };
+			State                  state { MASKED };
 
 			Constructible<Platform::Device::Irq> session {};
 
 			Irq(Entrypoint & ep, unsigned idx, unsigned number);
 
 			void _handle();
-			void handle();
+			void mask();
+			void unmask(Platform::Device &);
+			void ack();
 		};
 
 		struct Io_port : List<Io_port>::Element
@@ -167,6 +171,7 @@ class Lx_kit::Device : List<Device>::Element
 		bool   irq_unmask(unsigned irq);
 		void   irq_mask(unsigned irq);
 		void   irq_ack(unsigned irq);
+		int    pending_irq();
 
 		bool   read_config(unsigned reg, unsigned len, unsigned *val);
 		bool   write_config(unsigned reg, unsigned len, unsigned  val);

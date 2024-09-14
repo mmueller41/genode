@@ -23,7 +23,7 @@
 /* base-internal includes */
 #include <base/internal/capability_space.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 unsigned Irq_session_component::_find_irq_number(const char * const args)
@@ -58,6 +58,7 @@ Irq_session_component::~Irq_session_component()
 	using namespace Kernel;
 
 	_irq_alloc.free((void *)(addr_t)_irq_number);
+	if (_is_msi) Platform::free_msi_vector(_address, _value);
 }
 
 
@@ -68,14 +69,11 @@ Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
 	_irq_number((unsigned)Platform::irq(_irq_args.irq_number())),
 	_irq_alloc(irq_alloc), _kobj(), _is_msi(false), _address(0), _value(0)
 {
-	long const mmconf =
-		Arg_string::find_arg(args, "device_config_phys").long_value(0);
-
-	if (mmconf) {
-		_is_msi =
-			Platform::get_msi_params(mmconf, _address, _value, _irq_number);
+	if (_irq_args.type() != Irq_session::TYPE_LEGACY) {
+		_is_msi = Platform::alloc_msi_vector(_address, _value);
 		if (!_is_msi)
 			throw Service_denied();
+		_irq_number = (unsigned) _value;
 	}
 
 	/* allocate interrupt */

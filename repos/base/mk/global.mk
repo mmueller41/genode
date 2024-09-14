@@ -124,6 +124,12 @@ endif
 CC_OPT += -fprofile-arcs -ftest-coverage -fprofile-dir=$(PROFILE_DIR)
 endif
 
+ifneq ($(findstring /depot/,$(CURDIR)),)
+DEBUG_PREFIX = $(shell echo $(CURDIR) | \
+                       sed -e 's|/depot/.*$$|/depot/|')
+CC_OPT += -fdebug-prefix-map=$(DEBUG_PREFIX)=/depot/
+endif
+
 #
 # Enable the undefined behavior sanitizer if requested
 #
@@ -195,7 +201,7 @@ CC_ADA_OPT += $(filter-out -fno-builtin-cos -fno-builtin-sin \
 # We substitute '.' characters by '_' to allow a source-file-specific
 # C++ standard option for files with more than one dot in their name.
 #
-CC_CXX_OPT_STD ?= -std=gnu++17
+CC_CXX_OPT_STD ?= -std=gnu++20
 CC_CXX_OPT += $(lastword $(CC_CXX_OPT_STD) $(CC_CXX_OPT_STD_$(subst .,_,$*)))
 
 #
@@ -211,8 +217,9 @@ CC_CXX_OPT += $(lastword $(CC_CXX_OPT_STD) $(CC_CXX_OPT_STD_$(subst .,_,$*)))
 #
 LD_OPT_GC_SECTIONS ?= -gc-sections
 LD_OPT_ALIGN_SANE   = -z max-page-size=0x1000
+LD_OPT_NX_STACK     = -z noexecstack
 LD_OPT_PREFIX      := -Wl,
-LD_OPT             += $(LD_MARCH) $(LD_OPT_GC_SECTIONS) $(LD_OPT_ALIGN_SANE)
+LD_OPT             += $(LD_MARCH) $(LD_OPT_GC_SECTIONS) $(LD_OPT_ALIGN_SANE) $(LD_OPT_NX_STACK)
 CXX_LINK_OPT       += $(addprefix $(LD_OPT_PREFIX),$(LD_OPT))
 CXX_LINK_OPT       += $(LD_OPT_NOSTDLIB)
 
@@ -238,14 +245,9 @@ LD_SCRIPT_SO ?= $(BASE_DIR)/src/ld/genode_rel.ld
 AS_OPT += $(AS_MARCH)
 
 #
-# Control sequences for color terminals
+# Default tar options
 #
-# To disable colored output, define these variable empty in your
-# build-local 'etc/tools.conf' file.
-#
-BRIGHT_COL  ?= \033[01;33m
-DARK_COL    ?= \033[00;33m
-DEFAULT_COL ?= \033[0m
+TAR_OPT ?= --owner=1 --group=1 --mtime=@0
 
 ALL_INC_DIR := .
 ALL_INC_DIR += $(INC_DIR)
@@ -267,6 +269,4 @@ MSG_CONFIG   ?= @$(ECHO) "    CONFIG   "
 MSG_CLEAN    ?= @$(ECHO) "  CLEAN "
 MSG_ASSEM    ?= @$(ECHO) "    ASSEMBLE "
 MSG_INST     ?= @$(ECHO) "    INSTALL  "
-MSG_PRG      ?= @$(ECHO) "$(BRIGHT_COL)  Program $(DEFAULT_COL)"
-MSG_LIB      ?= @$(ECHO) "$(DARK_COL)  Library $(DEFAULT_COL)"
 

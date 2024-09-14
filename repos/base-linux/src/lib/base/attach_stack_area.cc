@@ -16,14 +16,22 @@
  */
 
 /* base-internal includes */
-#include <base/internal/platform_env.h>
+#include <base/internal/platform.h>
 
 using namespace Genode;
 
 
-void Platform_env::_attach_stack_area()
+void Platform::_attach_stack_area()
 {
-	_local_pd_session._address_space.attach_at(_local_pd_session._stack_area.dataspace(),
-	                                           stack_area_virtual_base(),
-	                                           stack_area_virtual_size());
+	pd._address_space.attach(pd._stack_area.dataspace(), Region_map::Attr {
+		.size       = stack_area_virtual_size(),
+		.offset     = { },
+		.use_at     = true,
+		.at         = stack_area_virtual_base(),
+		.executable = { },
+		.writeable  = true
+	});
+
+	env_stack_area_region_map    = &pd._stack_area;
+	env_stack_area_ram_allocator = &pd;
 }

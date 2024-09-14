@@ -64,7 +64,7 @@ The assignment of NIC clients to domains is controlled through the 'domain'
 attribute in the '<nic-client>' tag:
 
 ! <nic-client                    domain="home_net" />
-! <nic-client label="mobile_drv" domain="travel_net" />
+! <nic-client label="mobile"     domain="travel_net" />
 ! <nic-client label="nic_bridge" domain="home_net" />
 
 The assignment of NIC and Uplink servers is controlled through the tags
@@ -73,8 +73,8 @@ The assignment of NIC and Uplink servers is controlled through the tags
 ! <default-policy                domain="default" />
 ! <policy label_prefix="vbox_"   domain="servers" />
 ! <policy label_suffix="_server" domain="servers" />
-! <policy label="nic_drv -> "    domain="home_net" />
-! <policy label="wifi_drv -> "   domain="public" />
+! <policy label="nic -> "        domain="home_net" />
+! <policy label="wifi -> "       domain="public" />
 
 Each of these tags applies to all NIC and Uplink servers whose session label
 matches. A domain can be assigned any number of interfaces and interfaces of
@@ -837,14 +837,14 @@ this can lead to starvation of the other interfaces. Thus, the maximum number
 of packets handled per signal is limited by default. This limit can be
 configured as follows (default value shown):
 
-! <config max_packets_per_signal="150">
+! <config max_packets_per_signal="50">
 
 When set to zero, the limit is deactivated, meaning that the router always
 handles all available packets of an interface.
 
 
-Disable requesting address resolutions via ARP
-----------------------------------------------
+Configuring ARP
+---------------
 
 By default, the NIC router requests required IP-to-MAC address resolutions at a
 domain using ARP. However this may be a problem in certain environments, e.g.,
@@ -862,6 +862,16 @@ MAC-address of the packet (instead of requesting the destination MAC-address
 via ARP). This behavior was observed in common Linux-based systems at network
 interfaces with the 'NOARP' flag set.
 
+If ARP is enabled, however, one can configure the request timeout through the
+following attribute (default value shown):
+
+! <config arp_request_timeout_sec="10">
+
+When the router does not receive a reply for a sent ARP request within this
+timeout, the packets that were waiting for the reply and the ARP request state
+are dropped in order to re-use the resources. Note that this is also the
+rate-limit for the router sending ARP requests for one IP address at one
+domain.
 
 Behavior regarding the NIC-session link state
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -941,7 +951,7 @@ following configuration:
 
 ! <policy label_prefix="virtnet_a" domain="virtnet_a" />
 ! <policy label_prefix="virtnet_b" domain="virtnet_b" />
-! <policy label_prefic="nic_drv"   domain="home_lan"  />
+! <policy label_prefic="nic"       domain="home_lan"  />
 !
 ! <domain name="home_lan" interface="10.0.2.55/24" gateway="10.0.2.1">
 !    <ip dst="192.168.1.0/24" domain="virtnet_a"/>
@@ -981,7 +991,7 @@ internet. The router would have the following configuration:
 
 ! <policy label_prefix="virtnet_a" domain="virtnet_a" />
 ! <policy label_prefix="virtnet_b" domain="virtnet_b" />
-! <policy label_prefic="nic_drv"   domain="home_lan"  />
+! <policy label_prefic="nic"       domain="home_lan"  />
 !
 ! <domain name="home_lan" interface="10.0.2.55/24" gateway="10.0.2.1">
 !    <nat domain="virtnet_a" tcp_ports="1000" udp_ports="1000">

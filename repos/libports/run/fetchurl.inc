@@ -4,7 +4,7 @@
 # \date   2016-06-05
 #
 
-if {[have_board rpi3] || [have_board imx53_qsb_tz]} {
+if {[have_board rpi3] || [have_board imx53_qsb_tz] || [have_board rpi]} {
 	puts "Run script does not support this platform."
 	exit 0
 }
@@ -53,6 +53,8 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/report_rom \
                   [depot_user]/src/vfs \
                   [depot_user]/src/vfs_[ip_stack] \
+                  [depot_user]/src/vfs_jitterentropy \
+                  [depot_user]/src/vfs_pipe \
                   [depot_user]/src/zlib
 
 install_config {
@@ -78,7 +80,7 @@ install_config {
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
-	<start name="drivers" caps="1000" managing_system="yes">
+	<start name="drivers" caps="1200" managing_system="yes">
 		<resource name="RAM" quantum="32M"/>
 		<binary name="init"/>
 		<route>
@@ -135,12 +137,13 @@ install_config {
 			<vfs>
 				<dir name="dev">
 					<log/> <null/> <inline name="rtc">2000-01-01 00:00</inline>
-					<inline name="random">01234567890123456789</inline>
+					<inline name="random">0123456789012345678901234567890123456789</inline>
 				</dir>
+				<dir name="pipe"> <pipe/> </dir>
 				<dir name="socket"> } [socket_fs_plugin] { </dir>
 			</vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"
-			      rng="/dev/random" socket="/socket"/>
+			      rng="/dev/random" socket="/socket" pipe="/pipe"/>
 			<fetch url="https://genode.org/about/LICENSE" path="/dev/log" retry="3"/>
 		</config>
 	</start>
@@ -148,7 +151,7 @@ install_config {
 }
 
 #build            { }
-build_boot_image { }
+build_boot_image [build_artifacts]
 
 append qemu_args " -nographic "
 append_qemu_nic_args

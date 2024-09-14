@@ -222,14 +222,9 @@ proc content_rom_modules { } {
 
 foreach rom [content_rom_modules] {
 
-	# raw-archive content is installed directly into [run_dir]/genode
-	if {![rom_module_from_raw_archive $rom]} {
-		lappend boot_modules $rom
-	}
-
 	# handle vfs plugin shared-object targets
-	if {[regexp "^vfs_(.+).lib.so$" $rom dummy plugin]} {
-		lappend build_targets lib/vfs_$plugin
+	if {[regexp "^(.+).lib.so$" $rom dummy plugin]} {
+		lappend build_targets lib/$plugin
 		continue
 	}
 
@@ -243,7 +238,7 @@ foreach rom [content_rom_modules] {
 # Build
 #
 
-lappend build_targets core init timer
+lappend build_targets core init timer lib/ld
 
 # strip duplications
 set sorted_build_targets [lsort -unique $build_targets]
@@ -305,9 +300,7 @@ install_config {
 	</config>
 }
 
-lappend boot_modules core ld.lib.so init timer
-
-build_boot_image [lsort -unique $boot_modules]
+build_boot_image [build_artifacts]
 
 
 ##
@@ -317,15 +310,9 @@ proc query_failure_timeout { } {
 
 	global runtime_file
 
-	set meaning ""
-	catch {
-		set meaning [query_attr /runtime/events/timeout meaning $runtime_file]
-		set sec     [query_attr /runtime/events/timeout sec     $runtime_file]
-	}
-	if {$meaning == "failed"} {
-		return $sec }
-
-	return 0
+	set sec 0
+	catch { set sec [query_attr /runtime/fail after_seconds $runtime_file] }
+	return $sec
 }
 
 set failure_timeout [expr [query_failure_timeout] + 10]
@@ -340,7 +327,7 @@ proc query_expected_log_pattern { } {
 
 	set log ""
 	catch {
-		set log [query_node "/runtime/events/log\[@meaning='succeeded'\]/child::text()" $runtime_file]
+		set log [query_node "/runtime/succeed/child::text()" $runtime_file]
 	} { return "" }
 
 	# strip leading and trailing whitespace

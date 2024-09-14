@@ -13,18 +13,18 @@
  */
 
 
-/* base Core includes */
+/* core includes */
 #include <boot_modules.h>
 #include <core_log.h>
 
-/* base-hw Core includes */
+/* base-hw core includes */
 #include <map_local.h>
 #include <platform.h>
 #include <platform_pd.h>
 #include <kernel/main.h>
 
 /* base-hw internal includes */
-#include <hw/page_flags.h>
+#include <cpu/page_flags.h>
 #include <hw/util.h>
 #include <hw/memory_region.h>
 
@@ -34,10 +34,9 @@
 #include <base/internal/unmanaged_singleton.h>
 
 /* base includes */
-#include <base/log.h>
 #include <trace/source_registry.h>
 
-using namespace Genode;
+using namespace Core;
 
 
 /**************
@@ -155,15 +154,15 @@ void Platform::_init_platform_info()
 		return;
 	}
 
-	Genode::Xml_generator xml(reinterpret_cast<char *>(virt_addr),
-	                          rom_size, rom_name, [&] ()
+	Xml_generator xml(reinterpret_cast<char *>(virt_addr), rom_size, rom_name, [&]
 	{
-		xml.node("kernel", [&] () {
+		xml.node("kernel", [&] {
 			xml.attribute("name", "hw");
 			xml.attribute("acpi", true);
+			xml.attribute("msi",  true);
 		});
 		_init_additional_platform_info(xml);
-		xml.node("affinity-space", [&] () {
+		xml.node("affinity-space", [&] {
 			xml.attribute("width", affinity_space().width());
 			xml.attribute("height", affinity_space().height());
 		});
@@ -174,8 +173,7 @@ void Platform::_init_platform_info()
 		return;
 	}
 
-	_rom_fs.insert(
-		new (core_mem_alloc()) Rom_module(phys_addr, rom_size, rom_name));
+	new (core_mem_alloc()) Rom_module(_rom_fs, rom_name, phys_addr, rom_size);
 
 	/* keep phys allocation but let guard revert virt allocation */
 	guard.phys_ptr = nullptr;
@@ -238,8 +236,8 @@ Platform::Platform()
 						map_local(phys_addr, (addr_t)ptr, pages);
 						memset(ptr, 0, log_size);
 
-						_rom_fs.insert(new (core_mem_alloc())
-						               Rom_module(phys_addr, log_size, "core_log"));
+						new (core_mem_alloc())
+							Rom_module(_rom_fs, "core_log", phys_addr, log_size);
 
 						init_core_log(Core_log_range { (addr_t)ptr, log_size } );
 					},
@@ -291,8 +289,6 @@ Platform::Platform()
 			Idle_thread_trace_source(
 				Trace::sources(), Affinity::Location(cpu_idx, 0));
 	}
-
-	log(_rom_fs);
 }
 
 

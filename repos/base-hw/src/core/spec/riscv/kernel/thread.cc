@@ -19,13 +19,19 @@
 using namespace Kernel;
 
 
-void Thread::Tlb_invalidation::execute() {}
+void Thread::Tlb_invalidation::execute(Cpu &) { }
+
+
+void Thread::Flush_and_stop_cpu::execute(Cpu &) { }
+
+
+void Cpu::Halt_job::proceed(Kernel::Cpu &) { }
 
 
 void Thread::exception(Cpu & cpu)
 {
-	using Context = Genode::Cpu::Context;
-	using Stval = Genode::Cpu::Stval;
+	using Context = Core::Cpu::Context;
+	using Stval   = Core::Cpu::Stval;
 
 	if (regs->is_irq()) {
 		/* cpu-local timer interrupt */
@@ -83,10 +89,13 @@ void Thread::exception(Cpu & cpu)
 	default:
 		Genode::raw(*this, ": unhandled exception ", regs->cpu_exception,
 		            " at ip=", (void*)regs->ip,
-		            " addr=", Genode::Hex(Genode::Cpu::Stval::read()));
+		            " addr=", Genode::Hex(Core::Cpu::Stval::read()));
 		_die();
 	}
 }
+
+
+void Thread::_call_suspend() { }
 
 
 void Thread::_call_cache_coherent_region() { }
@@ -96,6 +105,12 @@ void Kernel::Thread::_call_cache_clean_invalidate_data_region() { }
 
 
 void Kernel::Thread::_call_cache_invalidate_data_region() { }
+
+
+void Kernel::Thread::_call_cache_line_size()
+{
+	user_arg_0(0);
+}
 
 
 void Kernel::Thread::proceed(Cpu & cpu)

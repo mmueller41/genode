@@ -1,27 +1,24 @@
+assert_spec x86
+
 if {[have_board linux]} {
-        puts "Run script does not support Linux."
-        exit 0
+	puts "Run script does not support Linux."
+	exit 0
 }
 
 if {[have_include "power_on/qemu"]} {
-        puts "Run script does not support Qemu"
-        exit 0
+	puts "Run script does not support Qemu"
+	exit 0
 }
 
-set build_components {
-	core init timer
-	drivers/audio
-	lib/vfs_oss test/oss
+build {
+	core init timer lib/ld lib/libc lib/vfs lib/posix lib/vfs_legacy_oss
+	driver/acpi driver/audio driver/platform app/pci_decode
+	server/report_rom test/oss
 }
-
-source ${genode_dir}/repos/base/run/platform_drv.inc
-append_platform_drv_build_components
-
-build $build_components
 
 create_boot_directory
 
-append config {
+install_config {
 <config>
 	<parent-provides>
 		<service name="ROM"/>
@@ -37,17 +34,55 @@ append config {
 		<any-service> <parent/> <any-child/> </any-service>
 	</default-route>
 	<default caps="200"/>
+
 	<start name="timer">
 		<resource name="RAM" quantum="1M"/>
 		<provides> <service name="Timer"/> </provides>
 	</start>
-}
 
-append_platform_drv_config
+	<start name="report_rom">
+		<resource name="RAM" quantum="2M"/>
+		<provides> <service name="Report"/> <service name="ROM"/> </provides>
+		<config>
+			<policy label="pci_decode -> system" report="acpi -> acpi"/>
+			<policy label="platform -> devices"  report="pci_decode -> devices"/>
+		</config>
+	</start>
 
-append config {
-	<start name="audio_drv">
-		<binary name="} [audio_drv_binary] {"/>
+	<start name="acpi" caps="350">
+		<resource name="RAM" quantum="4M"/>
+		<route>
+			<service name="Report"> <child name="report_rom"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<start name="pci_decode" caps="350">
+		<resource name="RAM" quantum="2M"/>
+		<route>
+			<service name="Report">             <child name="report_rom"/> </service>
+			<service name="ROM" label="system"> <child name="report_rom"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+
+	<start name="platform" caps="100" managing_system="yes">
+		<resource name="RAM" quantum="1M"/>
+		<provides>
+			<service name="Platform"/>
+		</provides>
+		<route>
+			<service name="ROM" label="devices"> <child name="report_rom"/> </service>
+			<service name="Timer">   <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+		<config>
+			<policy label="audio -> "> <pci class="AUDIO"/> <pci class="HDAUDIO"/> </policy>
+		</config>
+	</start>
+
+	<start name="audio">
+		<binary name="pci_audio"/>
 		<resource name="RAM" quantum="8M"/>
 		<provides>
 			<service name="Audio_out"/>
@@ -61,38 +96,27 @@ append config {
 			<mixer field="record.enable" value="on"/>
 		</config>
 	</start>
+
 	<start name="test-oss">
 		<resource name="RAM" quantum="10M"/>
 		<config>
 			<vfs>
 				<dir name="dev">
 					<log/>
-					<oss name="dsp"/>
+					<legacy_oss name="dsp"/>
 				</dir>
 			</vfs>
 			<libc stdout="/dev/log" stderr="/dev/log"/>
 		</config>
 		<route>
-			<service name="Audio_in"> <child name="audio_drv"/> </service>
-			<service name="Audio_out"> <child name="audio_drv"/> </service>
+			<service name="Audio_in"> <child name="audio"/> </service>
+			<service name="Audio_out"> <child name="audio"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 	</start>
 </config>
 }
 
-install_config $config
-
-set boot_modules {
-	core init timer test-oss
-	ld.lib.so libc.lib.so vfs.lib.so libm.lib.so
-	posix.lib.so vfs_oss.lib.so
-}
-
-append boot_modules [audio_drv_binary]
-
-append_platform_drv_boot_modules
-
-build_boot_image $boot_modules
+build_boot_image [build_artifacts]
 
 run_genode_until forever

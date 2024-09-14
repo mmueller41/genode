@@ -21,26 +21,29 @@ lappend depot_archives [depot_user]/src/nitpicker
 lappend depot_archives [depot_user]/src/report_rom
 lappend depot_archives [depot_user]/src/vfs_import
 lappend depot_archives [depot_user]/src/vfs_pipe
-lappend depot_archives [depot_user]/src/vfs_oss
+lappend depot_archives [depot_user]/src/vfs_legacy_oss
 lappend depot_archives [depot_user]/src/mesa
 lappend depot_archives [depot_user]/src/expat
 lappend depot_archives [depot_user]/src/libdrm
 lappend depot_archives [depot_user]/src/libyuv
 lappend depot_archives [depot_user]/src/vfs_gpu
 
-lappend_if [expr $use_net] depot_archives [depot_user]/src/ipxe_nic_drv
+lappend_if [expr $use_net] depot_archives [depot_user]/src/pc_nic
 lappend_if [expr $use_net] depot_archives [depot_user]/src/nic_router
 
 import_from_depot $depot_archives
 
 
-set build_components { virtualbox6 }
+set build_components {
+	lib/libc lib/vfs lib/libiconv lib/stdcxx
+	lib/qemu-usb lib/virtualbox6-shaderlib
+	driver/audio
+	virtualbox6
+}
 
 lappend_if [expr $use_top]    build_components app/top
 lappend_if [expr $use_serial] build_components server/log_terminal
-lappend_if [have_spec x86]    build_components drivers/rtc
-
-lappend  build_components drivers/audio
+lappend_if [have_spec x86]    build_components driver/rtc
 
 build $build_components
 
@@ -71,11 +74,14 @@ append config {
 		<provides> <service name="Timer"/> </provides>
 	</start>}
 
-
 append_if [expr $use_top] config {
 	<start name="top" priority="0">
 		<resource name="RAM" quantum="2M"/>
 		<config period_ms="15000"/>
+		<route>
+			<service name="TRACE"> <parent label=""/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
 	</start>}
 
 append config {
@@ -91,7 +97,7 @@ append config {
 		</route>
 	</start>
 
-	<start name="rtc_drv" priority="-1">
+	<start name="pc_rtc" priority="-1">
 		<resource name="RAM" quantum="1M"/>
 		<provides>
 			<service name="Rtc"/>
@@ -106,8 +112,8 @@ append_if [expr $use_net] config {
 			<service name="Uplink"/>
 		</provides>
 		<config verbose_domain_state="yes">
-			<policy label_prefix="vbox"    domain="downlink"/>
-			<policy label_prefix="nic_drv" domain="uplink"/>
+			<policy label_prefix="vbox" domain="downlink"/>
+			<policy label_prefix="nic"  domain="uplink"/>
 
 			<domain name="uplink">
 				<nat domain="downlink"
@@ -128,8 +134,8 @@ append_if [expr $use_net] config {
 		</config>
 	</start>
 
-	<start name="nic_drv" priority="-1">
-		<binary name="ipxe_nic_drv"/>
+	<start name="nic" priority="-1">
+		<binary name="pc_nic"/>
 		<resource name="RAM" quantum="8M"/>
 		<route>
 			<service name="Platform"> <child name="drivers"/> </service>
@@ -272,9 +278,9 @@ install_config $config
 copy_file [genode_dir]/repos/ports/run/virtualbox6.vbox bin/
 
 #
-# Instruct vesa_drv to use maximum resolution
+# Define VESA driver resolution
 #
-set fd [open bin/fb_drv.config w]
+set fd [open bin/fb.config w]
 puts $fd {<config buffered="yes" width="1280" height="1024"/>}
 close $fd
 
@@ -285,25 +291,15 @@ set fd [open [run_dir]/genode/focus w]
 puts $fd "<focus label=\"wm -> focus\"/>"
 close $fd
 
-set boot_modules {
-	rtc_drv
-	virtualbox6 libc.lib.so vfs.lib.so libm.lib.so libiconv.lib.so stdcxx.lib.so
-	qemu-usb.lib.so virtualbox6-shaderlib.lib.so
-	fb_drv.config test.iso virtualbox6.vbox
-}
+set boot_modules [build_artifacts]
+append boot_modules { test.iso virtualbox6.vbox }
 
-# platform-specific modules
-lappend_if [expr $use_top] boot_modules top
-
-append_if [expr $use_net]     boot_modules { ipxe_nic_drv }
-append_if [expr $use_net]     boot_modules { nic_router }
-append_if [expr $use_serial]  boot_modules { log_terminal }
 append_if [expr $use_overlay] boot_modules { overlay.vdi }
 
-lappend boot_modules pci_audio_drv
+lappend boot_modules pci_audio
 
 build_boot_image $boot_modules
 
-append qemu_args " -m 3500 -cpu phenom "
+append qemu_args " -m 3500 -cpu EPYC "
 
 run_genode_until forever

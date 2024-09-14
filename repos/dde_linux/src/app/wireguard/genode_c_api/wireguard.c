@@ -489,8 +489,6 @@ void lx_user_init(void)
 
 	genode_wg_arch_lx_user_init();
 
-	skb_init();
-
 	/* trigger execution of 'wg_setup' */
 	_genode_wg_rtnl_link_ops->setup(genode_wg_net_device());
 
@@ -503,6 +501,7 @@ void lx_user_init(void)
 		&_genode_wg_extack);
 
 	/* create user task, which handles network traffic and configuration changes */
-	pid = kernel_thread(user_task_function, NULL, CLONE_FS | CLONE_FILES);
+	pid = kernel_thread(user_task_function, NULL, "user_task",
+	                    CLONE_FS | CLONE_FILES);
 	_user_task_struct_ptr = find_task_by_pid_ns(pid, NULL);
 }

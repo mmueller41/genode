@@ -31,17 +31,19 @@
 #include <kernel/core_interface.h>
 #include <kernel/thread.h>
 
-namespace Genode {
+namespace Core {
 
 	class Pager_object;
-	class Thread_state;
 	class Rm_client;
 	class Platform_thread;
 	class Platform_pd;
 }
 
 
-class Genode::Platform_thread : Noncopyable
+namespace Genode { class Thread_state; }
+
+
+class Core::Platform_thread : Noncopyable
 {
 	private:
 
@@ -51,10 +53,10 @@ class Genode::Platform_thread : Noncopyable
 		Platform_thread(Platform_thread const &);
 		Platform_thread &operator = (Platform_thread const &);
 
-		typedef String<32> Label;
+		using Label = String<32>;
 
 		Label              const _label;
-		Platform_pd *            _pd;
+		Platform_pd             &_pd;
 		Weak_ptr<Address_space>  _address_space  { };
 		Pager_object *           _pager;
 		Native_utcb *            _utcb_core_addr { }; /* UTCB addr in core */
@@ -89,8 +91,8 @@ class Genode::Platform_thread : Noncopyable
 
 		unsigned _scale_priority(unsigned virt_prio)
 		{
-			return Cpu_session::scale_priority(Kernel::Cpu_priority::max(),
-			                                   virt_prio);
+			static constexpr unsigned p = Kernel::Scheduler::Priority::max();
+			return Cpu_session::scale_priority(p, virt_prio);
 		}
 
 		Platform_pd &_kernel_main_get_core_platform_pd();
@@ -113,7 +115,7 @@ class Genode::Platform_thread : Noncopyable
 		 * \param virt_prio  unscaled processor-scheduling priority
 		 * \param utcb       core local pointer to userland stack
 		 */
-		Platform_thread(size_t const quota, Label const &label,
+		Platform_thread(Platform_pd &, size_t const quota, Label const &label,
 		                unsigned const virt_prio, Affinity::Location,
 		                addr_t const utcb);
 
@@ -123,22 +125,30 @@ class Genode::Platform_thread : Noncopyable
 		~Platform_thread();
 
 		/**
+		 * Return true if thread creation succeeded
+		 */
+		bool valid() const { return true; }
+
+		/**
+		 * Return information about current exception state
+		 *
+		 * This syscall wrapper is located here and not in
+		 * 'core_interface.h' because the 'Thread::Exception_state'
+		 * type is not known there.
+		 */
+		Kernel::Thread::Exception_state exception_state()
+		{
+			Kernel::Thread::Exception_state exception_state;
+			using namespace Kernel;
+			call(call_id_exception_state(), (Call_arg)&*_kobj,
+			                                (Call_arg)&exception_state);
+			return exception_state;
+		}
+
+		/**
 		 * Return information about current fault
 		 */
 		Kernel::Thread_fault fault_info() { return _kobj->fault(); }
-
-		/**
-		 * Join a protection domain
-		 *
-		 * \param pd             platform pd object pointer
-		 * \param main_thread    wether thread is the first in protection domain
-		 * \param address_space  corresponding Genode address space
-		 *
-		 * This function has no effect when called more twice for a
-		 * given thread.
-		 */
-		void join_pd(Platform_pd *const pd, bool const main_thread,
-		             Weak_ptr<Address_space> address_space);
 
 		/**
 		 * Run this thread
@@ -146,7 +156,7 @@ class Genode::Platform_thread : Noncopyable
 		 * \param ip  initial instruction pointer
 		 * \param sp  initial stack pointer
 		 */
-		int start(void * const ip, void * const sp);
+		void start(void *ip, void *sp);
 
 		void restart();
 
@@ -158,12 +168,19 @@ class Genode::Platform_thread : Noncopyable
 		/**
 		 * Enable/disable single stepping
 		 */
-		void single_step(bool) { }
+		void single_step(bool on) { Kernel::single_step(*_kobj, on); }
 
 		/**
 		 * Resume this thread
 		 */
-		void resume() { Kernel::resume_thread(*_kobj); }
+		void resume()
+		{
+			if (exception_state() !=
+			    Kernel::Thread::Exception_state::NO_EXCEPTION)
+				restart();
+
+			Kernel::resume_thread(*_kobj);
+		}
 
 		/**
 		 * Set CPU quota of the thread to 'quota'
@@ -207,7 +224,7 @@ class Genode::Platform_thread : Noncopyable
 		 */
 		Trace::Execution_time execution_time() const
 		{
-			Genode::uint64_t execution_time =
+			uint64_t execution_time =
 				const_cast<Platform_thread *>(this)->_kobj->execution_time();
 			return { execution_time, 0, _quota, _priority }; }
 
@@ -222,7 +239,7 @@ class Genode::Platform_thread : Noncopyable
 
 		Pager_object &pager();
 
-		Platform_pd * pd() const { return _pd; }
+		Platform_pd &pd() const { return _pd; }
 
 		Ram_dataspace_capability utcb() const { return _utcb; }
 };

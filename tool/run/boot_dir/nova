@@ -28,10 +28,12 @@ proc bender_intel_hwp_mode_option { } {
 
 proc binary_name_ld_lib_so { } { return "ld-nova.lib.so" }
 proc binary_name_core_a    { } { return "core-nova.a" }
-proc binary_name_timer     { } { return "nova_timer_drv" }
+proc binary_name_timer     { } { return "nova_timer" }
 
 proc kernel_files { } { return hypervisor }
-proc kernel_output { } { return "novga serial" }
+proc kernel_output { } { return "serial" }
+
+proc boot_output { } { return "serial" }
 
 proc run_boot_string { } {
 	return "\nHypervisor NOVA "
@@ -80,22 +82,16 @@ proc run_boot_dir {binaries} {
 	build_core_image $binaries
 
 	exec mkdir -p [run_dir]/boot
-	exec [cross_dev_prefix]objcopy -O elf32-i386 [run_dir]/genode/hypervisor [run_dir]/boot/hypervisor
-	exec [cross_dev_prefix]strip [run_dir]/boot/hypervisor
+	copy_file [run_dir]/genode/hypervisor [run_dir]/boot/hypervisor
 
 	remove_genode_dir
 
-	exec mv   [run_dir]/image.elf [run_dir]/boot/image.elf
+	exec mv [run_dir]/image.elf [run_dir]/boot/image.elf
 
 	#
-	# Setup bender and plugins
+	# Setup bender options, e.g. serial and applying Intel HWP mode
 	#
-	set options_bender ""
-
-	#
-	# Apply Intel HWP mode
-	#
-	append options_bender " [bender_intel_hwp_mode_option]"
+	set options_bender "[boot_output] [bender_intel_hwp_mode_option]"
 
 	if {[apply_microcode]} {
 		exec cp bin/micro.code [run_dir]/boot/
@@ -106,16 +102,10 @@ proc run_boot_dir {binaries} {
 		#
 		# Compress Genode image, to be uncompressed by GRUB
 		#
-		exec gzip [run_dir]/boot/image.elf
+		exec gzip -n [run_dir]/boot/image.elf
 
 		if {[have_include "image/disk"]} {
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
-			exec cp [genode_dir]/tool/boot/boot.png [run_dir]/boot/boot.png
-			if {[file exists /boot/grub/unicode.pf2]} {
-				# needed in graphical menu with non-scrampled characters
-				# exec cp /boot/grub/unicode.pf2 [run_dir]/boot/grub/unicode.pf2
-			}
+			install_disk_bootloader_to_run_dir
 		}
 
 		if {[have_include "image/iso"]} {
@@ -123,47 +113,14 @@ proc run_boot_dir {binaries} {
 		}
 
 		if {[have_include image/uefi]} {
-			set grub2_path [get_grub2_dir]
-
-			exec mkdir -p [run_dir]/efi/boot
-			exec cp $grub2_path/boot/grub2/grub2_32.efi [run_dir]/efi/boot/bootia32.efi
-			exec cp $grub2_path/boot/grub2/grub2_64.efi [run_dir]/efi/boot/bootx64.efi
-			exec mkdir -p [run_dir]/boot/grub
-			exec cp [genode_dir]/tool/boot/bender [run_dir]/boot/bender
-
-			exec cp [genode_dir]/tool/boot/boot.png [run_dir]/boot/boot.png
-			if {[file exists /boot/grub/unicode.pf2]} {
-				# needed in graphical menu with non-scrampled characters
-				# exec cp /boot/grub/unicode.pf2 [run_dir]/boot/grub/unicode.pf2
-			}
-
+			install_uefi_bootloader_to_run_dir
 			append options_bender " serial_fallback"
 		}
 
 		#
 		# Generate GRUB2 config file
 		#
-		set fh [open "[run_dir]/boot/grub/grub.cfg" "WRONLY CREAT TRUNC"]
-
-		# If timeout != 0 is used and gfxterm, enable and add unicode.pf2 (see above)
-		# puts $fh "loadfont /boot/grub/unicode.pf2"
-		puts $fh "set timeout=0"
-
-		# choose best graphic mode
-		# uncomment line to get vga console working in hypervisor
-		puts $fh "set gfxpayload=auto"
-
-		if {[have_include image/uefi]} {
-			puts $fh "insmod gfxterm"
-			puts $fh "terminal_output gfxterm"
-			puts $fh "insmod gfxterm_background"
-			puts $fh "insmod png"
-			puts $fh "background_image -m center /boot/boot.png"
-		}
-
-		# set this to get text console instead of graphical console
-		# puts $fh "terminal_input console"
-		# puts $fh "terminal_output console"
+		set fh [create_header_grub2_config]
 
 		puts $fh "menuentry 'Genode on NOVA' {"
 		puts $fh " insmod multiboot2"
@@ -172,7 +129,7 @@ proc run_boot_dir {binaries} {
 		if {[apply_microcode]} {
 			puts $fh " module2 /boot/micro.code micro.code"
 		}
-		puts $fh " module2 /boot/hypervisor hypervisor iommu novpid [kernel_output]"
+		puts $fh " module2 /boot/hypervisor hypervisor iommu_intel iommu_amd [kernel_output]"
 		puts $fh " module2 /boot/image.elf.gz image.elf"
 		puts $fh "}"
 		close $fh
@@ -197,7 +154,7 @@ proc run_boot_dir {binaries} {
 		if {[apply_microcode]} {
 			puts $fh " load /boot/micro.code micro.code"
 		}
-		puts $fh " load /boot/hypervisor iommu novpid [kernel_output]"
+		puts $fh " load /boot/hypervisor iommu_intel iommu_amd [kernel_output]"
 		puts $fh " load /boot/image.elf"
 		close $fh
 
