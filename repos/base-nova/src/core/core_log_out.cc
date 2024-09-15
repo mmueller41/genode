@@ -34,10 +34,10 @@ void Genode::Core_log::out(char const c)
 
 void Genode::Core_log::acquire()
 {
-	Nova::acquire_console();
+	//Nova::acquire_console();
 }
 
 void Genode::Core_log::release()
 {
-	Nova::release_console();
+	//Nova::release_console();
 }
