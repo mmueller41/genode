@@ -45,7 +45,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline mword_t rdi(Syscall s, uint8_t flags, mword_t sel)
 	{
-		return sel << 12 | (flags & 0xf) << 8 | s;
+		return sel << 9 | (flags & 0xf) << 5 | s;
 	}
 
 
@@ -454,9 +454,13 @@ namespace Nova {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t alloc_cores(mword_t count, mword_t &allocated)
+	inline uint8_t alloc_cores(mword_t count, mword_t &allocated, mword_t &remainder)
 	{
-		return syscall_5(NOVA_ALLOC_CORES, 0, 0, count, allocated);
+		Nova::mword_t rest = 0;
+		Nova::mword_t null = 0;
+		Nova::uint8_t res = syscall_6(NOVA_ALLOC_CORES, 0, 0, count, allocated, rest, null);
+		remainder = rest;
+		return res;
 	}
 
 	ALWAYS_INLINE

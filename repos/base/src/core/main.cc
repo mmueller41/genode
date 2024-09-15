@@ -179,7 +179,7 @@ class Core_child : public Child_policy
 		Pd_session           &ref_pd()           override { return _core_pd; }
 		Pd_session_capability ref_pd_cap() const override { return _core_pd_cap; }
 
-		size_t session_alloc_batch_size() const override { return 128; }
+		size_t session_alloc_batch_size() const override { return 2*128; }
 };
 
 

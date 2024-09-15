@@ -103,7 +103,7 @@ addr_t Platform::_map_pages(addr_t const phys_addr, addr_t const pages,
  *****************************/
 
 
-enum { CORE_PAGER_UTCB_ADDR = 0xbff02000 };
+enum { CORE_PAGER_UTCB_ADDR = 0xfff02000 };
 
 
 /**
@@ -200,7 +200,7 @@ static void page_fault_handler()
 
 static addr_t core_pager_stack_top()
 {
-	enum { STACK_SIZE = 4*1024 };
+	enum { STACK_SIZE = 8*1024 };
 	static char stack[STACK_SIZE];
 	return (addr_t)&stack[STACK_SIZE - sizeof(addr_t)];
 }
@@ -824,26 +824,28 @@ Platform::Platform()
 	log(Number_of_bytes(kernel_memory), " kernel memory"); log("");
 
 	/* add capability selector ranges to map */
-	unsigned const first_index = 0x2000;
+	unsigned const first_index = 0x0000;
 	unsigned index = first_index;
 	for (unsigned i = 0; i < 32; i++)
 	{
 		void * phys_ptr = nullptr;
 
-		ram_alloc().alloc_aligned(get_page_size(), get_page_size_log2()).with_result(
+		ram_alloc().alloc_aligned(128*get_page_size(), get_page_size_log2()).with_result(
 			[&] (void *ptr) { phys_ptr = ptr; },
 			[&] (Range_allocator::Alloc_error) { /* covered by nullptr test below */ });
 
 		if (phys_ptr == nullptr)
 			break;
 
+		log("Mapping mem for cap range ", i);
 		addr_t phys_addr = reinterpret_cast<addr_t>(phys_ptr);
-		addr_t core_local_addr = _map_pages(phys_addr, 1);
+		addr_t core_local_addr = _map_pages(phys_addr, 128);
 
 		if (!core_local_addr) {
 			ram_alloc().free(phys_ptr);
 			break;
 		}
+		log("Creating cap range ", i, " at ", reinterpret_cast<void*>(core_local_addr));
 
 		Cap_range &range = *reinterpret_cast<Cap_range *>(core_local_addr);
 		construct_at<Cap_range>(&range, index);
@@ -851,6 +853,7 @@ Platform::Platform()
 		cap_map().insert(range);
 
 		index = (unsigned)(range.base() + range.elements());
+		log("Created cap range ", i, " at ", reinterpret_cast<void*>(core_local_addr));
 	}
 	_max_caps = index - first_index;
 
@@ -924,6 +927,7 @@ Platform::Platform()
 		                                    (unsigned)(sc_idle_base + kernel_cpu_id),
 		                                    "killed");
 	});
+	log("Added idle ECs to trace sources");
 
 	/* add exception handler EC for core and EC root thread to trace sources */
 	struct Core_trace_source : public  Trace::Source::Info_accessor,
@@ -972,6 +976,7 @@ Platform::Platform()
 			registry.insert(this);
 		}
 	};
+	log("Added exception handler EC");
 
 	new (core_mem_alloc())
 		Core_trace_source(Trace::sources(),
@@ -982,8 +987,8 @@ Platform::Platform()
 		Core_trace_source(Trace::sources(),
 		                  Affinity::Location(0, 0, _cpus.width(), 1),
 		                  hip.sel_exc + 1, "root");
+	log("Created trace sources");
 }
-
 
 addr_t Platform::_rom_module_phys(addr_t virt)
 {
