@@ -135,6 +135,11 @@ class Genode::Session_env : public Ram_allocator,
 			return result;
 		}
 
+		Alloc_result try_alloc(size_t size, Numa_id, Cache cache) override
+		{
+			// TODO: Actually perform allocation from node numa_id here
+			return try_alloc(size, cache);
+		}
 
 		void free(Ram_dataspace_capability ds) override
 		{
