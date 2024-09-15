@@ -594,7 +594,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)
