@@ -33,6 +33,20 @@ void short_loop(unsigned long k)
     }
 }
 
+struct Channel {
+    unsigned long yield_flag : 1,
+        op : 2,
+        tnum : 61;
+    unsigned long delta_alloc;
+    unsigned long delta_activate;
+    unsigned long delta_setflag;
+    unsigned long delta_findborrower;
+    unsigned long delta_block;
+    unsigned long delta_enter;
+    unsigned long delta_return;
+};
+
+
 struct Hoitaja_test::Worker : public Genode::Thread
 {
     Genode::uint16_t _id;
@@ -41,14 +55,17 @@ struct Hoitaja_test::Worker : public Genode::Thread
     {
         Nova::mword_t channel_id = 0;
         Nova::cpu_id(channel_id);
-        unsigned long volatile *my_channel = &reinterpret_cast<unsigned long volatile *>(channel)[channel_id];
+        //unsigned long volatile *my_channel = &reinterpret_cast<unsigned long volatile *>(channel)[channel_id];
+        Channel *channels = reinterpret_cast<Channel *>(channel);
+        Channel *my_channel_struct = &channels[channel_id];
 
         //Genode::log("Started worker ", _id, " on CPU ", channel_id);
         Nova::yield();
         while (true) {
-            while (!(__atomic_load_n(my_channel, __ATOMIC_SEQ_CST)))
+            while (!(my_channel_struct->yield_flag))
                 short_loop(770);
             //Genode::log("Returning core ", channel_id);
+            my_channel_struct->delta_enter = Genode::Trace::timestamp();
             Nova::yield(false);
         }
     }

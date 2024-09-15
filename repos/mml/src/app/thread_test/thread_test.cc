@@ -3,9 +3,6 @@
 #include <topo_session/node.h>
 #include <base/heap.h>
 #include <base/log.h>
-#include <cstdint>
-#include <memory>
-#include <chrono>
 
 namespace Thread_test {
     class Tester;
@@ -34,12 +31,12 @@ class Thread_test::Test_thread : public Thread
         {
             while(true) {
                 Genode::log("Pong from thread ", _id);
-                auto start = _timer.elapsed_ms();
+                auto start = Genode::Trace::timestamp();
                 // auto start = std::chrono::steady_clock::now ();
-                _timer.msleep(_id * 1000);
-                auto end = _timer.elapsed_ms();
+                _timer.usleep(_id * 10);
+                auto end = Genode::Trace::timestamp();
                 // auto end = std::chrono::steady_clock::now();
-                Genode::log("Thread ", _id, " woke up afer", (end-start), " ms.");
+                Genode::log("Thread ", _id, " woke up afer", (end-start)/2000, " us.");
                 Genode::log("My affinities are ", this->affinity().xpos(), "x", this->affinity().ypos(), " node: ", _env.topo().node_affinity_of(this->affinity()).id(), " native region: ", _env.topo().node_affinity_of(this->affinity()).native_id());
             }
         }

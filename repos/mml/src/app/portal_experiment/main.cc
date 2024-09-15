@@ -12,7 +12,7 @@
 #include <timer_session/connection.h>
 
 #define CALLS 100
-#define CORES 4
+#define CORES 14
 #define HYPERCALL
 
     //Genode::Trace::timestamp();
@@ -26,6 +26,20 @@ static std::atomic<bool> ready{false};
 static std::atomic<bool> restart{true};
 static std::atomic<int> yield_ctr{-(31-CORES)};
 static unsigned long tsc_freq_khz = 0;
+int cores, i;
+
+struct Channel {
+    unsigned long yield_flag : 1,
+        op : 2,
+        tnum : 61;
+    unsigned long delta_alloc;
+    unsigned long delta_activate;
+    unsigned long delta_setflag;
+    unsigned long delta_findborrower;
+    unsigned long delta_block;
+    unsigned long delta_enter;
+    unsigned long delta_return;
+};
 
 struct Cell : public Genode::Thread
 {
@@ -41,17 +55,19 @@ struct Cell : public Genode::Thread
 
     void entry() override
     {
+        Genode::Trace::Timestamp latency = 0;
         Nova::mword_t channel_id = 0;
         Nova::uint64_t count_allocs = 0;
         Nova::cpu_id(channel_id);
-        unsigned long volatile *my_channel = &reinterpret_cast<unsigned long volatile *>(channel)[channel_id];
+        struct Channel *channels = reinterpret_cast<Channel *>(channel);
+        struct Channel volatile *my_channel = &channels[channel_id];
 
         unsigned long _tsc_freq_ghz = tsc_freq_khz / 1000000UL;
 
-        Genode::log("Started worker", _id, " on CPU with affinity ", channel_id, Genode::Thread::myself()->affinity(), " signal channel: ", *my_channel, " at ", my_channel);
+        //Genode::log("Started worker", _id, " on CPU with affinity ", channel_id, Genode::Thread::myself()->affinity(), " signal channel: ", my_channel->yield_flag, " at ", my_channel);
 
-        for (int cores = CORES; cores < 32; cores+=4) {
-            for (int i = 0; i < CALLS; ) {
+        for (cores = CORES; cores <= 14; cores+=4) {
+            for (i = 0; i < CALLS; ) {
 
                 if ((i == 0 && yield_ctr >= cores-1) || (i > 0 && yield_ctr >= cores-1))
                     ready = true;
@@ -64,18 +80,26 @@ struct Cell : public Genode::Thread
 
                 //Genode::log("Worker ", _id, " on CPU ", channel_id, " woke up");
                 counter.fetch_add(1);
-                    if (counter >= cores-1) {
-                        ready = true;
-                        // Genode::log("{\"allocation:\": ", allocation, ", \"id\":", _id, ",\"clk_total\":", (end-::start), ", \"mean_clk\":", (end-::start)/count_allocs ,", \"count\": ", count_allocs, "\"channel-id\":", channel_id, "},");
-                    }
+                if (counter >= cores-1) {
+                    ready = true;
+                    // Genode::log("{\"allocation:\": ", allocation, ", \"id\":", _id, ",\"clk_total\":", (end-::start), ", \"mean_clk\":", (end-::start)/count_allocs ,", \"count\": ", count_allocs, "\"channel-id\":", channel_id, "},");
+                }
 
+                if (my_channel->op == 2) {
+                    Nova::mword_t allocation = 0;
+                    Genode::Trace::Timestamp now = Genode::Trace::timestamp();
+                    Nova::core_allocation(allocation);
+                    my_channel->delta_return = now - my_channel->delta_return;
+                    Genode::log("{\"iteration\": ", i, ", \"cores\":", cores, ", \"d_block\": ", my_channel->delta_block / _tsc_freq_ghz, ", \"d_enter\":", my_channel->delta_enter / _tsc_freq_ghz, ", \"d_return\":", my_channel->delta_return / _tsc_freq_ghz, ", \"op\": \"yield\"},");
+                }
+                my_channel->op = 0;
                 if (_id == 0) {
                     //Genode::log("Waiting on start signal");
                     while (ready.load() == false)
                         __builtin_ia32_pause();
 
                     //Genode::log("Got start signal");
-                    _timer.msleep(20);
+                    _timer.msleep(2);
 
                     //Genode::log("Woke up for new iteration");
                     ready = false;
@@ -90,7 +114,11 @@ struct Cell : public Genode::Thread
                     if (_id == 0) {
                         Nova::mword_t allocated = 0;
                         //Genode::log("Allocating 4 cores");
-                        
+
+                        my_channel->tnum = i;
+                        my_channel->op = 1; /* 1 for alloc, 2 for yield */
+
+                        my_channel->delta_enter = Genode::Trace::timestamp();
                         Nova::uint8_t rc = Nova::alloc_cores(cores, allocated);
                         if (rc == Nova::NOVA_OK)
                         {
@@ -98,13 +126,21 @@ struct Cell : public Genode::Thread
                             while(ready.load() == false)
                                 __builtin_ia32_pause();
                             end = Genode::Trace::timestamp();
+                            my_channel->delta_return = end - my_channel->delta_return;
+                            latency += (end - ::start) / _tsc_freq_ghz;
                             Nova::mword_t allocation = 0;
+                            Genode::log("{\"iteration\": ", i, ", \"cores\":", cores, ", \"delta_enter:\" ", my_channel->delta_enter / _tsc_freq_ghz, ", \"delta_alloc\": ", my_channel->delta_alloc / _tsc_freq_ghz, ", \"delta_activate:\": ", my_channel->delta_activate / _tsc_freq_ghz, ", \"delta_setflag\": ", my_channel->delta_setflag / _tsc_freq_ghz, ", \"delta_return\": ", my_channel->delta_return / _tsc_freq_ghz, "},");
                             Nova::core_allocation(allocation);
                             restart = true;
-                            i++;
                             counter = 0;
                             yield_ctr = 0;
-                            Genode::log("{\"cores\":", cores, "\"allocation\": ", allocation, ",\"start\": ", ::start, ", \"end\": ", end, " ,\"us\": ", (end - ::start)/_tsc_freq_ghz,"},");
+                            //if (i%100==0) {
+
+                            Genode::log("{\"iteration\": ", i, ", \"cores\":", cores, ", \"allocation\": ", allocation, ",\"start\": ", ::start, ", \"end\": ", end, " ,\"ns\": ", (latency), "},");
+                            my_channel->delta_setflag = 0;
+                            latency = 0;
+                            //}
+                            i++;
                             break;
                         } else {
                             //Genode::log("cores allocated: ", allocated);
@@ -116,11 +152,10 @@ struct Cell : public Genode::Thread
                 }
                 //Genode::log("Finished allocation. Waiting for yield signal, id = ", channel_id, "\n");
                 while (restart.load() == false) {
-                    long res = 0;
-                    if ((res = __atomic_load_n(my_channel, __ATOMIC_SEQ_CST)) != 0)
-                    {
-                        Genode::log("Got yield signal on channel ", channel_id, " signal: ", res, " at ", my_channel);
-                        Nova::yield(false);
+                    Channel volatile *res = __atomic_load_n(&my_channel, __ATOMIC_SEQ_CST);
+                    if (res->yield_flag) {
+                        Genode::log("Got yield signal on channel ", channel_id);
+                        Nova::yield(true);
                     }
                 }
             }
@@ -188,6 +223,7 @@ void Libc::Component::construct(Libc::Env &env)
 
     pthread_t workers[space.total()];
     std::cout << "Creating workers" << std::endl;
+    Genode::Trace::Timestamp thread_start = Genode::Trace::timestamp();
     for (Genode::uint16_t cpu = 1; cpu < space.total(); cpu++)
     {
         Genode::String<32> const name{"worker", cpu};
@@ -198,6 +234,8 @@ void Libc::Component::construct(Libc::Env &env)
         // Genode::log("Created worker for CPU ", cpu);
         // worker->start();
     }
+    Genode::Trace::Timestamp thread_stop = Genode::Trace::timestamp();
+    Genode::log("Took ", (thread_stop - thread_start) / 2000, " μs to start workers");
 
     pthread_t main_pt{};
 
@@ -209,7 +247,7 @@ void Libc::Component::construct(Libc::Env &env)
     /*Libc::pthread_create_from_thread(&main_pt, *main, &main);
     main->start();*/
     // Nova::yield(false);
-    _timer.msleep(150);
+    //_timer.msleep(10000);
     Libc::pthread_create_from_session(&main_pt, Cell::pthread_entry, main_cell, 8 * 4096, "main_worker", &env.cpu(), loc);
     pthread_join(main_pt, 0); });
     Genode::log("Leaving component");
