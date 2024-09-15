@@ -79,15 +79,14 @@ private:
 class Fill_thread : public Genode::Thread
 {
     private:
-        Genode::Mutex &_mutex;
+        //Genode::Mutex &_mutex;
         const std::string &_fill_workload_file;
         bool (*parse)(std::ifstream &, std::vector<NumericTuple> &);
         NumericWorkloadSet &_workload_set;
 
     public:
         Fill_thread(Libc::Env &env, Genode::Mutex &mutex, std::string fill_workload_name, bool (*parse)(std::ifstream&, std::vector<NumericTuple>&), NumericWorkloadSet &workload_set)
-            : Genode::Thread(env, Name("btree::fill_thread"), 4*4096), 
-            _mutex(mutex), _fill_workload_file(fill_workload_name), _workload_set(workload_set) 
+            : Genode::Thread(env, Name("btree::fill_thread"), 4*4096), _fill_workload_file(fill_workload_name), _workload_set(workload_set) 
         {
             this->parse = parse;
         }
@@ -107,7 +106,6 @@ class Fill_thread : public Genode::Thread
 class Mixed_thread : public Genode::Thread 
 {
     private:
-        Genode::Mutex &_mutex;
         const std::string &_mixed_workload_file;
         bool (*parse)(std::ifstream &, std::vector<NumericTuple> &);
         NumericWorkloadSet &_workload_set;
@@ -115,7 +113,7 @@ class Mixed_thread : public Genode::Thread
     public:
         Mixed_thread(Libc::Env &env, Genode::Mutex &mutex, std::string mixed_workload_name, bool (*parse)(std::ifstream&, std::vector<NumericTuple>&), NumericWorkloadSet &workload_set)
         : Genode::Thread(env, Name("btree::mixed_thread"), 4*4096),
-        _mutex(mutex), _mixed_workload_file(mixed_workload_name), _workload_set(workload_set)
+        _mixed_workload_file(mixed_workload_name), _workload_set(workload_set)
         {
             this->parse = parse;
         }

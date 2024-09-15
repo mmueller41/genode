@@ -195,7 +195,7 @@ public:
         return {count_operations,
                 _current_phase,
                 _current_iteration,
-                _core_set.size(),
+                mx::tasking::runtime::workers_count(),
                 milliseconds,
                 _perf.counter(),
                 statistic_map(mx::tasking::profiling::Statistic::Executed),

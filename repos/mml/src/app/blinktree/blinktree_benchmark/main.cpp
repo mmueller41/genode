@@ -199,17 +199,21 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
+    auto sys_cores = mx::util::core_set::build(64);
+    mx::system::Environment::set_cores(&sys_cores);
+
     mx::memory::GlobalHeap::myself();
-    std::uint16_t cores = env.cpu().affinity_space().total();
+    std::uint16_t cores = 64;
+     //env.cpu().affinity_space().total();
 
     char cores_arg[10];
     sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_benchmark", "-i", "6", "-pd", "3", "-p", cores_arg};
+    char *args[] = {"blinktree_benchmark", "-i", "20", "--olfit", cores_arg};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree benchmark" << std::endl;
-                        bt_main(env, 7, args); 
+                        bt_main(env, 5, args); 
                     });
 }

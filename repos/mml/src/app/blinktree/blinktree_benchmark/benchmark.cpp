@@ -121,7 +121,7 @@ void Benchmark::requests_finished()
 
     if (open_requests == 0U) // All request schedulers are done.
     {
-        std::uint16_t core_id = mx::system::topology::core_id();
+        std::uint16_t core_id = mx::tasking::runtime::my_channel();
         if (core_id != 0)
         {
             this->_open_requests++;
@@ -138,9 +138,6 @@ void Benchmark::requests_finished()
 
         //_end = Genode::Trace::timestamp();
 
-        //std::cout << result << std::endl;
-        //if (mx::system::topology::core_id() == 0)
-        //std::cout << result << "\t " << (_end - _start) << " cycles" << std::endl;
         std::cout << "core: " << mx::system::topology::core_id() << result.to_json().dump() << std::endl;
         
 
@@ -219,6 +216,12 @@ void Benchmark::requests_finished()
         {
             this->_tree.reset(nullptr);
         }
+
+        auto *restart_task = mx::tasking::runtime::new_task<RestartTask>(0U, *this);
+        restart_task->annotate(static_cast<mx::tasking::TaskInterface::channel>(0));
+        mx::tasking::runtime::spawn(*restart_task, core_id);
+        mx::tasking::runtime::resume();
+
     }
 }
 

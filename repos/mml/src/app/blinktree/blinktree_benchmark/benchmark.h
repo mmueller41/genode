@@ -53,9 +53,6 @@ public:
     void start();
 
 private:
-    std::uint64_t _start;
-    std::uint64_t _end;
-
     // Collection of cores the benchmark should run on.
     benchmark::Cores _cores;
 
@@ -124,7 +121,7 @@ class StartMeasurementTask : public mx::tasking::TaskInterface
 
         mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override 
         {
-            //Genode::log("Starting timer");
+            Genode::log("Starting timer");
             _benchmark._chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(_benchmark._workload)), _benchmark._current_iteration + 1, _benchmark._cores.current());
             //_benchmark._start = Genode::Trace::timestamp();
             return mx::tasking::TaskResult::make_remove();
@@ -143,6 +140,27 @@ class StopMeasurementTask : public mx::tasking::TaskInterface
         mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override 
         {
             _benchmark.requests_finished();
+            return mx::tasking::TaskResult::make_remove();
+        }
+};
+
+class RestartTask : public mx::tasking::TaskInterface
+{
+    private:
+        Benchmark &_benchmark;
+
+    public:
+        constexpr RestartTask(Benchmark &benchmark) : _benchmark(benchmark) {}
+        ~RestartTask() override = default;
+
+        mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override
+        {
+            if (_benchmark.core_set()) {
+                _benchmark.start();
+            } else {
+                Genode::log("Benchmark finished.");
+                mx::tasking::runtime::stop();
+            }
             return mx::tasking::TaskResult::make_remove();
         }
 };

@@ -40,7 +40,7 @@ public:
     {
         //std::cout << "Hello World" << std::endl;
 
-        Genode::log("Hello world");
+        Genode::log("Hello world from channel ", channel_id);
         // Stop MxTasking runtime after this task.
         return mx::tasking::TaskResult::make_stop();
     }
@@ -60,7 +60,7 @@ void Libc::Component::construct(Libc::Env &env)
         //mx::system::Environment::env = &env;
         Genode::log("Initialized system environment for MxTasking");
         Genode::log("Running on core ", mx::system::topology::core_id()); 
-        const auto cores = mx::util::core_set::build(1);
+        const auto cores = mx::util::core_set::build(64);
 
         std::vector<mx::tasking::TaskInterface *> tasks;
 
