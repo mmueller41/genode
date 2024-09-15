@@ -17,7 +17,7 @@ CC_OPT += -std=c++17 -pedantic -Wall \
  -Wno-invalid-offsetof -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization \
  -Wformat=2 -Winit-self -Wmissing-declarations -Wmissing-include-dirs -Woverloaded-virtual \
  -Wredundant-decls -Wshadow -Wsign-promo -Wstrict-overflow=5 -Wswitch-default -Wundef \
- -Wno-unused -Wold-style-cast -Wno-uninitialized -O2 -g -DNDEBUG -fno-aligned-new
+ -Wno-unused -Wold-style-cast -Wno-uninitialized -O2 -g -fno-aligned-new
 
 CC_OPT += $(addprefix -I ,$(INC_DIR)) 
 CC_CXX_WARN_STRICT =
