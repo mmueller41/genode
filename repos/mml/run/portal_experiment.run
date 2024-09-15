@@ -30,7 +30,7 @@ install_config {
         <!--<affinity-space width="32" height="1"/>-->
         <default caps="2000"/>
         <start name="timer">
-            <resource name="RAM" quantum="1M"/>
+            <resource name="RAM" quantum="16M"/>
             <provides><service name="Timer"/></provides>
             <route>
                 <any-service><parent/><any-child/></any-service>
@@ -100,7 +100,6 @@ install_config {
                         <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
                     </config>
                 </start>
-                -->
                 <start name="sleepy_cell2" priority="-1">
                     <binary name="volatile_cell"/>
                     <resource name="RAM" quantum="128M"/>
@@ -108,6 +107,7 @@ install_config {
                         <any-service><parent/><any-child/></any-service>
                     </route>
                 </start>
+                -->
                 <!--
                 <start name="rpc_bench4" priority="-1">
                     <binary name="portal_experiment"/>

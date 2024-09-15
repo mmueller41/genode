@@ -1,4 +1,4 @@
-proc use_dynamic_rom { } { return true }
+proc use_dynamic_rom { } { return false }
 
 create_boot_directory
 import_from_depot [depot_user]/src/[base_src] \
@@ -22,18 +22,19 @@ append config {
 		<service name="RM"/>
 		<service name="CPU"/>
 		<service name="LOG"/>
+		<service name="TOPO"/>
 	</parent-provides>
 	<default-route>
 		<any-service> <parent/> <any-child/> </any-service>
 	</default-route>
 	<default caps="100"/>
 	<start name="timer">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="16M"/>
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
 	<start name="drivers" caps="1000" managing_system="yes">
-		<resource name="RAM" quantum="32M"/>
+		<resource name="RAM" quantum="512M"/>
 		<binary name="init"/>
 		<route>
 			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
@@ -44,7 +45,7 @@ append config {
 	</start>
 
 	<start name="nic_router" caps="200">
-		<resource name="RAM" quantum="10M"/>
+		<resource name="RAM" quantum="20M"/>
 		<provides>
 			<service name="Nic"/>
 			<service name="Uplink"/>
@@ -54,7 +55,7 @@ append config {
 			<policy label_prefix="socket_fs" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
 
-			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
+			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1" verbose_packets="true">
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -69,7 +70,7 @@ append config {
 
 			</domain>
 
-			<domain name="downlink" interface="10.0.3.1/24">
+			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="true">
 
 				<dhcp-server ip_first="10.0.3.55" ip_last="10.0.3.55">
 					<dns-server ip="8.8.8.8"/>
@@ -88,7 +89,7 @@ append config {
 
 append_if [use_dynamic_rom] config {
 	<start name="dynamic_rom">
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="16M"/>
 		<provides><service name="ROM"/> </provides>
 		<config verbose="yes">
 			<rom name="socket_fs.config"> <inline description="MTU default">
@@ -139,7 +140,7 @@ if {[use_dynamic_rom]} { append config {
 		<config ld_verbose="yes">
 			<vfs>
 				<dir name="socket">
-					<lxip ip_addr="10.0.2.55" netmask="255.255.255.0" gateway="10.0.2.1" nameserver="8.8.8.8"/>
+					<lxip ip_addr="10.0.3.55" netmask="255.255.255.0" gateway="10.0.3.1" nameserver="8.8.8.8"/>
 					<!-- <lxip dhcp="yes"/> -->
 				</dir>
 			</vfs>
@@ -152,6 +153,7 @@ append config {
 	</start> }
 
 append qemu_args " -nographic "
-append_qemu_nic_args
+append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
+
 
 # vi: set ft=tcl :

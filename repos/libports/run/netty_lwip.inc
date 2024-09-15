@@ -20,6 +20,7 @@ append config {
 		<service name="RM"/>
 		<service name="CPU"/>
 		<service name="LOG"/>
+		<service name="TOPO"/>
 	</parent-provides>
 
 	<default-route>
@@ -34,7 +35,7 @@ append config {
 	</start>
 
 	<start name="drivers" caps="1000" managing_system="yes">
-		<resource name="RAM" quantum="32M"/>
+		<resource name="RAM" quantum="512M"/>
 		<binary name="init"/>
 		<route>
 			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
@@ -45,7 +46,7 @@ append config {
 	</start>
 
 	<start name="nic_router" caps="200">
-		<resource name="RAM" quantum="10M"/>
+		<resource name="RAM" quantum="20M"/>
 		<provides>
 			<service name="Nic"/>
 			<service name="Uplink"/>

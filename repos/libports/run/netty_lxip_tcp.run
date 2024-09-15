@@ -5,7 +5,7 @@ build { test/netty/tcp }
 append config {
 	<start name="netty-server-80">
 		<binary name="test-netty_tcp"/>
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="8M"/>
 		<config ld_verbose="yes" port="80" read_write="no" nonblock="true">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
@@ -17,7 +17,7 @@ append config {
 	</start>
 	<start name="netty-server-8080">
 		<binary name="test-netty_tcp"/>
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="8M"/>
 		<config ld_verbose="yes" mode="server" port="8080" nonblock="false">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
@@ -27,11 +27,11 @@ append config {
 			<libc stdout="/dev/log" stderr="/dev/log" socket="/socket"/>
 		</config>
 	</start>
-
 	<!--
+
 	<start name="netty-client-A">
 		<binary name="test-netty_tcp"/>
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="8M"/>
 		<config ld_verbose="yes" mode="client" ip="10.0.3.1" port="8080">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
