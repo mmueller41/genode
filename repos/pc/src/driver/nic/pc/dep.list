@@ -110,6 +110,7 @@ include/linux/ethtool_netlink.h
 include/linux/filter.h
 include/linux/firmware.h
 include/linux/gpio/driver.h
+include/linux/hwmon.h
 include/linux/icmpv6.h
 include/linux/if_arp.h
 include/linux/if_macvlan.h
