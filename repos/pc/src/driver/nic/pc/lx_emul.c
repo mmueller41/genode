@@ -248,23 +248,28 @@ void *dmam_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle,
 
 unsigned int cpumask_local_spread(unsigned int i, int node)
 {
+	printk("%s: unsupported i=%d node=%d\n", __func__, i, node);
 	return 0xff;
 }
 
 
-void ethtool_sprintf(u8 **data, const char *fmt, ...) {
+void ethtool_sprintf(u8 **data, const char *fmt, ...)
+{
+	printk("%s: unsupported\n", __func__);
 }
 
 
 int rhashtable_init(struct rhashtable *ht,
 		    const struct rhashtable_params *params)
 {
+	printk("%s: unsupported\n", __func__);
 	return 0;
 }
 
 void *rhashtable_insert_slow(struct rhashtable *ht, const void *key,
 			     struct rhash_head *obj)
 {
+	printk("%s: unsupported\n", __func__);
 	return NULL;
 }
 
@@ -281,6 +286,7 @@ int ndo_dflt_fdb_add(struct ndmsg *ndm,
 		     const unsigned char *addr, u16 vid,
 		     u16 flags)
 {
+	printk("%s: unsupported\n", __func__);
 	return -EINVAL;
 }
 
@@ -292,20 +298,24 @@ int ndo_dflt_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 					     struct net_device *dev,
 					     u32 filter_mask))
 {
+	printk("%s: unsupported\n", __func__);
 	return -EMSGSIZE;
 }
 
 void __page_frag_cache_drain(struct page *page, unsigned int count)
 {
+	printk("%s: unsupported page=%p, count=%d\n", __func__, page, count);
 }
 
 struct nlattr *nla_find(const struct nlattr *head, int len, int attrtype)
 {
+	printk("%s: unsupported head=%p, len=%d\n", __func__, head, len);
 	return NULL;
 }
 
 void *vmalloc_node(unsigned long size, int node)
 {
+	printk("%s: unsupported size=%d, node=%d\n", __func__, size, node);
 	return NULL;
 }
 
@@ -318,12 +328,14 @@ bool __skb_flow_dissect(const struct net *net,
 			void *target_container, const void *data,
 			__be16 proto, int nhoff, int hlen, unsigned int flags)
 {
+	printk("%s: unsupported\n", __func__);
 	return false;
 }
 
 u32 __skb_get_poff(const struct sk_buff *skb, const void *data,
 		   const struct flow_keys_basic *keys, int hlen)
 {
+	printk("%s: unsupported\n", __func__);
 	return 0;
 }
 
@@ -332,18 +344,21 @@ struct flow_dissector flow_keys_basic_dissector __read_mostly;
 void flow_rule_match_basic(const struct flow_rule *rule,
 			   struct flow_match_basic *out)
 {
+	printk("%s: unsupported\n", __func__);
 	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_BASIC, out);
 }
 
 void flow_rule_match_eth_addrs(const struct flow_rule *rule,
 			       struct flow_match_eth_addrs *out)
 {
+	printk("%s: unsupported\n", __func__);
 	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_ETH_ADDRS, out);
 }
 
 void flow_rule_match_vlan(const struct flow_rule *rule,
 			  struct flow_match_vlan *out)
 {
+	printk("%s: unsupported\n", __func__);
 	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_VLAN, out);
 }
 
@@ -353,6 +368,7 @@ int flow_block_cb_setup_simple(struct flow_block_offload *f,
 			       void *cb_ident, void *cb_priv,
 			       bool ingress_only)
 {
+	printk("%s: unsupported\n", __func__);
 	return -EBUSY;
 }
 
@@ -361,21 +377,25 @@ int flow_block_cb_setup_simple(struct flow_block_offload *f,
 
 int i2c_bit_add_bus(struct i2c_adapter *adap)
 {
+	printk("%s: unsupported\n", __func__);
 	return -ENODEV;
 }
 
 void i2c_del_adapter(struct i2c_adapter *adap)
 {
+	printk("%s: unsupported\n", __func__);
 }
 
 s32 i2c_smbus_read_byte_data(const struct i2c_client *client, u8 command)
 {
+	printk("%s: unsupported\n", __func__);
 	return 0;
 }
 
 s32 i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
 			      u8 value)
 {
+	printk("%s: unsupported\n", __func__);
 	return 0;
 }
 
@@ -383,11 +403,13 @@ s32 i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
 int ipv6_find_hdr(const struct sk_buff *skb, unsigned int *offset,
 		  int target, unsigned short *fragoff, int *flags)
 {
+	printk("%s: unsupported\n", __func__);
 	return -ENOENT;
 }
 
 bool pci_device_is_present(struct pci_dev *pdev)
 {
+	printk("%s: unsupported\n", __func__);
 	return true;
 }
 
@@ -396,16 +418,19 @@ void __iomem *pci_iomap_range(struct pci_dev *dev,
 			      unsigned long offset,
 			      unsigned long maxlen)
 {
+	printk("%s: unsupported\n", __func__);
 	return NULL;
 }
 
 void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
 {
+	printk("%s: unsupported\n", __func__);
 	return pci_iomap_range(dev, bar, 0, maxlen);
 }
 
 void pcie_print_link_status(struct pci_dev *dev)
 {
+	printk("%s: unsupported\n", __func__);
 	//__pcie_print_link_status(dev, true);
 }
 
@@ -414,12 +439,14 @@ void pcie_print_link_status(struct pci_dev *dev)
 
 int mdio45_probe(struct mdio_if_info *mdio, int prtad)
 {
+	printk("%s: unsupported\n", __func__);
 	return -ENODEV;
 }
 
 int mdio_mii_ioctl(const struct mdio_if_info *mdio,
 		   struct mii_ioctl_data *mii_data, int cmd)
 {
+	printk("%s: unsupported\n", __func__);
 	return -EINVAL;
 }
 
@@ -428,6 +455,7 @@ int mdio_mii_ioctl(const struct mdio_if_info *mdio,
 
 void xdp_do_flush(void)
 {
+	printk("%s: unsupported\n", __func__);
 	//__dev_flush();
 	//__cpu_map_flush();
 	//__xsk_map_flush();
@@ -436,6 +464,7 @@ void xdp_do_flush(void)
 int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
 		    struct bpf_prog *xdp_prog)
 {
+	printk("%s: unsupported\n", __func__);
 	return -ENOENT;
 }
 
