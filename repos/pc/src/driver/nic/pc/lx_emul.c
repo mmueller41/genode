@@ -241,3 +241,202 @@ void *dmam_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle,
 {
 	return dma_alloc_attrs(dev, size, dma_handle, gfp, attrs);
 }
+
+/*
+ * TODO IGB and IXGB wrappers
+ */
+
+unsigned int cpumask_local_spread(unsigned int i, int node)
+{
+	return 0xff;
+}
+
+
+void ethtool_sprintf(u8 **data, const char *fmt, ...) {
+}
+
+
+int rhashtable_init(struct rhashtable *ht,
+		    const struct rhashtable_params *params)
+{
+	return 0;
+}
+
+void *rhashtable_insert_slow(struct rhashtable *ht, const void *key,
+			     struct rhash_head *obj)
+{
+	return NULL;
+}
+
+// struct ndmsg
+#include <linux/neighbour.h>
+
+// struct nlattr
+#define KBUILD_MODNAME "lx_emul"
+#include <linux/netlink.h>
+
+int ndo_dflt_fdb_add(struct ndmsg *ndm,
+		     struct nlattr *tb[],
+		     struct net_device *dev,
+		     const unsigned char *addr, u16 vid,
+		     u16 flags)
+{
+	return -EINVAL;
+}
+
+int ndo_dflt_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
+			    struct net_device *dev, u16 mode,
+			    u32 flags, u32 mask, int nlflags,
+			    u32 filter_mask,
+			    int (*vlan_fill)(struct sk_buff *skb,
+					     struct net_device *dev,
+					     u32 filter_mask))
+{
+	return -EMSGSIZE;
+}
+
+void __page_frag_cache_drain(struct page *page, unsigned int count)
+{
+}
+
+struct nlattr *nla_find(const struct nlattr *head, int len, int attrtype)
+{
+	return NULL;
+}
+
+void *vmalloc_node(unsigned long size, int node)
+{
+	return NULL;
+}
+
+// struct flow_match_eth_addrs
+#include <net/flow_offload.h>
+
+bool __skb_flow_dissect(const struct net *net,
+			const struct sk_buff *skb,
+			struct flow_dissector *flow_dissector,
+			void *target_container, const void *data,
+			__be16 proto, int nhoff, int hlen, unsigned int flags)
+{
+	return false;
+}
+
+u32 __skb_get_poff(const struct sk_buff *skb, const void *data,
+		   const struct flow_keys_basic *keys, int hlen)
+{
+	return 0;
+}
+
+struct flow_dissector flow_keys_basic_dissector __read_mostly;
+
+void flow_rule_match_basic(const struct flow_rule *rule,
+			   struct flow_match_basic *out)
+{
+	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_BASIC, out);
+}
+
+void flow_rule_match_eth_addrs(const struct flow_rule *rule,
+			       struct flow_match_eth_addrs *out)
+{
+	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_ETH_ADDRS, out);
+}
+
+void flow_rule_match_vlan(const struct flow_rule *rule,
+			  struct flow_match_vlan *out)
+{
+	//FLOW_DISSECTOR_MATCH(rule, FLOW_DISSECTOR_KEY_VLAN, out);
+}
+
+int flow_block_cb_setup_simple(struct flow_block_offload *f,
+			       struct list_head *driver_block_list,
+			       flow_setup_cb_t *cb,
+			       void *cb_ident, void *cb_priv,
+			       bool ingress_only)
+{
+	return -EBUSY;
+}
+
+// struct i2c_adapter
+#include <linux/i2c.h>
+
+int i2c_bit_add_bus(struct i2c_adapter *adap)
+{
+	return -ENODEV;
+}
+
+void i2c_del_adapter(struct i2c_adapter *adap)
+{
+}
+
+s32 i2c_smbus_read_byte_data(const struct i2c_client *client, u8 command)
+{
+	return 0;
+}
+
+s32 i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
+			      u8 value)
+{
+	return 0;
+}
+
+
+int ipv6_find_hdr(const struct sk_buff *skb, unsigned int *offset,
+		  int target, unsigned short *fragoff, int *flags)
+{
+	return -ENOENT;
+}
+
+bool pci_device_is_present(struct pci_dev *pdev)
+{
+	return true;
+}
+
+void __iomem *pci_iomap_range(struct pci_dev *dev,
+			      int bar,
+			      unsigned long offset,
+			      unsigned long maxlen)
+{
+	return NULL;
+}
+
+void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
+{
+	return pci_iomap_range(dev, bar, 0, maxlen);
+}
+
+void pcie_print_link_status(struct pci_dev *dev)
+{
+	//__pcie_print_link_status(dev, true);
+}
+
+// struct mdio_if_info
+#include <linux/mdio.h>
+
+int mdio45_probe(struct mdio_if_info *mdio, int prtad)
+{
+	return -ENODEV;
+}
+
+int mdio_mii_ioctl(const struct mdio_if_info *mdio,
+		   struct mii_ioctl_data *mii_data, int cmd)
+{
+	return -EINVAL;
+}
+
+// struct xdp_buff
+#include <net/xdp.h>
+
+void xdp_do_flush(void)
+{
+	//__dev_flush();
+	//__cpu_map_flush();
+	//__xsk_map_flush();
+}
+
+int xdp_do_redirect(struct net_device *dev, struct xdp_buff *xdp,
+		    struct bpf_prog *xdp_prog)
+{
+	return -ENOENT;
+}
+
+//#error "is this thing on?"

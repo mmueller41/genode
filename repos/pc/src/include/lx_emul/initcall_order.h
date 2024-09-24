@@ -254,6 +254,8 @@ static const char * lx_emul_initcall_order[] = {
 	"__initcall_pcnet32_init_module6",
 	"__initcall_e1000_init_module6",
 	"__initcall_e1000_init_module6",
+	"__initcall_igb_init_module6",
+	"__initcall_ixgbe_init_module6",
 	"__initcall_rtl8169_pci_driver_init6",
 	"__initcall_ath9k_init6",
 	"__initcall_ath9k_cmn_init6",
