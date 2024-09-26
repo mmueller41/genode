@@ -599,7 +599,7 @@ void Main::parse_pci_config_spaces(Xml_node & xml, Xml_generator & generator)
 				              offset, generator, msi_number);
 
 			max_subordinate_bus = max(max_subordinate_bus, subordinate_bus);
-		} while (bus++ < max_subordinate_bus);
+		} while (bus++ < 80);
 
 		pci_config_ds.destruct();
 	});
