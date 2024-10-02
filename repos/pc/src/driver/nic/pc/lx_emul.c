@@ -17,6 +17,72 @@
 
 unsigned long __FIXADDR_TOP = 0xfffff000;
 
+const unsigned char pci_cfg[] = {
+	0x86, 0x80, 0x21, 0x15, // 00h
+	0x46, 0x05, 0x10, 0x00, // 04h
+	0x01, 0x00, 0x00, 0x02, // 08h
+	0x08, 0x00, 0x80, 0x00, // 0Ch
+	0x00, 0x00, 0xb0, 0xb2, // 10h
+	0x00, 0x00, 0x00, 0x00, // 14h
+	0x00, 0x00, 0x00, 0x00, // 18h
+	0x00, 0xc0, 0xe0, 0xb2, // 1Ch
+	0x00, 0x00, 0x00, 0x00, // 20h
+	0x00, 0x00, 0x00, 0x00, // 24h
+	0x00, 0x00, 0x00, 0x00, // 28h
+	0x86, 0x80, 0x01, 0x50, // 2Ch
+	0x00, 0x00, 0xd8, 0xb2, // 30h
+	0x40, 0x00, 0x00, 0x00, // 34h
+	0x00, 0x00, 0x00, 0x00, // 38h
+	0x0b, 0x01, 0x00, 0x00, // 3Ch
+	0x01, 0x50, 0x23, 0xc8, // 40h
+	0x08, 0x20, 0x00, 0x00, // 44h
+	0x00, 0x00, 0x00, 0x00, // 48h
+	0x00, 0x00, 0x00, 0x00, // 4Ch
+	0x05, 0x70, 0x80, 0x01, // 50h
+	0x00, 0x00, 0x00, 0x00, // 54h
+	0x00, 0x00, 0x00, 0x00, // 58h
+	0x00, 0x00, 0x00, 0x00, // 5Ch
+	0x00, 0x00, 0x00, 0x00, // 60h
+	0x00, 0x00, 0x00, 0x00, // 64h
+	0x00, 0x00, 0x00, 0x00, // 68h
+	0x00, 0x00, 0x00, 0x00, // 6Ch
+	0x11, 0xa0, 0x09, 0x80, // 70h
+	0x03, 0x00, 0x00, 0x00, // 74h
+	0x03, 0x20, 0x00, 0x00, // 78h
+	0x00, 0x00, 0x00, 0x00, // 7Ch
+	0x00, 0x00, 0x00, 0x00, // 80h
+	0x00, 0x00, 0x00, 0x00, // 84h
+	0x00, 0x00, 0x00, 0x00, // 88h
+	0x00, 0x00, 0x00, 0x00, // 8Ch
+	0x00, 0x00, 0x00, 0x00, // 90h
+	0x00, 0x00, 0x00, 0x00, // 94h
+	0x00, 0x00, 0x00, 0x00, // 98h
+	0xff, 0xff, 0xff, 0xff, // 9Ch
+	0x10, 0xe0, 0x02, 0x00, // A0h
+	0xc2, 0x8c, 0x00, 0x10, // A4h
+	0x54, 0x28, 0x19, 0x00, // A8h
+	0x42, 0xec, 0x42, 0x04, // ACh
+	0x40, 0x00, 0x42, 0x10, // B0h
+	0x00, 0x00, 0x00, 0x00, // B4h
+	0x00, 0x00, 0x00, 0x00, // B8h
+	0x00, 0x00, 0x00, 0x00, // BCh
+	0x00, 0x00, 0x00, 0x00, // C0h
+	0x1f, 0x08, 0x00, 0x00, // C4h
+	0x09, 0x04, 0x00, 0x00, // C8h
+	0x00, 0x00, 0x00, 0x00, // CCh
+	0x02, 0x00, 0x00, 0x00, // D0h
+	0x00, 0x00, 0x00, 0x00, // D4h
+	0x00, 0x00, 0x00, 0x00, // D8h
+	0x00, 0x00, 0x00, 0x00, // DCh
+	0x03, 0x00, 0xac, 0x80, // E0h
+	0x78, 0x00, 0x78, 0x00, // E4h
+	0x00, 0x00, 0x00, 0x00, // E8h
+	0x00, 0x00, 0x00, 0x00, // ECh
+	0x00, 0x00, 0x00, 0x00, // F0h
+	0x00, 0x00, 0x00, 0x00, // F4h
+	0x00, 0x00, 0x00, 0x00, // F8h
+	0x00, 0x00, 0x00, 0x00, // FCh
+};
 
 #include <linux/uaccess.h>
 
@@ -91,6 +157,8 @@ void __iomem * pci_ioremap_bar(struct pci_dev * pdev, int bar)
 
 int pci_read_config_word(const struct pci_dev *dev, int where, u16 *val)
 {
+	u16* tmp;
+
 	switch (where) {
 	case PCI_COMMAND:
 		*val = 0x7;
@@ -118,23 +186,31 @@ int pci_read_config_word(const struct pci_dev *dev, int where, u16 *val)
 		return 0;
 	};
 
-	printk("%s: unexpected read at %x\n", __func__, where);
-	PCI_SET_ERROR_RESPONSE(val);;
-	return PCIBIOS_FUNC_NOT_SUPPORTED;
+	printk("Unsupervised pci_read_config_word at %x\n", where);
+
+	tmp = (u16*)&pci_cfg[where];
+	*val = *tmp;
+	return 0;
+
+	//PCI_SET_ERROR_RESPONSE(val);;
+	//return PCIBIOS_FUNC_NOT_SUPPORTED;
+}
+
+static inline int igb_pci_pcie_cap(struct pci_dev *dev)
+{
+	return pci_cfg[PCI_CAPABILITY_LIST];
 }
 
 int pcie_capability_read_word(struct pci_dev *dev, int pos, u16 *val)
 {
-	printk("%s: unsupported pos=%x\n", __func__, pos);
-	PCI_SET_ERROR_RESPONSE(val);;
-	return PCIBIOS_FUNC_NOT_SUPPORTED;
+	return pci_read_config_word(dev, igb_pci_pcie_cap(dev) + pos, val);
 }
 
 
 int pcie_capability_write_word(struct pci_dev * dev, int pos, u16 val)
 {
-	printk("%s: unsupported pos=%x\n", __func__, pos);
-	return PCIBIOS_FUNC_NOT_SUPPORTED;
+	printk("Ignoring PCI CAP write (pos=%x,val=%d)\n", pos, val);
+	return 0;
 }
 
 
@@ -142,7 +218,7 @@ int pcie_capability_clear_and_set_word_unlocked(struct pci_dev *dev, int pos, u1
 {
 	printk("%s: unsupported pos=%x\n", __func__, pos);
 	return PCIBIOS_FUNC_NOT_SUPPORTED;
-}
+} 
 
 
 int pcie_capability_clear_and_set_word_locked(struct pci_dev *dev, int pos, u16 clear, u16 set)
@@ -315,7 +391,7 @@ struct nlattr *nla_find(const struct nlattr *head, int len, int attrtype)
 
 void *vmalloc_node(unsigned long size, int node)
 {
-	printk("%s: unsupported size=%d, node=%d\n", __func__, size, node);
+	printk("%s: unsupported size=%lu, node=%d\n", __func__, size, node);
 	return NULL;
 }
 
@@ -377,7 +453,7 @@ int flow_block_cb_setup_simple(struct flow_block_offload *f,
 
 int i2c_bit_add_bus(struct i2c_adapter *adap)
 {
-	printk("%s: unsupported\n", __func__);
+	printk("%s: unsupported\n", __func__); // TODO: this one
 	return -ENODEV;
 }
 
@@ -418,13 +494,31 @@ void __iomem *pci_iomap_range(struct pci_dev *dev,
 			      unsigned long offset,
 			      unsigned long maxlen)
 {
-	printk("%s: unsupported\n", __func__);
-	return NULL;
+	struct resource *r;
+	unsigned long phys_addr;
+	unsigned long size;
+
+	if (!dev || bar > 5) {
+		printk("%s:%d: invalid request for dev: %p bar: %d\n",
+		       __func__, __LINE__, dev, bar);
+		return NULL;
+	}
+
+	printk("pci_iomap: request for dev: %s bar: %d\n", dev_name(&dev->dev), bar);
+
+	r = &dev->resource[bar];
+
+	phys_addr = r->start;
+	size      = r->end - r->start;
+
+	if (!phys_addr || !size)
+		return NULL;
+
+	return lx_emul_io_mem_map(phys_addr, size);
 }
 
 void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
 {
-	printk("%s: unsupported\n", __func__);
 	return pci_iomap_range(dev, bar, 0, maxlen);
 }
 
