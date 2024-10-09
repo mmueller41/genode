@@ -184,6 +184,10 @@ int pci_read_config_word(const struct pci_dev *dev, int where, u16 *val)
 		/* XXX report no need to flush */
 		*val = 0;
 		return 0;
+
+	case 0x52:
+		*val = 0x42; // the answer of everything and pci link width
+		return 0;
 	};
 
 	printk("Unsupervised pci_read_config_word at %x\n", where);
@@ -380,7 +384,8 @@ int ndo_dflt_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 
 void __page_frag_cache_drain(struct page *page, unsigned int count)
 {
-	printk("%s: unsupported page=%p, count=%d\n", __func__, page, count);
+	// is used to free cache of fragmented page allocations => ignore
+	//printk("%s: unsupported page=%p, count=%d\n", __func__, page, count);
 }
 
 struct nlattr *nla_find(const struct nlattr *head, int len, int attrtype)
@@ -453,8 +458,9 @@ int flow_block_cb_setup_simple(struct flow_block_offload *f,
 
 int i2c_bit_add_bus(struct i2c_adapter *adap)
 {
-	printk("%s: unsupported\n", __func__); // TODO: this one
-	return -ENODEV;
+	printk("%s: unsupported\n", __func__);
+	return 0; // only used for thermals
+	//return -ENODEV;
 }
 
 void i2c_del_adapter(struct i2c_adapter *adap)
