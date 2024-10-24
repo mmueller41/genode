@@ -3,6 +3,7 @@ source ${genode_dir}/repos/libports/run/netty.inc
 build { test/netty/tcp }
 
 append config {
+	<!--
 	<start name="netty-server-80">
 		<binary name="test-netty_tcp"/>
 		<resource name="RAM" quantum="8M"/>
@@ -15,10 +16,11 @@ append config {
 			<libc stdout="/dev/log" stderr="/dev/log" socket="/socket"/>
 		</config>
 	</start>
+	-->
 	<start name="netty-server-8080">
 		<binary name="test-netty_tcp"/>
-		<resource name="RAM" quantum="8M"/>
-		<config ld_verbose="yes" mode="server" port="8080" nonblock="false">
+		<resource name="RAM" quantum="512M"/>
+		<config ld_verbose="yes" mode="server" port="8080" nonblock="no" read_write="yes">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
 				<dir name="socket"> <fs/>  </dir>

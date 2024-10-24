@@ -3,9 +3,9 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/pkg/[drivers_nic_pkg] \
                   [depot_user]/src/init \
                   [depot_user]/src/libc \
+				  [depot_user]/src/stdcxx \
                   [depot_user]/src/nic_router \
                   [depot_user]/src/vfs_audit \
-                  [depot_user]/src/vfs_lwip \
                   [depot_user]/src/vfs
 
 append config {
@@ -27,10 +27,11 @@ append config {
 		<any-service> <parent/> <any-child/> </any-service>
 	</default-route>
 
-	<default caps="100"/>
+	<affinity-space width="64" height="1"/>
+	<default caps="8192"/>
 
 	<start name="timer">
-		<resource name="RAM" quantum="1M"/>
+		<resource name="RAM" quantum="16M"/>
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
@@ -51,12 +52,12 @@ append config {
 			<service name="Nic"/>
 			<service name="Uplink"/>
 		</provides>
-		<config verbose_domain_state="yes">
+		<config verbose_domain_state="false">
 
 			<policy label_prefix="socket_fs" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
 
-			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
+			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2">
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -98,12 +99,9 @@ append config {
 		</route>
 		<config ld_verbose="yes">
 			<vfs>
-				<dir name="lwip">
+				<dir name="socket">
 					<lwip ip_addr="10.0.3.55" netmask="255.255.255.0" gateway="10.0.3.1" nameserver="8.8.8.8"/>
 					<!-- <lwip dhcp="yes"/> -->
-				</dir>
-				<dir name="socket">
-					<audit path="/lwip"/>
 				</dir>
 			</vfs>
 			<default-policy root="/socket" writeable="yes" />
@@ -112,6 +110,6 @@ append config {
 }
 
 append qemu_args " -nographic "
-append_qemu_nic_args
+append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
 
 # vi: set ft=tcl :

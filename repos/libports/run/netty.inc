@@ -6,6 +6,7 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/dynamic_rom \
                   [depot_user]/src/init \
                   [depot_user]/src/libc \
+				  [depot_user]/src/stdcxx \
                   [depot_user]/src/nic_router \
                   [depot_user]/src/vfs_audit \
                   [depot_user]/src/vfs_lxip \
@@ -50,12 +51,12 @@ append config {
 			<service name="Nic"/>
 			<service name="Uplink"/>
 		</provides>
-		<config verbose_domain_state="yes">
+		<config verbose_domain_state="no">
 
 			<policy label_prefix="socket_fs" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
 
-			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1" verbose_packets="true">
+			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1" verbose_packets="no">
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -70,7 +71,7 @@ append config {
 
 			</domain>
 
-			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="true">
+			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="no">
 
 				<dhcp-server ip_first="10.0.3.55" ip_last="10.0.3.55">
 					<dns-server ip="8.8.8.8"/>
@@ -96,7 +97,7 @@ append_if [use_dynamic_rom] config {
 			<config ld_verbose="yes">
 				<vfs>
 					<dir name="socket">
-						<lxip ip_addr="10.0.2.55" netmask="255.255.255.0" gateway="10.0.2.1" nameserver="8.8.8.8"/>
+						<lxip ip_addr="192.168.0.2" netmask="255.255.255.0" gateway="192.168.0.1" nameserver="8.8.8.8"/>
 					</dir>
 				</vfs>
 				<default-policy root="/socket" writeable="yes" />
@@ -156,4 +157,4 @@ append qemu_args " -nographic "
 append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
 
 
-# vi: set ft=tcl :
+# vi: set ft=tcl 

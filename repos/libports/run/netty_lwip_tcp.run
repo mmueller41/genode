@@ -1,8 +1,9 @@
 source ${genode_dir}/repos/libports/run/netty_lwip.inc
 
-build { test/netty/tcp }
+build { lib/vfs_lwip test/netty/tcp }
 
 append config {
+	<!---
 	<start name="netty-server-80">
 		<binary name="test-netty_tcp"/>
 		<resource name="RAM" quantum="16M"/>
@@ -15,10 +16,12 @@ append config {
 			<libc stdout="/dev/log" stderr="/dev/log" socket="/socket"/>
 		</config>
 	</start>
+	-->
 	<start name="netty-server-8080">
 		<binary name="test-netty_tcp"/>
-		<resource name="RAM" quantum="16M"/>
-		<config ld_verbose="yes" mode="server" port="8080" nonblock="false">
+		<resource name="RAM" quantum="32G"/>
+		<affinity xpos="1" ypos="0" width="63" height="1"/>
+		<config ld_verbose="yes" mode="server" port="8080" read_write="yes" nonblock="false">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
 				<dir name="socket"> <fs/>  </dir>
@@ -58,7 +61,7 @@ append config {
 }
 
 install_config $config
-build_boot_image { test-netty_tcp }
+build_boot_image { vfs_lwip.lib.so test-netty_tcp }
 run_genode_until forever
 
 # vi: set ft=tcl :
