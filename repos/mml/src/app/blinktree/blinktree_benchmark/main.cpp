@@ -51,6 +51,7 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
     while ((cores = benchmark->core_set()))
     {
         mx::tasking::runtime_guard _(false, cores, prefetch_distance);
+        benchmark->start_chronometer();
         benchmark->start();
         //wait_for_continue();
     }
@@ -203,13 +204,13 @@ void Libc::Component::construct(Libc::Env &env) {
     mx::system::Environment::set_cores(&sys_cores);
 
     mx::memory::GlobalHeap::myself();
-    std::uint16_t cores = 64;
+    std::uint16_t cores = 59;
      //env.cpu().affinity_space().total();
 
     char cores_arg[10];
     sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_benchmark", "-i", "20", "--olfit", cores_arg};
+    char *args[] = {"blinktree_benchmark", "-i", "200", "--olfit", cores_arg};
 
     Libc::with_libc([&]()
                     { 

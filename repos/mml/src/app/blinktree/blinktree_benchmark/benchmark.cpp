@@ -81,7 +81,7 @@ void Benchmark::start()
     {
         mx::tasking::runtime::profile(this->profile_file_name());
     }
-    /*his->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
+    /*this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
                              this->_current_iteration + 1, this->_cores.current());*/
     //Genode::log("Timer started ");
 }
@@ -217,11 +217,17 @@ void Benchmark::requests_finished()
             this->_tree.reset(nullptr);
         }
 
-        auto *restart_task = mx::tasking::runtime::new_task<RestartTask>(0U, *this);
-        restart_task->annotate(static_cast<mx::tasking::TaskInterface::channel>(0));
-        mx::tasking::runtime::spawn(*restart_task, core_id);
-        mx::tasking::runtime::resume();
-
+        if (this->core_set()) {
+            this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
+                             this->_current_iteration + 1, this->_cores.current());
+            auto *restart_task = mx::tasking::runtime::new_task<RestartTask>(0U, *this);
+            restart_task->annotate(static_cast<mx::tasking::TaskInterface::channel>(0));
+            mx::tasking::runtime::spawn(*restart_task, core_id);
+            mx::tasking::runtime::resume();
+        } else {
+            Genode::log("Benchmark finished.");
+            mx::tasking::runtime::stop();
+        }
     }
 }
 
