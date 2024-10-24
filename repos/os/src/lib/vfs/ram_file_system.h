@@ -778,13 +778,14 @@ class Vfs::Ram_file_system : public Vfs::File_system
 			bool node_modified = ram_handle->modifying;
 
 			ram_handle->node.close(*ram_handle);
-			destroy(vfs_handle->alloc(), ram_handle);
-
+			
 			if (ram_handle->node.unlinked() && !ram_handle->node.opened()) {
 				destroy(_env.alloc(), &ram_handle->node);
 			} else if (node_modified) {
 				node.notify();
 			}
+			destroy(vfs_handle->alloc(), ram_handle);
+
 		}
 
 		Stat_result stat(char const *path, Stat &stat) override
