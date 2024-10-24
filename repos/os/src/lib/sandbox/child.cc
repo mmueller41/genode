@@ -679,7 +679,6 @@ Genode::Affinity Sandbox::Child::filter_session_affinity(Affinity const &session
 	Affinity::Space    const &child_space    = _resources.affinity.space();
 	Affinity::Location const &child_location = _resources.affinity.location();
 
-	Genode::log("[Hoitaja->", this->name(),"] Using cell's affinity ", child_location, " in ", child_space, " for filtering session affinity.");
 	/* check if no valid affinity space was specified */
 	if (session_affinity.space().total() == 0)
 		return Affinity(child_space, child_location);
@@ -687,7 +686,6 @@ Genode::Affinity Sandbox::Child::filter_session_affinity(Affinity const &session
 	Affinity::Space    const &session_space    = session_affinity.space();
 	Affinity::Location const &session_location = session_affinity.location();
 
-	Genode::log("Scaling to session affinity ", session_location, " in ", session_space);
 
 	/* scale resolution of resulting space */
 	Affinity::Space space(child_space.multiply(session_space));
@@ -695,15 +693,11 @@ Genode::Affinity Sandbox::Child::filter_session_affinity(Affinity const &session
 	                                 child_location.width() * session_location.width(),
 	                                 child_location.height() * session_location.height());
 
-	Genode::log("Scaled session affinity to ", child_session, " in ", space);
-
 	/* subordinate session affinity to child affinity subspace */
 	Affinity::Location location(child_session
 	                            .multiply_position(session_space)
 	                            .transpose(session_location.xpos() * child_location.width(),
 	                                       session_location.ypos() * child_location.height()));
-
-	Genode::log("Session affinity subordinated to ", location, " in ", space);
 
 	return Affinity(space, location);
 }
