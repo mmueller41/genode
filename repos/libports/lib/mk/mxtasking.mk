@@ -13,11 +13,11 @@ CUSTOM_CXX = /usr/local/genode/tool/bin/clang++
 CUSTOM_CC = /usr/local/genode/tool/bin/clang
 
 CC_OPT += --target=x86_64-genode --sysroot=/does/not/exist --gcc-toolchain=$(GENODE_GCC_TOOLCHAIN_DIR) -DCLANG_CXX11_ATOMICS 
-CC_OPT += -std=c++17 -pedantic -Wall \
+CC_OPT += -std=c++20 -pedantic -Wall \
  -Wno-invalid-offsetof -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization \
  -Wformat=2 -Winit-self -Wmissing-declarations -Wmissing-include-dirs -Woverloaded-virtual \
  -Wredundant-decls -Wshadow -Wsign-promo -Wstrict-overflow=5 -Wswitch-default -Wundef \
- -Wno-unused -Wold-style-cast -Wno-uninitialized -O2 -g -fno-aligned-new
+ -Wno-unused -Wold-style-cast -Wno-uninitialized -O2 -g 
 
 CC_OPT += $(addprefix -I ,$(INC_DIR)) 
 CC_CXX_WARN_STRICT =
