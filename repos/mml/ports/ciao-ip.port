@@ -6,7 +6,7 @@ URL(ciao-ip) := git@ess-git.inf.uos.de:software/ciao-ip.git
 REV(ciao-ip) := master
 DIR(ciao-ip) := src/lib/ciao-ip
 
-
+CC_OPT += "--target x86_64-linux-gnu"
 #ifndef CIAO_IP_CONFIG
 # CIAO_IP_CONFIG = $(realpath $(dir $(PORT)))/.ciao-ip-config
 #endif
@@ -140,6 +140,6 @@ DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/i
 DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_ARP_Send_Receive.ah
 
 headers:
-	make -C src/lib/ciao-ip header
+	ACXXFLAGS=$(CC_OPT) make -C src/lib/ciao-ip header
 
 _dirs: headers
