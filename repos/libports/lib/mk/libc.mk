@@ -12,14 +12,14 @@ LIBS  += base vfs
 # Back end
 #
 SRC_CC = atexit.cc dummies.cc rlimit.cc sysctl.cc \
-         issetugid.cc errno.cc gai_strerror.cc time.cc \
+         issetugid.cc errno.cc gai_strerror.cc time.cc alarm.cc \
          malloc.cc progname.cc fd_alloc.cc file_operations.cc \
          plugin.cc plugin_registry.cc select.cc exit.cc environ.cc sleep.cc \
          pread_pwrite.cc readv_writev.cc poll.cc \
          vfs_plugin.cc dynamic_linker.cc signal.cc \
          socket_operations.cc socket_fs_plugin.cc syscall.cc \
          getpwent.cc getrandom.cc fork.cc execve.cc kernel.cc component.cc \
-         genode.cc spinlock.cc
+         genode.cc spinlock.cc kqueue.cc
 
 #
 # Pthreads

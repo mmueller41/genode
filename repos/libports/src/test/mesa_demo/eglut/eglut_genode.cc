@@ -57,13 +57,13 @@ struct Window : Genode_egl_window
 
 	Window(Genode::Env &env, int w, int h)
 	:
-		env(env), mode { .area = Gui::Area(w, h) }
+		env(env), mode { .area = Gui::Area(w, h), .alpha = false }
 	{
 		width  = w;
 		height = h;
 		type   = WINDOW;
 
-		gui.buffer(mode, false);
+		gui.buffer(mode);
 
 		mode_change();
 	}
@@ -82,7 +82,7 @@ struct Window : Genode_egl_window
 
 	void refresh()
 	{
-		gui.framebuffer.refresh(0, 0, mode.area.w, mode.area.h);
+		gui.framebuffer.refresh({ { 0, 0 }, mode.area });
 	}
 };
 

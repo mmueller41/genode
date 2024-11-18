@@ -44,18 +44,21 @@ struct Status_bar::Buffer
 
 	Gui::Connection &_gui;
 
-	Framebuffer::Mode const _nit_mode { _gui.mode() };
+	Gui::Area const _scr_area = _gui.panorama().convert<Gui::Area>(
+		[&] (Gui::Rect rect) { return rect.area; },
+		[&] (Gui::Undefined) { return Gui::Area { 1, 1 }; });
 
 	/*
 	 * Dimension nitpicker buffer depending on nitpicker's screen size.
 	 * The status bar is as wide as nitpicker's screen and has a fixed
 	 * height.
 	 */
-	Framebuffer::Mode const _mode { .area = { _nit_mode.area.w, HEIGHT } };
+	Framebuffer::Mode const _mode { .area  = { _scr_area.w, HEIGHT },
+	                                .alpha = false };
 
 	Dataspace_capability _init_buffer()
 	{
-		_gui.buffer(_mode, false);
+		_gui.buffer(_mode);
 		return _gui.framebuffer.dataspace();
 	}
 
@@ -157,7 +160,7 @@ void Status_bar::Buffer::draw(Domain_name const &domain_name,
 	_draw_label(surface, view_rect.center(_label_size(domain_name, label)),
 	            domain_name, label, color);
 
-	_gui.framebuffer.refresh(0, 0, area.w, area.h);
+	_gui.framebuffer.refresh({ { 0, 0 }, area });
 }
 
 
@@ -197,7 +200,7 @@ struct Status_bar::Main
 	{
 		/* register signal handlers */
 		_focus_ds.sigh(_focus_handler);
-		_gui.mode_sigh(_mode_handler);
+		_gui.info_sigh(_mode_handler);
 
 		/* import initial state */
 		_handle_mode();

@@ -16,13 +16,17 @@ if { [have_include "power_on/qemu"] || ![have_spec nova] || ![have_spec x86_64]}
 create_boot_directory
 import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/acpi \
+                  [depot_user]/src/black_hole \
+                  [depot_user]/src/expat \
                   [depot_user]/src/fs_rom \
                   [depot_user]/src/init \
                   [depot_user]/src/jpeg \
                   [depot_user]/src/libc \
+                  [depot_user]/src/libdrm \
                   [depot_user]/src/libiconv \
                   [depot_user]/src/libyuv \
                   [depot_user]/src/log_terminal \
+                  [depot_user]/src/mesa \
                   [depot_user]/src/nitpicker \
                   [depot_user]/src/pc_usb_host \
                   [depot_user]/src/pci_decode \
@@ -31,9 +35,10 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/ps2 \
                   [depot_user]/src/report_rom \
                   [depot_user]/src/stdcxx \
-                  [depot_user]/src/vbox5-nova \
+                  [depot_user]/src/vbox6 \
                   [depot_user]/src/vesa_fb \
                   [depot_user]/src/vfs \
+                  [depot_user]/src/vfs_gpu \
                   [depot_user]/src/vfs_import \
                   [depot_user]/src/vfs_pipe \
                   [depot_user]/src/zlib
@@ -49,11 +54,17 @@ install_config {
 		<service name="RM"/>
 		<service name="CPU"/>
 		<service name="LOG"/>
+		<service name="VM"/>
 	</parent-provides>
 	<default-route>
 		<any-service> <parent/> <any-child/> </any-service>
 	</default-route>
 	<default caps="150"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="1M"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>
 
 	<start name="report_rom" priority="-1">
 		<resource name="RAM" quantum="1M"/>
@@ -67,7 +78,7 @@ install_config {
 	</start>
 
 	<start name="acpi" caps="250">
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="8M"/>
 		<route>
 			<service name="Report"> <child name="report_rom"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
@@ -92,15 +103,8 @@ install_config {
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 		<config>
-			<policy label_prefix="ps2"> <device name="ps2"/> </policy>
-			<policy label_prefix="fb"  info="yes"> <pci class="VGA"/>   </policy>
-			<policy label_prefix="usb" info="yes"> <pci class="USB"/>   </policy>
+			<policy label_prefix="usb" info="yes"> <pci class="USB"/> </policy>
 		</config>
-	</start>
-
-	<start name="timer">
-		<resource name="RAM" quantum="1M"/>
-		<provides><service name="Timer"/></provides>
 	</start>
 
 	<start name="usb" priority="-1">
@@ -109,48 +113,40 @@ install_config {
 		<provides> <service name="Usb"/> </provides>
 		<config>
 			<report devices="yes" config="yes"/>
-			<policy label_prefix="virtualbox"><device class="0x3"/></policy>
+			<policy label_prefix="virtualbox"> <device class="0x3"/> </policy>
 		</config>
 		<route>
-			<service name="IRQ"><child name="acpi" /></service>
-			<service name="Report"> <child name="report_rom" /> </service>
+			<service name="IRQ"> <child name="acpi"/> </service>
+			<service name="Report"> <child name="report_rom"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
 	</start>
 
 	<start name="nitpicker" priority="-1">
 		<resource name="RAM" quantum="12M"/>
-		<provides>
-			<service name="Gui"/> <service name="Capture"/> <service name="Event"/>
-		</provides>
-		<route>
-			<service name="Report"> <child name="report_rom" /> </service>
-			<any-service> <parent/> <any-child /> </any-service>
-		</route>
+		<provides> <service name="Gui"/> </provides>
 		<config>
-			<capture/> <event/>
 			<report focus="yes" hover="yes" />
 
-			<domain name="pointer"  layer="1" content="client" label="no" origin="pointer" />
-			<domain name="cpu_load" layer="2" content="client" label="no" />
-			<domain name=""         layer="3" content="client" label="no" focus="click" hover="always" />
+			<domain name="" layer="3" content="client" label="no" focus="click" hover="always"/>
 
-			<policy label_prefix="pointer"          domain="pointer"/>
-			<policy label_prefix="cpu_load_display" domain="cpu_load"/>
 			<default-policy domain=""/>
 		</config>
+		<route>
+			<service name="Report"> <child name="report_rom"/> </service>
+			<any-service> <parent/> <any-child /> </any-service>
+		</route>
 	</start>
 
-	<start name="pointer" priority="-1">
-		<resource name="RAM" quantum="2M"/>
-		<provides> <service name="Report"/> </provides>
-		<config shapes="yes"/>
-		<route>
-			<service name="Gui"> <child name="nitpicker"/> </service>
-			<service name="ROM" label="hover"> <child name="report_rom"/> </service>
-			<service name="ROM" label="xray"> <child name="report_rom"/> </service>
-			<any-service> <parent/> </any-service>
-		</route>
+	<start name="black_hole">
+		<resource name="RAM" quantum="1M"/>
+		<provides>
+			<service name="Event"/>
+			<service name="Nic"/>
+		</provides>
+		<config>
+			<event/> <nic/>
+		</config>
 	</start>
 
 	<start name="log_terminal" priority="-1">
@@ -161,19 +157,27 @@ install_config {
 	</start>
 
 	<start name="virtualbox" caps="800" priority="-2">
-		<binary name="virtualbox5-nova"/>
-		<resource name="RAM" quantum="448M"/>
-		<config vbox_file="vm_genode_usb_hid_raw.vbox" vm_name="TestVM" xhci="yes">
+		<binary name="virtualbox6"/>
+		<resource name="RAM" quantum="1024M"/>
+		<config vbox_file="vbox6_genode_usb_hid_raw.vbox" vm_name="TestVM" xhci="yes">
 			<vfs>
 				<dir name="dev">
-					<log/> <terminal/>
+					<log/> <terminal/> <null/>
 					<inline name="rtc">2022-08-10 00:01</inline>
 				</dir>
 				<dir name="pipe"> <pipe/> </dir>
-				<rom name="vm_genode_usb_hid_raw.vbox" />
-				<rom name="usb_hid_raw.iso" />
+				<rom name="vbox6_genode_usb_hid_raw.vbox"/>
+				<rom name="usb_hid_raw.iso"/>
 			</vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" pipe="/pipe" rtc="/dev/rtc"/>
+			<arg value="virtualbox"/>
+			<env key="VBOX_USER_HOME"         value="/"/>
+			<env key="VBOX_LOG_DEST"          value="file=/dev/log"/>
+			<env key="VBOX_LOG"               value=""/>
+			<env key="VBOX_LOG_FLAGS"         value="thread"/>
+			<env key="VBOX_RELEASE_LOG_DEST"  value="file=/dev/log"/>
+			<env key="VBOX_RELEASE_LOG"       value=""/>
+			<env key="VBOX_RELEASE_LOG_FLAGS" value="thread"/>
 		</config>
 		<route>
 			<service name="Report"><child name="report_rom" /></service>
@@ -208,19 +212,42 @@ exec -ignorestderr \
      --include image/iso \
      --include [repository_contains run/usb_hid_raw.run]/run/usb_hid_raw.run
 
-exec ln -sf ${genode_dir}/repos/ports/run/vm_genode_usb_hid_raw.vbox bin/
+exec ln -sf ${genode_dir}/repos/ports/run/vbox6_genode_usb_hid_raw.vbox bin/
 exec ln -sf ../../usb_hid_raw.iso bin/
 
-build_boot_image { usb_hid_raw.iso vm_genode_usb_hid_raw.vbox }
+set boot_components [build_artifacts]
+
+append boot_components { usb_hid_raw.iso vbox6_genode_usb_hid_raw.vbox }
+
+build_boot_image $boot_components
 
 if { ![get_cmd_switch --autopilot] } { run_genode_until forever }
 
 # autopilot test
 
-run_genode_until {\[init -\> log_terminal\] \[init -\> event_dump\] Input event #11\t} 150
+run_genode_until {\[init -\> log_terminal\] \[init -\> event_dump\] Input event #0\t} 90
 
-# pay only attention to the output of event_dump
-grep_output {^\[init -\> log_terminal\] \[init -\> event_dump\]}
+# remove everything before the first interesting line
+regexp {(\[init -\> log_terminal\] \[init -\> event_dump\] Input event #0\t.*)} $output all output
+
+run_genode_until {.*\[init -\> event_dump\] Input event #11.*\n} 60 [output_spawn_id]
+
+# pay only attention to the output of init and its children
+grep_output {^\[init }
+
+unify_output {(?n)^\[init -\> log_terminal\] \[init -\> usb_hid\] usb usb-[0-9]-[0-9]: input irq status -19 received} ""
+unify_output {(?n) on usb-usbbus.*$} ""
+unify_output {(?n) at usb-usbbus.*\)} ")"
+unify_output {(?n)hid-generic.*input:} "hid-generic: input:"
+unify_output {(?n)usb-[0-9]-[0-9]: USB disconnect, device number [0-9]} "usb-X-X: USB disconnect, device number X"
+unify_output {(?n)device number [0-9]+} "device number X"
+unify_output {(?n)input[0-9]} "inputX"
+unify_output {(?n) as /devices/.*} ""
+unify_output {(?n)^\[init -\> usb.*} ""
+unify_output {(?n)^\[init -\> log_terminal\] \[init -\> usb.*} ""
+unify_output {(?n)^.*dangling allocation.*$} ""
+unify_output {(?n)^.*usbfs: process .* did not claim interface.*$} ""
+trim_lines
 
 compare_output_to {
 [init -> log_terminal] [init -> event_dump] Input event #0	PRESS KEY_X 65534	key count: 1

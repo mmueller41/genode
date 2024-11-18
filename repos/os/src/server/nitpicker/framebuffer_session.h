@@ -38,27 +38,33 @@ class Framebuffer::Session_component : public Rpc_object<Session>
 		Session_component(Session_component const &);
 		Session_component &operator = (Session_component const &);
 
+		Entrypoint               &_ep;
 		View_stack               &_view_stack;
 		Nitpicker::Gui_session   &_session;
 		Buffer_provider          &_buffer_provider;
 		Signal_context_capability _mode_sigh { };
 		Signal_context_capability _sync_sigh { };
 		Framebuffer::Mode         _mode { };
-		bool                      _alpha = false;
 
 	public:
 
 		/**
 		 * Constructor
 		 */
-		Session_component(View_stack             &view_stack,
+		Session_component(Entrypoint             &ep,
+		                  View_stack             &view_stack,
 		                  Nitpicker::Gui_session &session,
 		                  Buffer_provider        &buffer_provider)
 		:
+			_ep(ep),
 			_view_stack(view_stack),
 			_session(session),
 			_buffer_provider(buffer_provider)
-		{ }
+		{
+			_ep.manage(*this);
+		}
+
+		~Session_component() { _ep.dissolve(*this); }
 
 		/**
 		 * Change virtual framebuffer mode
@@ -71,10 +77,9 @@ class Framebuffer::Session_component : public Rpc_object<Session>
 		 * client calls 'dataspace' the next time, the new mode becomes
 		 * effective.
 		 */
-		void notify_mode_change(Framebuffer::Mode mode, bool alpha)
+		void notify_mode_change(Framebuffer::Mode mode)
 		{
-			_mode  = mode;
-			_alpha = alpha;
+			_mode = mode;
 
 			if (_mode_sigh.valid())
 				Signal_transmitter(_mode_sigh).submit();
@@ -93,7 +98,7 @@ class Framebuffer::Session_component : public Rpc_object<Session>
 
 		Dataspace_capability dataspace() override
 		{
-			return _buffer_provider.realloc_buffer(_mode, _alpha);
+			return _buffer_provider.realloc_buffer(_mode);
 		}
 
 		Mode mode() const override { return _mode; }
@@ -108,7 +113,13 @@ class Framebuffer::Session_component : public Rpc_object<Session>
 			_sync_sigh = sigh;
 		}
 
-		void refresh(int x, int y, int w, int h) override;
+		void sync_source(Session_label const &) override { }
+
+		void refresh(Rect) override;
+
+		Blit_result blit(Blit_batch const &) override;
+
+		void panning(Point) override;
 };
 
 #endif /* _FRAMEBUFFER_SESSION_COMPONENT_H_ */

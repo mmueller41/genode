@@ -15,14 +15,8 @@
 #define _INCLUDE__GEMS__GUI_BUFFER_H_
 
 /* Genode includes */
-#include <base/ram_allocator.h>
 #include <gui_session/connection.h>
-#include <base/attached_dataspace.h>
 #include <base/attached_ram_dataspace.h>
-#include <os/surface.h>
-#include <os/pixel_alpha8.h>
-#include <os/pixel_rgb888.h>
-#include <blit/painter.h>
 
 
 struct Gui_buffer : Genode::Noncopyable
@@ -36,50 +30,38 @@ struct Gui_buffer : Genode::Noncopyable
 	using Point         = Genode::Surface_base::Point;
 	using Ram_ds        = Genode::Attached_ram_dataspace;
 	using size_t        = Genode::size_t;
+	using uint8_t       = Genode::uint8_t;
 
-	Genode::Ram_allocator &ram;
-	Genode::Region_map    &rm;
+	Genode::Ram_allocator &_ram;
+	Genode::Region_map    &_rm;
 
-	Gui::Connection &gui;
+	Gui::Connection &_gui;
 
 	Framebuffer::Mode const mode;
 
-	bool const use_alpha;
+	/*
+	 * Make the GUI mode twice as high as the requested mode. The upper part
+	 * of the GUI framebuffer contains the front buffer, the lower part
+	 * contains the back buffer.
+	 */
+	Framebuffer::Mode const _gui_mode { .area  = { mode.area.w, mode.area.h*2 },
+	                                    .alpha = mode.alpha };
+
+	Genode::Surface_window const _backbuffer { .y = mode.area.h, .h = mode.area.h };
 
 	Pixel_rgb888 const reset_color;
 
-	/**
-	 * Return dataspace capability for virtual framebuffer
-	 */
-	Genode::Dataspace_capability _ds_cap(Gui::Connection &gui)
-	{
-		/* setup virtual framebuffer mode */
-		gui.buffer(mode, use_alpha);
-
-		return gui.framebuffer.dataspace();
-	}
-
-	Genode::Attached_dataspace fb_ds { rm, _ds_cap(gui) };
-
-	size_t pixel_surface_num_bytes() const
-	{
-		return size().count()*sizeof(Pixel_rgb888);
-	}
-
-	size_t alpha_surface_num_bytes() const
-	{
-		return use_alpha ? size().count() : 0;
-	}
-
-	Ram_ds pixel_surface_ds { ram, rm, pixel_surface_num_bytes() };
-	Ram_ds alpha_surface_ds { ram, rm, alpha_surface_num_bytes() };
+	Genode::Attached_dataspace _fb_ds {
+		_rm, ( _gui.buffer(_gui_mode), _gui.framebuffer.dataspace() ) };
 
 	enum class Alpha { OPAQUE, ALPHA };
 
-	static Genode::Color default_reset_color()
-	{
-		return Genode::Color(127, 127, 127, 255);
-	}
+	/*
+	 * Do not use black by default to limit the bleeding of black into
+	 * antialiased drawing operations applied onto an initially transparent
+	 * background.
+	 */
+	static constexpr Genode::Color default_reset_color = { 127, 127, 127, 255 };
 
 	/**
 	 * Constructor
@@ -87,39 +69,42 @@ struct Gui_buffer : Genode::Noncopyable
 	Gui_buffer(Gui::Connection &gui, Area size,
 	           Genode::Ram_allocator &ram, Genode::Region_map &rm,
 	           Alpha alpha = Alpha::ALPHA,
-	           Genode::Color reset_color = default_reset_color())
+	           Genode::Color reset_color = default_reset_color)
 	:
-		ram(ram), rm(rm), gui(gui),
+		_ram(ram), _rm(rm), _gui(gui),
 		mode({ .area = { Genode::max(1U, size.w),
-		                 Genode::max(1U, size.h) } }),
-		use_alpha(alpha == Alpha::ALPHA),
+		                 Genode::max(1U, size.h) },
+		       .alpha = (alpha == Alpha::ALPHA) }),
 		reset_color(reset_color.r, reset_color.g, reset_color.b, reset_color.a)
 	{
 		reset_surface();
 	}
 
 	/**
-	 * Return size of virtual framebuffer
+	 * Return size of the drawing surface
 	 */
 	Area size() const { return mode.area; }
 
-	template <typename FN>
-	void with_alpha_surface(FN const &fn)
+	void with_alpha_surface(auto const &fn)
 	{
-		Area const alpha_size = use_alpha ? size() : Area(0, 0);
-		Alpha_surface alpha(alpha_surface_ds.local_addr<Pixel_alpha8>(), alpha_size);
-		fn(alpha);
+		if (!_gui_mode.alpha) {
+			Alpha_surface dummy { nullptr, Gui::Area { } };
+			fn(dummy);
+			return;
+		}
+		_gui_mode.with_alpha_surface(_fb_ds, [&] (Alpha_surface &surface) {
+			surface.with_window(_backbuffer, [&] (Alpha_surface &surface) {
+				fn(surface); }); });
 	}
 
-	template <typename FN>
-	void with_pixel_surface(FN const &fn)
+	void with_pixel_surface(auto const &fn)
 	{
-		Pixel_surface pixel(pixel_surface_ds.local_addr<Pixel_rgb888>(), size());
-		fn(pixel);
+		_gui_mode.with_pixel_surface(_fb_ds, [&] (Pixel_surface &surface) {
+			surface.with_window(_backbuffer, [&] (Pixel_surface &surface) {
+				fn(surface); }); });
 	}
 
-	template <typename FN>
-	void apply_to_surface(FN const &fn)
+	void apply_to_surface(auto const &fn)
 	{
 		with_alpha_surface([&] (Alpha_surface &alpha) {
 			with_pixel_surface([&] (Pixel_surface &pixel) {
@@ -128,18 +113,11 @@ struct Gui_buffer : Genode::Noncopyable
 
 	void reset_surface()
 	{
-		if (use_alpha)
-			with_alpha_surface([&] (Alpha_surface &alpha) {
-				Genode::memset(alpha.addr(), 0, alpha_surface_num_bytes()); });
+		with_alpha_surface([&] (Alpha_surface &alpha) {
+			Genode::memset(alpha.addr(), 0, alpha.size().count()); });
 
 		with_pixel_surface([&] (Pixel_surface &pixel) {
 
-			/*
-			 * Initialize color buffer with 50% gray
-			 *
-			 * We do not use black to limit the bleeding of black into antialiased
-			 * drawing operations applied onto an initially transparent background.
-			 */
 			Pixel_rgb888 *dst = pixel.addr();
 			Pixel_rgb888 const color = reset_color;
 
@@ -148,71 +126,40 @@ struct Gui_buffer : Genode::Noncopyable
 		});
 	}
 
-	template <typename DST_PT, typename SRC_PT>
-	void _convert_back_to_front(DST_PT                        *front_base,
-	                            Genode::Texture<SRC_PT> const &texture,
-	                            Rect                    const  clip_rect)
-	{
-		Genode::Surface<DST_PT> surface(front_base, size());
-
-		surface.clip(clip_rect);
-
-		Blit_painter::paint(surface, texture, Point());
-	}
-
 	void _update_input_mask()
 	{
-		if (!use_alpha)
-			return;
+		with_alpha_surface([&] (Alpha_surface &alpha) {
 
-		size_t const num_pixels = size().count();
+			using Input_surface = Genode::Surface<Genode::Pixel_input8>;
 
-		unsigned char * const alpha_base = fb_ds.local_addr<unsigned char>()
-		                                 + mode.bytes_per_pixel()*num_pixels;
+			_gui_mode.with_input_surface(_fb_ds, [&] (Input_surface &input) {
+				input.with_window(_backbuffer, [&] (Input_surface &input) {
 
-		unsigned char * const input_base = alpha_base + num_pixels;
+					uint8_t const * src = (uint8_t *)alpha.addr();
+					uint8_t       * dst = (uint8_t *)input.addr();
 
-		unsigned char const *src = alpha_base;
-		unsigned char       *dst = input_base;
+					/*
+					 * Set input mask for all pixels where the alpha value is
+					 * above a given threshold. The threshold is defined such
+					 * that typical drop shadows are below the value.
+					 */
+					uint8_t const threshold  = 100;
+					size_t  const num_pixels = Genode::min(alpha.size().count(),
+					                                       input.size().count());
 
-		/*
-		 * Set input mask for all pixels where the alpha value is above a
-		 * given threshold. The threshold is defined such that typical
-		 * drop shadows are below the value.
-		 */
-		unsigned char const threshold = 100;
-
-		for (unsigned i = 0; i < num_pixels; i++)
-			*dst++ = (*src++) > threshold;
+					for (unsigned i = 0; i < num_pixels; i++)
+						*dst++ = (*src++) > threshold;
+				});
+			});
+		});
 	}
 
 	void flush_surface()
 	{
-		// XXX track dirty rectangles
-		Rect const clip_rect(Genode::Surface_base::Point(0, 0), size());
+		_update_input_mask();
 
-		{
-			/* represent back buffer as texture */
-			Genode::Texture<Pixel_rgb888>
-				pixel_texture(pixel_surface_ds.local_addr<Pixel_rgb888>(),
-				              nullptr, size());
-			Pixel_rgb888 *pixel_base = fb_ds.local_addr<Pixel_rgb888>();
-
-			_convert_back_to_front(pixel_base, pixel_texture, clip_rect);
-		}
-
-		if (use_alpha) {
-			Genode::Texture<Pixel_alpha8>
-				alpha_texture(alpha_surface_ds.local_addr<Pixel_alpha8>(),
-				              nullptr, size());
-
-			Pixel_alpha8 *alpha_base = fb_ds.local_addr<Pixel_alpha8>()
-			                         + mode.bytes_per_pixel()*size().count();
-
-			_convert_back_to_front(alpha_base, alpha_texture, clip_rect);
-
-			_update_input_mask();
-		}
+		/* copy lower part of virtual framebuffer to upper part */
+		_gui.framebuffer.blit({ { 0, int(size().h) }, size() }, { 0, 0 });
 	}
 };
 

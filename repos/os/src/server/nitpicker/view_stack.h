@@ -32,7 +32,7 @@ class Nitpicker::View_stack
 
 	private:
 
-		Area                   _size { };
+		Rect                   _bounding_box { };
 		Focus                 &_focus;
 		Font            const &_font;
 		List<View_stack_elem>  _views { };
@@ -99,11 +99,11 @@ class Nitpicker::View_stack
 		/**
 		 * Return size
 		 */
-		Area size() const { return _size; }
+		Rect bounding_box() const { return _bounding_box; }
 
-		void size(Area size)
+		void bounding_box(Rect rect)
 		{
-			_size = size;
+			_bounding_box = rect;
 
 			update_all_views();
 		}
@@ -128,10 +128,8 @@ class Nitpicker::View_stack
 		 */
 		void update_all_views()
 		{
-			Rect const whole_screen(Point(), _size);
-
-			_place_labels(whole_screen);
-			_damage.mark_as_damaged(whole_screen);
+			_place_labels(_bounding_box);
+			_damage.mark_as_damaged(_bounding_box);
 		}
 
 		/**
@@ -151,7 +149,8 @@ class Nitpicker::View_stack
 				 * Determine view portion that displays the buffer portion
 				 * specified by 'rect'.
 				 */
-				Point const offset = view->abs_position() + view->buffer_off();
+				Point const offset = view->abs_position() + view->buffer_off()
+				                   - session.panning();
 				Rect const r = Rect::intersect(Rect::compound(rect.p1() + offset,
 				                                              rect.p2() + offset),
 				                               view->abs_geometry());

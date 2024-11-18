@@ -141,12 +141,11 @@ struct Sculpt::Network : Noncopyable
 
 			_wlan_config.generate([&] (Xml_generator &xml) {
 
-				xml.attribute("connected_scan_interval", 0U);
 				xml.attribute("scan_interval", 10U);
 				xml.attribute("update_quality_interval", 30U);
 
-				xml.attribute("verbose_state", false);
-				xml.attribute("verbose",       false);
+				xml.attribute("verbose", false);
+				xml.attribute("log_level", "error");
 
 				xml.node("network", [&]() {
 					xml.attribute("ssid", ap.ssid);
@@ -172,19 +171,11 @@ struct Sculpt::Network : Noncopyable
 
 		_wlan_config.generate([&] (Xml_generator &xml) {
 
-			xml.attribute("connected_scan_interval", 0U);
 			xml.attribute("scan_interval", 10U);
 			xml.attribute("update_quality_interval", 30U);
 
-			xml.attribute("verbose_state", false);
-			xml.attribute("verbose",       false);
-
-			xml.node("network", [&]() {
-				/* generate attributes to ease subsequent manual tweaking */
-				xml.attribute("ssid", "");
-				xml.attribute("protection", "NONE");
-				xml.attribute("passphrase", "");
-			});
+			xml.attribute("verbose", false);
+			xml.attribute("log_level", "error");
 		});
 
 		_runtime_config_generator.generate_runtime_config();

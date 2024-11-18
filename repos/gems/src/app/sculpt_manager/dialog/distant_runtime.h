@@ -53,7 +53,7 @@ class Dialog::Distant_runtime : Noncopyable
 
 		Start_name const _start_name   { "runtime_view" };
 		Ram_quota  const _initial_ram  { 52*1024*1024 };
-		Cap_quota  const _initial_caps { 300 };
+		Cap_quota  const _initial_caps { 330 };
 
 		Ram_quota _ram  = _initial_ram;
 		Cap_quota _caps = _initial_caps;
@@ -105,7 +105,7 @@ class Dialog::Distant_runtime : Noncopyable
 				return false;
 
 			if (child.has_sub_node("ram") && child.sub_node("ram").has_attribute("requested")) {
-				_ram.value = min(2*_ram.value, 32*1024*1024u);
+				_ram.value = min(2*_ram.value, 64*1024*1024u);
 				result = true;
 			}
 

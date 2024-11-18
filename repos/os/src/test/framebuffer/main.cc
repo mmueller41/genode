@@ -19,6 +19,7 @@
 #include <base/log.h>
 #include <os/static_root.h>
 #include <capture_session/capture_session.h>
+#include <timer_session/connection.h>
 #include <base/attached_ram_dataspace.h>
 #include <util/reconstructible.h>
 
@@ -53,15 +54,38 @@ struct Test::Capture_session : Rpc_object<Capture::Session>
 
 	State _state = STRIPES;
 
-	unsigned long _sync_cnt = 0;
-
-	enum { FRAME_CNT = 200 };
-
 	void _draw();
-
 	void _draw_frame(Pixel *, Pixel, Area);
 
-	Capture_session(Env &env) : _env(env) { }
+	bool _dirty           = false; /* true if there is data not yet delivered */
+	bool _capture_stopped = false;
+
+	Signal_context_capability _wakeup_sigh { };
+
+	void _wakeup_if_needed()
+	{
+		if (_capture_stopped && _dirty && _wakeup_sigh.valid()) {
+			Signal_transmitter(_wakeup_sigh).submit();
+			_capture_stopped = false;
+		}
+	}
+
+	Timer::Connection _timer { _env };
+
+	Signal_handler<Capture_session> _timer_handler {
+		_env.ep(), *this, &Capture_session::_handle_timer };
+
+	void _handle_timer()
+	{
+		_dirty = true;
+		_wakeup_if_needed();
+	}
+
+	Capture_session(Env &env) : _env(env)
+	{
+		_timer.sigh(_timer_handler);
+		_timer.trigger_periodic(1000*1000);
+	}
 
 
 	/********************************
@@ -72,11 +96,22 @@ struct Test::Capture_session : Rpc_object<Capture::Session>
 
 	void screen_size_sigh(Signal_context_capability) override { }
 
-	void buffer(Area size) override
+	void wakeup_sigh(Signal_context_capability sigh) override { _wakeup_sigh = sigh; }
+
+	Buffer_result buffer(Buffer_attr attr) override
 	{
-		_ds.construct(_env.ram(), _env.rm(), buffer_bytes(size));
-		_size = size;
+		try {
+			_ds.construct(_env.ram(), _env.rm(), buffer_bytes(attr.px));
+		}
+		catch (Out_of_ram)  { return Buffer_result::OUT_OF_RAM;  }
+		catch (Out_of_caps) { return Buffer_result::OUT_OF_CAPS; }
+
+		_size = attr.px;
+
+		log("screen dimension: ", _size);
+
 		_draw();
+		return Buffer_result::OK;
 	}
 
 	Dataspace_capability dataspace() override
@@ -87,14 +122,15 @@ struct Test::Capture_session : Rpc_object<Capture::Session>
 	Affected_rects capture_at(Point) override
 	{
 		Affected_rects affected { };
-
-		if (_sync_cnt++ % FRAME_CNT == 0) {
+		if (_dirty) {
 			_draw();
-			affected.rects[0] = Rect(Point(0, 0), _size);
+			affected.rects[0] = Rect { { }, _size };
+			_dirty = false;
 		}
-
 		return affected;
 	}
+
+	void capture_stopped() override { _capture_stopped = true; }
 };
 
 
@@ -128,6 +164,11 @@ void Test::Capture_session::_draw_frame(Pixel *p, Pixel c, Area area)
 	/* left and right */
 	for (unsigned i = 0; i < h; ++i)
 		p[i*w] = p[i*w + w - 1] = c;
+
+	/* 15px marker for (0,0) */
+	for (unsigned i = 0; i < 15; i++)
+		for (unsigned j = 0; j < 15; j++)
+			p[i*w + j] =  c;
 }
 
 

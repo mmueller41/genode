@@ -366,7 +366,7 @@ struct Nitlog::Main
 
 	void _init_gui_buffer()
 	{
-		_gui.buffer(Framebuffer::Mode { .area = { _win_w, _win_h } }, false);
+		_gui.buffer({ .area = { _win_w, _win_h }, .alpha = false });
 	}
 
 	bool const _gui_buffer_initialized = (_init_gui_buffer(), true);
@@ -444,7 +444,7 @@ struct Nitlog::Main
 	void _handle_timer()
 	{
 		if (_log_window.draw())
-			_gui.framebuffer.refresh(0, 0, _win_w, _win_h);
+			_gui.framebuffer.refresh({ { 0, 0 }, { _win_w, _win_h } });
 	}
 
 	Main(Env &env) : _env(env)

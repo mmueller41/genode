@@ -64,7 +64,7 @@ void Gui_session::_execute_command(Command const &command)
 
 			/* transpose position of top-level views by vertical session offset */
 			if (view.top_level())
-				pos = _phys_pos(pos, _view_stack.size());
+				pos = _phys_pos(pos, _view_stack.bounding_box());
 
 			_view_stack.geometry(view, Rect(pos, args.rect.area));
 		});
@@ -155,7 +155,10 @@ void Gui_session::_destroy_view(View &view)
 		_view_stack.default_background(_builtin_background);
 
 	_view_stack.remove_view(view);
-	_env.ep().dissolve(view);
+	if (view.cap().valid()) {
+		_env.ep().dissolve(view);
+		replenish(Cap_quota { 1 });
+	}
 	_view_list.remove(&view);
 	destroy(_view_alloc, &view);
 }
@@ -172,7 +175,7 @@ void Gui_session::submit_input_event(Input::Event e)
 {
 	using namespace Input;
 
-	Point const origin_offset = _phys_pos(Point(0, 0), _view_stack.size());
+	Point const origin_offset = _phys_pos({ 0, 0 }, _view_stack.bounding_box());
 
 	/*
 	 * Transpose absolute coordinates by session-specific vertical offset.
@@ -194,7 +197,6 @@ void Gui_session::_adopt_new_view(View &view)
 	view.apply_origin_policy(_pointer_origin);
 
 	_view_list.insert(&view);
-	_env.ep().manage(view);
 }
 
 
@@ -342,8 +344,17 @@ Gui_session::associate(View_id id, View_capability view_cap)
 Gui_session::View_capability_result Gui_session::view_capability(View_id id)
 {
 	return _with_view(id,
-		[&] (View &view)               { return view.cap(); },
-		[&] /* view does not exist */  { return View_capability(); });
+		[&] (View &view) -> View_capability_result
+		{
+			if (!view.cap().valid()) {
+				if (!try_withdraw(Cap_quota { 1 }))
+					return View_capability_error::OUT_OF_CAPS;
+
+				_env.ep().manage(view);
+			}
+			return view.cap();
+		},
+		[&] () -> View_capability_result { return View_capability(); });
 }
 
 
@@ -364,30 +375,17 @@ void Gui_session::execute()
 }
 
 
-Framebuffer::Mode Gui_session::mode()
-{
-	Area const screen = screen_area(_view_stack.size());
-
-	/*
-	 * Return at least a size of 1x1 to spare the clients the need to handle
-	 * the special case of 0x0, which can happen at boot time before the
-	 * framebuffer driver is running.
-	 */
-	return { .area = { max(screen.w, 1u), max(screen.h, 1u) } };
-}
-
-
-Gui_session::Buffer_result Gui_session::buffer(Framebuffer::Mode mode, bool use_alpha)
+Gui_session::Buffer_result Gui_session::buffer(Framebuffer::Mode mode)
 {
 	/* check if the session quota suffices for the specified mode */
-	if (_buffer_size + _ram_quota_guard().avail().value < ram_quota(mode, use_alpha))
+	if (_buffer_size + _ram_quota_guard().avail().value < ram_quota(mode))
 		return Buffer_result::OUT_OF_RAM;
 
 	/* buffer re-allocation may consume new dataspace capability if buffer is new */
 	if (_cap_quota_guard().avail().value < 1)
-		throw Buffer_result::OUT_OF_CAPS;
+		return Buffer_result::OUT_OF_CAPS;
 
-	_framebuffer_session_component.notify_mode_change(mode, use_alpha);
+	_framebuffer_session_component.notify_mode_change(mode);
 	return Buffer_result::OK;
 }
 
@@ -407,9 +405,9 @@ void Gui_session::focus(Capability<Gui::Session> session_cap)
 }
 
 
-Dataspace_capability Gui_session::realloc_buffer(Framebuffer::Mode mode, bool use_alpha)
+Dataspace_capability Gui_session::realloc_buffer(Framebuffer::Mode mode)
 {
-	Ram_quota const next_buffer_size { Chunky_texture<Pixel>::calc_num_bytes(mode.area, use_alpha) };
+	Ram_quota const next_buffer_size { mode.num_bytes() };
 	Ram_quota const orig_buffer_size { _buffer_size };
 
 	/*
@@ -428,15 +426,13 @@ Dataspace_capability Gui_session::realloc_buffer(Framebuffer::Mode mode, bool us
 	}
 
 	_buffer_size = 0;
-	_uses_alpha  = false;
-	_input_mask  = nullptr;
 
 	Ram_quota const temporary_ram_upgrade = _texture.valid()
 	                                      ? next_buffer_size : Ram_quota{0};
 
 	_ram_quota_guard().upgrade(temporary_ram_upgrade);
 
-	if (!_texture.try_construct_next(_env.ram(), _env.rm(), mode.area, use_alpha)) {
+	if (!_texture.try_construct_next(_env.ram(), _env.rm(), mode)) {
 		_texture.release_current();
 		replenish(orig_buffer_size);
 		_ram_quota_guard().try_downgrade(temporary_ram_upgrade);
@@ -459,8 +455,16 @@ Dataspace_capability Gui_session::realloc_buffer(Framebuffer::Mode mode, bool us
 	}
 
 	_buffer_size = next_buffer_size.value;
-	_uses_alpha  = use_alpha;
-	_input_mask  = _texture.input_mask_buffer();
 
 	return _texture.dataspace();
+}
+
+
+void Gui_session::produce_xml(Xml_generator &xml)
+{
+	Rect const domain_panorama =
+		_domain ? _domain->screen_rect(_view_stack.bounding_box())
+		        : Rect { };
+
+	_action.gen_capture_info(xml, domain_panorama);
 }

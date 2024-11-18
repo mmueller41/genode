@@ -220,6 +220,13 @@ namespace Libc {
 		return handle->fs().read_ready(*handle);
 	}
 
+	void notify_read_ready_from_kernel(File_descriptor *fd)
+	{
+		Vfs::Vfs_handle *handle = vfs_handle(fd);
+		if (handle)
+			handle->fs().notify_read_ready(handle);
+	}
+
 	bool write_ready_from_kernel(File_descriptor *fd)
 	{
 		Vfs::Vfs_handle const *handle = vfs_handle(fd);
@@ -1128,6 +1135,19 @@ Libc::Vfs_plugin::_ioctl_tio(File_descriptor *fd, unsigned long request, char *a
 		termios->c_ospeed = 0;
 
 		handled = true;
+	
+	} else if (request == TIOCSETA) {
+
+		/*
+		 * As TIOCGETA above only returns the for now required
+		 * options ignore any attempt to set them.
+		 */
+
+		handled = true;
+
+	} else if (request == TIOCFLUSH) {
+
+		handled = true;
 	}
 
 	return { handled, 0 };
@@ -1921,7 +1941,9 @@ int Libc::Vfs_plugin::ioctl(File_descriptor *fd, unsigned long request, char *ar
 
 	switch (request) {
 	case TIOCGWINSZ:
+	case TIOCFLUSH:
 	case TIOCGETA:
+	case TIOCSETA:
 		result = _ioctl_tio(fd, request, argp);
 		break;
 	case DIOCGMEDIASIZE:

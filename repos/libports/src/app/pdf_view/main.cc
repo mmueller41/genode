@@ -87,22 +87,25 @@ class Pdf_view
 
 	private:
 
-		enum { NO_ALPHA = false };
-
 		Genode::Env &_env;
 
 		Gui::Connection _gui { _env };
 
-		Framebuffer::Mode _nit_mode = _gui.mode();
-		Framebuffer::Mode  _fb_mode {};
+		Gui::Rect _gui_window()
+		{
+			return _gui.window().convert<Gui::Rect>(
+				[&] (Gui::Rect rect) { return rect; },
+				[&] (Gui::Undefined) { return Gui::Rect { { }, { 512, 512 } }; });
+		}
+
+		Gui::Rect _win_rect = _gui_window();
+
+		Framebuffer::Mode _fb_mode {};
 
 		Genode::Constructible<Genode::Attached_dataspace> _fb_ds { };
 
-		Genode::Signal_handler<Pdf_view> _nit_mode_handler {
-			_env.ep(), *this, &Pdf_view::_handle_nit_mode };
-
-		Genode::Signal_handler<Pdf_view> _sync_handler {
-			_env.ep(), *this, &Pdf_view::_refresh };
+		Genode::Signal_handler<Pdf_view> _gui_mode_handler {
+			_env.ep(), *this, &Pdf_view::_handle_gui_mode };
 
 		Genode::Signal_handler<Pdf_view> _input_handler {
 			_env.ep(), *this, &Pdf_view::_handle_input_events };
@@ -115,21 +118,21 @@ class Pdf_view
 		{
 			using namespace Gui;
 
-			_nit_mode = _gui.mode();
+			_win_rect = _gui_window();
 
-			unsigned max_x = Genode::max(_nit_mode.area.w, _fb_mode.area.w);
-			unsigned max_y = Genode::max(_nit_mode.area.h, _fb_mode.area.h);
+			unsigned max_x = Genode::max(_win_rect.area.w, _fb_mode.area.w);
+			unsigned max_y = Genode::max(_win_rect.area.h, _fb_mode.area.h);
 
 			if (max_x > _fb_mode.area.w || max_y > _fb_mode.area.h) {
-				_fb_mode = Mode { .area = { max_x, max_y } };
-				_gui.buffer(_fb_mode, NO_ALPHA);
+				_fb_mode = Mode { .area = { max_x, max_y }, .alpha = false };
+				_gui.buffer(_fb_mode);
 				if (_fb_ds.constructed())
 					_fb_ds.destruct();
 				_fb_ds.construct(_env.rm(), _gui.framebuffer.dataspace());
 			}
 
-			_pdfapp.scrw = _nit_mode.area.w;
-			_pdfapp.scrh = _nit_mode.area.h;
+			_pdfapp.scrw = _win_rect.area.w;
+			_pdfapp.scrh = _win_rect.area.h;
 
 			/*
 			 * XXX replace heuristics with a meaningful computation
@@ -137,17 +140,17 @@ class Pdf_view
 			 * The magic values are hand-tweaked manually to accommodating the
 			 * use case of showing slides.
 			 */
-			_pdfapp.resolution = Genode::min(_nit_mode.area.w/5,
-			                                 _nit_mode.area.h/4);
+			_pdfapp.resolution = Genode::min(_win_rect.area.w/5,
+			                                 _win_rect.area.h/4);
 
-			_view.area(_nit_mode.area);
+			_view.area(_win_rect.area);
 			_view.front();
 		}
 
-		void _handle_nit_mode()
+		void _handle_gui_mode()
 		{
 			_rebuffer();
-			pdfapp_onresize(&_pdfapp, _nit_mode.area.w, _nit_mode.area.h);
+			pdfapp_onresize(&_pdfapp, _win_rect.area.w, _win_rect.area.h);
 		}
 
 		pdfapp_t _pdfapp { };
@@ -213,14 +216,6 @@ class Pdf_view
 					_handle_input_event(ev); }); });
 		}
 
-		void _refresh()
-		{
-			_gui.framebuffer.refresh(0, 0, _nit_mode.area.w, _nit_mode.area.h);
-
-			/* handle one sync signal only */
-			_gui.framebuffer.sync_sigh(Genode::Signal_context_capability());
-		}
-
 	public:
 
 		/**
@@ -231,7 +226,7 @@ class Pdf_view
 		 */
 		Pdf_view(Genode::Env &env) : _env(env)
 		{
-			_gui.mode_sigh(_nit_mode_handler);
+			_gui.info_sigh(_gui_mode_handler);
 			_gui.input.sigh(_input_handler);
 
 			pdfapp_init(&_pdfapp);
@@ -304,12 +299,12 @@ void Pdf_view::show()
 	int const tweaked_y_max = y_max - 2;
 
 	/* center vertically if the dst buffer is higher than the image */
-	if ((unsigned)_pdfapp.image->h < _nit_mode.area.h)
-		dst_line += dst_line_width*((_nit_mode.area.h - _pdfapp.image->h)/2);
+	if ((unsigned)_pdfapp.image->h < _win_rect.area.h)
+		dst_line += dst_line_width*((_win_rect.area.h - _pdfapp.image->h)/2);
 
 	/* center horizontally if the dst buffer is wider than the image */
-	if ((unsigned)_pdfapp.image->w < _nit_mode.area.w)
-		dst_line += (_nit_mode.area.w - _pdfapp.image->w)/2;
+	if ((unsigned)_pdfapp.image->w < _win_rect.area.w)
+		dst_line += (_win_rect.area.w - _pdfapp.image->w)/2;
 
 	for (int y = 0; y < tweaked_y_max; y++) {
 		copy_line_rgba(src_line, dst_line, x_max);
@@ -317,8 +312,7 @@ void Pdf_view::show()
 		dst_line += dst_line_width;
 	}
 
-	/* refresh after the next sync signal */
-	_gui.framebuffer.sync_sigh(_sync_handler);
+	_gui.framebuffer.refresh({ { 0, 0 }, _win_rect.area });
 }
 
 

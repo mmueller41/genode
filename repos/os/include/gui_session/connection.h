@@ -17,6 +17,7 @@
 #include <gui_session/client.h>
 #include <framebuffer_session/client.h>
 #include <input_session/client.h>
+#include <rom_session/client.h>
 #include <base/connection.h>
 
 namespace Gui {
@@ -40,6 +41,54 @@ class Gui::Connection : private Genode::Connection<Session>
 		Command_buffer &_command_buffer { *_command_ds.local_addr<Command_buffer>() };
 
 		Ram_quota _ram_quota { }; /* session quota donated for virtual frame buffer */
+
+		/*
+		 * Session quota at the construction time of the connection
+		 *
+		 * The 'Gui::Session::CAP_QUOTA' value is based the needs of the
+		 * nitpicker GUI server. To accommodate the common case where a client
+		 * is served by the wm, which in turn wraps a nitpicker session, extend
+		 * the session quota according to the needs of the wm.
+		 */
+		static constexpr Ram_quota _RAM_QUOTA { 96*1024 };
+		static constexpr Cap_quota _CAP_QUOTA { Session::CAP_QUOTA + 9 };
+
+		Constructible<Rom_session_client> _info_rom { };
+		Constructible<Attached_dataspace> _info_ds  { };
+
+		Rom_session_capability _info_rom_capability()
+		{
+			for (;;) {
+				using Error = Session::Info_error;
+				auto const result = _client.info();
+				if (result == Error::OUT_OF_RAM)  { upgrade_ram(8*1024); continue; }
+				if (result == Error::OUT_OF_CAPS) { upgrade_caps(2);     continue; }
+				return result.convert<Rom_session_capability>(
+					[&] (Rom_session_capability cap) { return cap; },
+					[&] (auto) /* handled above */   { return Rom_session_capability(); });
+			}
+		}
+
+		void _with_info_rom(auto const &fn)
+		{
+			if (!_info_ds.constructed())
+				_info_rom.construct(_info_rom_capability());
+			fn(*_info_rom);
+		}
+
+		void _with_info_xml(auto const &fn)
+		{
+			_with_info_rom([&] (Rom_session_client &rom) {
+				if (!_info_ds.constructed() || rom.update() == false)
+					_info_ds.construct(_env.rm(), rom.dataspace());
+
+				try {
+					Xml_node xml(_info_ds->local_addr<char>(), _info_ds->size());
+					fn(xml); }
+				catch (Xml_node::Invalid_syntax) {
+					warning("Gui::info has invalid XML syntax"); }
+			});
+		}
 
 	public:
 
@@ -65,7 +114,8 @@ class Gui::Connection : private Genode::Connection<Session>
 		 */
 		Connection(Env &env, Session_label const &label = { })
 		:
-			Genode::Connection<Session>(env, label, Ram_quota { 36*1024 }, Args()),
+			Genode::Connection<Session>(env, label, _RAM_QUOTA, _CAP_QUOTA,
+			                            Affinity { }, Args { }),
 			_env(env)
 		{ }
 
@@ -142,9 +192,9 @@ class Gui::Connection : private Genode::Connection<Session>
 			}
 		}
 
-		void buffer(Framebuffer::Mode mode, bool use_alpha)
+		void buffer(Framebuffer::Mode mode)
 		{
-			size_t const needed  = Session_client::ram_quota(mode, use_alpha);
+			size_t const needed  = Session_client::ram_quota(mode);
 			size_t const upgrade = needed > _ram_quota.value
 			                     ? needed - _ram_quota.value : 0u;
 			if (upgrade > 0) {
@@ -152,13 +202,12 @@ class Gui::Connection : private Genode::Connection<Session>
 				_ram_quota.value += upgrade;
 			}
 
-			for (bool retry = false; ; ) {
+			for (;;) {
 				using Result = Session_client::Buffer_result;
-				auto const result = _client.buffer(mode, use_alpha);
-				if (result == Result::OUT_OF_RAM)  { upgrade_ram(8*1024); retry = true; }
-				if (result == Result::OUT_OF_CAPS) { upgrade_caps(2);     retry = true; }
-				if (!retry)
-					break;
+				auto const result = _client.buffer(mode);
+				if (result == Result::OUT_OF_RAM)  { upgrade_ram(8*1024); continue; }
+				if (result == Result::OUT_OF_CAPS) { upgrade_caps(2);     continue; }
+				break;
 			}
 		}
 
@@ -188,14 +237,77 @@ class Gui::Connection : private Genode::Connection<Session>
 		}
 
 		/**
-		 * Return physical screen mode
+		 * Call 'fn' with mode information as 'Xml_node const &' argument
 		 */
-		Framebuffer::Mode mode() { return _client.mode(); }
+		void with_info(auto const &fn) { _with_info_xml(fn); }
+
+		Capability<Rom_session> info_rom_cap()
+		{
+			Capability<Rom_session> result { };
+			_with_info_rom([&] (Rom_session_client &rom) { result = rom.rpc_cap(); });
+			return result;
+		}
+
+		using Panorama_result = Attempt<Gui::Rect, Gui::Undefined>;
+
+		/**
+		 * Return geometry of the total panorama
+		 *
+		 * The retured rectangle may be undefined for a client of the nitpicker
+		 * GUI server in the absence of any capture client.
+		 */
+		Panorama_result panorama()
+		{
+			Gui::Rect result { };
+			_with_info_xml([&] (Xml_node const &info) {
+				result = Rect::from_xml(info); });
+			return result.valid() ? Panorama_result { result }
+			                      : Panorama_result { Undefined { } };
+		}
+
+		using Window_result = Attempt<Rect, Gui::Undefined>;
+
+		/**
+		 * Return suitable geometry of top-level view
+		 *
+		 * For nitpicker clients, the window is the bounding box of all capture
+		 * clients. For window-manager clients, returned rectangle corresponds
+		 * to the window size as defined by the layouter.
+		 *
+		 * The returned rectangle may be undefined when a client of the window
+		 * manager has not defined a top-level view yet. Once a window is got
+		 * closed, the returned rectangle is zero-sized.
+		 */
+		Window_result window()
+		{
+			Rect result { };
+			bool closed = false;
+			_with_info_xml([&] (Xml_node const &info) {
+				Rect bb { };  /* bounding box of all captured rects */
+				unsigned count = 0;
+				info.for_each_sub_node("capture", [&] (Xml_node const &capture) {
+					closed |= (capture.attribute_value("closed", false));
+					bb = Rect::compound(bb, Rect::from_xml(capture));
+					count++;
+				});
+				result = (count == 1) ? bb : Rect::from_xml(info);
+			});
+			if (closed)
+				return Rect { };
+
+			return result.valid() ? Window_result { result }
+			                      : Window_result { Undefined { } };
+		}
 
 		/**
 		 * Register signal handler to be notified about mode changes
 		 */
-		void mode_sigh(Signal_context_capability sigh) { _client.mode_sigh(sigh); }
+		void info_sigh(Signal_context_capability sigh)
+		{
+			_with_info_rom([&] (Rom_session_client &rom) { rom.sigh(sigh); });
+			if (sigh.valid())
+				Signal_transmitter(sigh).submit();
+		}
 
 		void focus(Capability<Session> focused) { _client.focus(focused); }
 };

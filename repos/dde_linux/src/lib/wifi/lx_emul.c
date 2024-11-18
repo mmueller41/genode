@@ -179,7 +179,7 @@ int request_firmware_common(const struct firmware **firmware_p,
 {
 	struct firmware *fw;
 
-	if (!*firmware_p)
+	if (!firmware_p)
 		return -1;
 
 	fw = kzalloc(sizeof(struct firmware), GFP_KERNEL);
@@ -460,10 +460,10 @@ static int rfkill_task_function(void *arg)
 
 		bool rfkilled = !!rfkill_get_global_sw_state(RFKILL_TYPE_WLAN);
 
-		if (rfkilled != _rfkill_state.blocked)
+		if (rfkilled != _rfkill_state.blocked) {
 			rfkill_switch_all(RFKILL_TYPE_WLAN, !!_rfkill_state.blocked);
-
-		_rfkill_state.rfkilled = rfkilled;
+			_rfkill_state.rfkilled = !!_rfkill_state.blocked;
+		}
 
 		lx_emul_task_schedule(true);
 	}

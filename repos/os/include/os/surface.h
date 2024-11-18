@@ -22,6 +22,8 @@ namespace Genode {
 
 	class Surface_base;
 	template <typename> class Surface;
+
+	struct Surface_window { unsigned y, h; };
 }
 
 
@@ -46,7 +48,7 @@ class Genode::Surface_base : Interface
 		using Point = Rect::Point;
 		using Area  = Rect::Area;
 
-		enum Pixel_format { UNKNOWN, RGB565, RGB888, ALPHA8 };
+		enum Pixel_format { UNKNOWN, RGB565, RGB888, ALPHA8, INPUT8 };
 
 		struct Flusher : Interface
 		{
@@ -124,15 +126,49 @@ class Genode::Surface : public Surface_base
 
 		PT *_addr;   /* base address of pixel buffer   */
 
+		static Area _sanitized(Area area, size_t const num_bytes)
+		{
+			/* prevent division by zero */
+			if (area.w == 0)
+				return { };
+
+			size_t const bytes_per_line = area.w*sizeof(PT);
+
+			return { .w = area.w,
+			         .h = unsigned(min(num_bytes/bytes_per_line, area.h)) };
+		}
+
 	public:
 
 		PT *addr() { return _addr; }
 
-		/**
-		 * Constructor
+		/*
+		 * \deprecated
 		 */
-		Surface(PT *addr, Area size)
-		: Surface_base(size, PT::format()), _addr(addr) { }
+		Surface(PT *addr, Area size) : Surface_base(size, PT::format()), _addr(addr) { }
+
+		Surface(Byte_range_ptr const &bytes, Area const area)
+		:
+			Surface_base(_sanitized(area, bytes.num_bytes), PT::format()),
+			_addr((PT *)bytes.start)
+		{ }
+
+		/**
+		 * Call 'fn' with a sub-window surface as argument
+		 *
+		 * This method is useful for managing multiple surfaces within one
+		 * larger surface, for example for organizing a back buffer and a front
+		 * buffer within one virtual framebuffer.
+		 */
+		void with_window(Surface_window const win, auto const &fn) const
+		{
+			/* clip window coordinates against surface boundaries */
+			Rect const rect = Rect::intersect({ { 0, 0 },          { 1, size().h } },
+			                                  { { 0, int(win.y) }, { 1, win.h    } });
+
+			Surface surface { _addr + rect.y1()*size().w, { size().w, rect.h() } };
+			fn(surface);
+		}
 };
 
 #endif /* _INCLUDE__OS__SURFACE_H_ */

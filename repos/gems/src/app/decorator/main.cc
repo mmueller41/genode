@@ -17,6 +17,7 @@
 #include <base/heap.h>
 #include <base/attached_rom_dataspace.h>
 #include <gui_session/connection.h>
+#include <timer_session/connection.h>
 #include <os/pixel_rgb888.h>
 #include <os/reporter.h>
 
@@ -39,24 +40,72 @@ struct Decorator::Main : Window_factory_base
 {
 	Env &_env;
 
+	Timer::Connection _timer { _env };
+
+	/*
+	 * Time base for animations, which are computed in steps of 10 ms
+	 */
+	struct Ticks { uint64_t cs; /* centi-seconds (10 ms) */ };
+
+	Ticks _now()
+	{
+		return { .cs = _timer.curr_time().trunc_to_plain_ms().value / 10 };
+	}
+
 	Gui::Connection _gui { _env };
 
 	struct Canvas
 	{
-		Framebuffer::Mode         const mode;
-		Attached_dataspace              fb_ds;
-		Decorator::Canvas<Pixel_rgb888> canvas;
+		Env             &_env;
+		Gui::Connection &_gui;
 
-		Canvas(Env &env, Gui::Connection &gui)
-		:
-			mode(gui.mode()),
-			fb_ds(env.rm(),
-			      (gui.buffer(mode, false), gui.framebuffer.dataspace())),
-			canvas(fb_ds.local_addr<Pixel_rgb888>(), mode.area, env.ram(), env.rm())
-		{ }
+		Gui::Area const scr_area = _gui.panorama().convert<Gui::Area>(
+			[&] (Gui::Rect rect) { return rect.area; },
+			[&] (Gui::Undefined) { return Gui::Area { 1, 1 }; });
+
+		/*
+		 * The GUI connection's buffer is split into two parts. The upper
+		 * part contains the front buffer displayed by the GUI server
+		 * whereas the lower part contains the back buffer targeted by
+		 * the Decorator::Canvas.
+		 */
+		Dataspace_capability _buffer_ds() const
+		{
+			_gui.buffer({ .area  = { .w = scr_area.w, .h = scr_area.h*2 },
+			              .alpha = false });
+			return _gui.framebuffer.dataspace();
+		}
+
+		Attached_dataspace fb_ds { _env.rm(), _buffer_ds() };
+
+		Pixel_rgb888 *_canvas_pixels_ptr()
+		{
+			return fb_ds.local_addr<Pixel_rgb888>() + scr_area.count();
+		}
+
+		Decorator::Canvas<Pixel_rgb888> canvas {
+			_canvas_pixels_ptr(), scr_area, _env.ram(), _env.rm() };
+
+		Canvas(Env &env, Gui::Connection &gui) : _env(env), _gui(gui) { }
 	};
 
 	Reconstructible<Canvas> _canvas { _env, _gui };
+
+	void _back_to_front(Dirty_rect dirty)
+	{
+		if (!_canvas.constructed())
+			return;
+
+		Rect const canvas_rect { { }, _canvas->scr_area };
+
+		dirty.flush([&] (Rect const &r) {
+
+			Rect  const clipped = Rect::intersect(r, canvas_rect);
+			Point const from_p1 = clipped.p1() + Point { 0, int(canvas_rect.h()) };
+			Point const to_p1   = clipped.p1();
+
+			_gui.framebuffer.blit({ from_p1, clipped.area }, to_p1); });
+	}
 
 	Signal_handler<Main> _mode_handler { _env.ep(), *this, &Main::_handle_mode };
 
@@ -64,12 +113,11 @@ struct Decorator::Main : Window_factory_base
 	{
 		_canvas.construct(_env, _gui);
 
-		_window_stack.mark_as_dirty(Rect(Point(0, 0), _canvas->mode.area));
+		_window_stack.mark_as_dirty(Rect(Point(0, 0), _canvas->scr_area));
 
 		Dirty_rect dirty = _window_stack.draw(_canvas->canvas);
 
-		dirty.flush([&] (Rect const &r) {
-			_gui.framebuffer.refresh(r.x1(), r.y1(), r.w(), r.h()); });
+		_back_to_front(dirty);
 	}
 
 	Window_stack _window_stack = { *this };
@@ -104,32 +152,30 @@ struct Decorator::Main : Window_factory_base
 
 	Animator _animator { };
 
-	/**
-	 * Process the update every 'frame_period' GUI sync signals. The
-	 * 'frame_cnt' holds the counter of the GUI sync signals.
-	 *
-	 * A lower 'frame_period' value makes the decorations more responsive
-	 * but it also puts more load on the system.
-	 *
-	 * If the GUI sync signal fires every 10 milliseconds, a
-	 * 'frame_period' of 2 results in an update rate of 1000/20 = 50 frames per
-	 * second.
-	 */
-	unsigned _frame_cnt = 0;
-	unsigned _frame_period = 2;
-
-	/**
-	 * Install handler for responding to GUI sync events
-	 */
-	void _handle_gui_sync();
-
-	void _trigger_sync_handling()
-	{
-		_gui.framebuffer.sync_sigh(_gui_sync_handler);
-	}
+	Ticks _previous_sync { };
 
 	Signal_handler<Main> _gui_sync_handler = {
 		_env.ep(), *this, &Main::_handle_gui_sync };
+
+	void _handle_gui_sync();
+
+	bool _gui_sync_enabled = false;
+
+	void _trigger_gui_sync()
+	{
+		Ticks const now  = _now();
+		bool  const idle = now.cs - _previous_sync.cs > 3;
+
+		if (!_gui_sync_enabled) {
+			_gui.framebuffer.sync_sigh(_gui_sync_handler);
+			_gui_sync_enabled = true;
+		}
+
+		if (idle) {
+			_previous_sync = now;
+			_gui_sync_handler.local_submit();
+		}
+	}
 
 	Heap _heap { _env.ram(), _env.rm() };
 
@@ -150,7 +196,7 @@ struct Decorator::Main : Window_factory_base
 		_config.sigh(_config_handler);
 		_handle_config();
 
-		_gui.mode_sigh(_mode_handler);
+		_gui.info_sigh(_mode_handler);
 
 		_window_layout.sigh(_window_layout_handler);
 		_pointer.sigh(_pointer_handler);
@@ -267,16 +313,15 @@ void Decorator::Main::_handle_window_layout_update()
 
 	_window_layout_update_needed = true;
 
-	_trigger_sync_handling();
+	_trigger_gui_sync();
 }
 
 
 void Decorator::Main::_handle_gui_sync()
 {
-	if (_frame_cnt++ < _frame_period)
-		return;
+	Ticks const now = _now();
 
-	_frame_cnt = 0;
+	Ticks const passed_ticks { now.cs - _previous_sync.cs };
 
 	bool model_updated = false;
 
@@ -300,31 +345,27 @@ void Decorator::Main::_handle_gui_sync()
 
 	bool const windows_animated = _window_stack.schedule_animated_windows();
 
-	/*
-	 * To make the perceived animation speed independent from the setting of
-	 * 'frame_period', we update the animation as often as the GUI
-	 * sync signal occurs.
-	 */
-	for (unsigned i = 0; i < _frame_period; i++)
+	for (unsigned i = 0; i < passed_ticks.cs; i++)
 		_animator.animate();
 
-	if (!model_updated && !windows_animated)
-		return;
+	if (model_updated || windows_animated) {
 
-	Dirty_rect dirty = _window_stack.draw(_canvas->canvas);
+		Dirty_rect dirty = _window_stack.draw(_canvas->canvas);
+		_back_to_front(dirty);
 
-	_window_stack.update_gui_views();
-
-	_gui.execute();
-
-	dirty.flush([&] (Rect const &r) {
-		_gui.framebuffer.refresh(r.x1(), r.y1(), r.w(), r.h()); });
+		_window_stack.update_gui_views();
+		_gui.execute();
+	}
 
 	/*
 	 * Disable sync handling when becoming idle
 	 */
-	if (!_animator.active())
+	if (!_animator.active()) {
 		_gui.framebuffer.sync_sigh(Signal_context_capability());
+		_gui_sync_enabled = false;
+	}
+
+	_previous_sync = now;
 }
 
 

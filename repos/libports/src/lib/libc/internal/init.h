@@ -108,6 +108,7 @@ namespace Libc {
 	 */
 	void init_sleep(Monitor &);
 	void init_time(Current_time &, Current_real_time &);
+	void init_alarm(Timer_accessor &, Signal &);
 
 	/**
 	 * Socket fs
@@ -155,6 +156,11 @@ namespace Libc {
 	 * Atexit handling
 	 */
 	void init_atexit(Atexit &);
+
+	/**
+	 * Kqueue support
+	 */
+	void init_kqueue(Genode::Allocator &, Monitor &);
 }
 
 #endif /* _LIBC__INTERNAL__INIT_H_ */
