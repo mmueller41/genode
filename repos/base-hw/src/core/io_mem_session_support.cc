@@ -21,5 +21,9 @@ using namespace Core;
 void Io_mem_session_component::_unmap_local(addr_t, size_t, addr_t) { }
 
 
-addr_t Io_mem_session_component::_map_local(addr_t base, size_t) { return base; }
-
+Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(addr_t const base,
+                                                                              size_t const size,
+                                                                              addr_t const req_base)
+{
+	return Dataspace_attr(size, base, base, _cacheable, req_base);
+}

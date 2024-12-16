@@ -25,10 +25,12 @@ void Io_mem_session_component::_unmap_local(addr_t, size_t size, addr_t phys)
 }
 
 
-addr_t Io_mem_session_component::_map_local(addr_t phys, size_t size)
+Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(addr_t const phys,
+                                                                              size_t const size,
+                                                                              addr_t const req_base)
 {
 	size_t const num_pages = size >> get_page_size_log2();
 	Untyped_memory::convert_to_page_frames(phys, num_pages);
 
-	return 0;
+	return Dataspace_attr(size, 0, phys, _cacheable, req_base);
 }

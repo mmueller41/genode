@@ -75,9 +75,7 @@ Io_mem_session_component::_prepare_io_mem(const char      *args,
 	}
 
 	/* request local mapping */
-	addr_t local_addr = _map_local(base, size);
-
-	return Dataspace_attr(size, local_addr, base, _cacheable, req_base);
+	return _map_local(base, size, req_base);
 }
 
 

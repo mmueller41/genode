@@ -105,7 +105,8 @@ class Core::Io_mem_session_component : public Rpc_object<Io_mem_session>
 		 *
 		 * Both parameters - base and size - must be page-aligned.
 		 */
-		addr_t _map_local(addr_t base, size_t size);
+		Dataspace_attr _map_local(addr_t base, size_t size, addr_t req_base);
+
 
 		/**
 		 * Unmap Core-local mapping of region
