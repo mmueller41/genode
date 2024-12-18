@@ -120,6 +120,8 @@ class Core::Pd_session_component : public Session_object<Pd_session>
 			diag("released ", _name(type), " cap (", _cap_account, ")");
 		}
 
+		Transfer_result _with_pd_or_core_account(Capability<Pd_account>,
+		                                         auto const &, auto const &);
 	public:
 
 		using Phys_range = Ram_dataspace_factory::Phys_range;
