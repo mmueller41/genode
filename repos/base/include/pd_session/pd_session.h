@@ -33,6 +33,11 @@ namespace Genode {
 
 struct Genode::Pd_account : Interface, Noncopyable
 {
+	/**
+	 * \noapi
+	 */
+	static const char *service_name() { return "PD"; }
+
 	enum class Transfer_result { OK, EXCEEDED, INVALID };
 
 	virtual Transfer_result transfer_quota(Capability<Pd_account>, Cap_quota) = 0;
@@ -48,11 +53,6 @@ struct Genode::Pd_account : Interface, Noncopyable
 
 struct Genode::Pd_session : Session, Pd_account, Ram_allocator
 {
-	/**
-	 * \noapi
-	 */
-	static const char *service_name() { return "PD"; }
-
 	/*
 	 * A PD session consumes a dataspace capability for the session-object
 	 * allocation, a capability for the 'Native_pd' RPC interface, its
