@@ -63,7 +63,13 @@ class Core::Platform_thread
 		 */
 		Platform_thread(Platform_pd &pd, Rpc_entrypoint &, Ram_allocator &,
 		                Region_map &, size_t, const char *name,
-		                unsigned priority, Affinity::Location, addr_t utcb);
+		                unsigned prio, Affinity::Location, addr_t)
+		:
+			_pd(pd), _priority(prio)
+		{
+			copy_cstring(_name, name, sizeof(_name));
+			_bound_to_pd = pd.bind_thread(*this);
+		}
 
 		/**
 		 * Constructor used for core-internal threads
