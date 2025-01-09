@@ -18,6 +18,9 @@ namespace Hw { class Local_apic; }
 
 #include <hw/spec/x86_64/x86_64.h>
 
+/* Genode includes */
+#include <drivers/timer/util.h>
+
 struct Hw::Local_apic : Genode::Mmio<Hw::Cpu_memory_map::LAPIC_SIZE>
 {
 	struct Id  : Register<0x020, 32> { };
@@ -57,6 +60,52 @@ struct Hw::Local_apic : Genode::Mmio<Hw::Cpu_memory_map::LAPIC_SIZE>
 	{
 		struct Destination : Bitfield<24, 8> { };
 	};
+
+	/* Timer registers */
+	struct Tmr_lvt : Register<0x320, 32>
+	{
+		struct Vector     : Bitfield<0,  8> { };
+		struct Delivery   : Bitfield<8,  3> { };
+		struct Mask       : Bitfield<16, 1> { };
+		struct Timer_mode : Bitfield<17, 2> { };
+	};
+
+	struct Tmr_initial : Register <0x380, 32> { };
+	struct Tmr_current : Register <0x390, 32> { };
+
+	struct Divide_configuration : Register <0x03e0, 32>
+	{
+		struct Divide_value_0_2 : Bitfield<0, 2> { };
+		struct Divide_value_2_1 : Bitfield<3, 1> { };
+		struct Divide_value :
+			Genode::Bitset_2<Divide_value_0_2, Divide_value_2_1>
+		{
+			enum { MAX = 6 };
+		};
+	};
+
+	void calibrate_divider(uint32_t &ticks_per_ms, uint32_t &divider, auto calibration_fn)
+	{
+		/* calibrate LAPIC frequency to fullfill our requirements */
+		for (Divide_configuration::access_t div = Divide_configuration::Divide_value::MAX;
+		     div && ticks_per_ms < TIMER_MIN_TICKS_PER_MS; div--)
+		{
+			if (!div) {
+				raw("Failed to calibrate Local APIC frequency");
+				ticks_per_ms = 0;
+				break;
+			}
+			write<Divide_configuration::Divide_value>((uint8_t)div);
+
+			write<Tmr_initial>(~0U);
+
+			/* Calculate timer frequency */
+			ticks_per_ms = calibration_fn();
+			divider      = div;
+
+			write<Tmr_initial>(0);
+		}
+	}
 
 	Local_apic(addr_t const addr) : Mmio({(char*)addr, Mmio::SIZE}) {}
 };
