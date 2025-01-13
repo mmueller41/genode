@@ -84,8 +84,7 @@ class Core::Vmx_session_component
 		Registry<Registered<Vcpu>>          _vcpus { };
 
 		Rpc_entrypoint                     &_ep;
-		Constrained_ram_allocator           _constrained_md_ram_alloc;
-		Ram_allocator                      &_core_ram_alloc;
+		Constrained_ram_allocator           _constrained_ram_alloc;
 		Region_map                         &_region_map;
 		Heap                                _heap;
 		Phys_allocated<Vm_page_table>       _table;
@@ -118,23 +117,21 @@ class Core::Vmx_session_component
 		                      Ram_allocator &ram_alloc,
 		                      Region_map &region_map,
 		                      unsigned,
-		                      Trace::Source_registry &,
-		                      Ram_allocator &core_ram_alloc)
+		                      Trace::Source_registry &)
 		:
 			Session_object(ds_ep, resources, label, diag),
 			_ep(ds_ep),
-			_constrained_md_ram_alloc(ram_alloc, _ram_quota_guard(), _cap_quota_guard()),
-			_core_ram_alloc(core_ram_alloc),
+			_constrained_ram_alloc(ram_alloc, _ram_quota_guard(), _cap_quota_guard()),
 			_region_map(region_map),
-			_heap(_constrained_md_ram_alloc, region_map),
-			_table(_ep, _core_ram_alloc, _region_map),
-			_table_array(_ep, _core_ram_alloc, _region_map,
+			_heap(_constrained_ram_alloc, region_map),
+			_table(_ep, _constrained_ram_alloc, _region_map),
+			_table_array(_ep, _constrained_ram_alloc, _region_map,
 					[] (Phys_allocated<Vm_page_table_array> &table_array, auto *obj_ptr) {
 						construct_at<Vm_page_table_array>(obj_ptr, [&] (void *virt) {
 						return table_array.phys_addr() + ((addr_t) obj_ptr - (addr_t)virt);
 						});
 					}),
-			_memory(_constrained_md_ram_alloc, region_map),
+			_memory(_constrained_ram_alloc, region_map),
 			_vmid_alloc(vmid_alloc),
 			_id({(unsigned)_vmid_alloc.alloc(), (void *)_table.phys_addr()})
 		{ }
@@ -217,9 +214,6 @@ class Core::Vmx_session_component
 
 		Capability<Native_vcpu> create_vcpu(Thread_capability tcap) override
 		{
-			if (!try_withdraw(Ram_quota{Vcpu_data::size()}))
-				return { };
-
 			Affinity::Location vcpu_location;
 			_ep.apply(tcap, [&] (Cpu_thread_component *ptr) {
 				if (!ptr) return;
@@ -230,16 +224,12 @@ class Core::Vmx_session_component
 						Registered<Vcpu>(_vcpus,
 						                 _id,
 						                 _ep,
-						                 _core_ram_alloc,
-						                 _constrained_md_ram_alloc,
+						                 _constrained_ram_alloc,
 						                 _region_map,
 						                 vcpu_location);
 
 			return vcpu.cap();
 		}
-
-
-		static constexpr size_t CORE_MEM_SIZE { sizeof(Vm_page_table) + sizeof(Vm_page_table_array) };
 };
 
 #endif /* _CORE__VMX_VM_SESSION_COMPONENT_H_ */

@@ -57,18 +57,17 @@ class Core::Vcpu : public Rpc_object<Vm_session::Native_vcpu, Vcpu>
 
 		Vcpu(Kernel::Vm::Identity      &id,
 		     Rpc_entrypoint            &ep,
-		     Ram_allocator             &core_ram_alloc,
-		     Constrained_ram_allocator &constrained_md_ram_alloc,
+		     Constrained_ram_allocator &constrained_ram_alloc,
 		     Region_map                &region_map,
 		     Affinity::Location         location)
 		:
 			_id(id),
 			_ep(ep),
-			_ram(constrained_md_ram_alloc),
+			_ram(constrained_ram_alloc),
 			_ds_cap( {_ram.alloc(vcpu_state_size(), Cache::UNCACHED)} ),
 			_region_map(region_map),
 			_location(location),
-			_vcpu_data_pages(ep, core_ram_alloc, region_map)
+			_vcpu_data_pages(ep, constrained_ram_alloc, region_map)
 		{
 			Region_map::Attr attr { };
 			attr.writeable = true;

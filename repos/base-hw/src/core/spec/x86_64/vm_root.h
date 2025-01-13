@@ -54,12 +54,7 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 
 			Session::Resources resources = session_resources_from_args(args);
 
-			if (Hw::Virtualization_support::has_svm()) {
-				if (resources.ram_quota.value < Svm_session_component::CORE_MEM_SIZE)
-					throw Out_of_ram();
-
-				resources.ram_quota.value -= Svm_session_component::CORE_MEM_SIZE;
-
+			if (Hw::Virtualization_support::has_svm())
 				return new (md_alloc())
 					Svm_session_component(_vmid_alloc,
 					                      *ep(),
@@ -67,16 +62,9 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 					                      session_label_from_args(args),
 					                      session_diag_from_args(args),
 					                      _ram_allocator, _local_rm, priority,
-					                      _trace_sources,
-					                      _ram_allocator);
-			}
+					                      _trace_sources);
 
-			if (Hw::Virtualization_support::has_vmx()) {
-				if (resources.ram_quota.value < Vmx_session_component::CORE_MEM_SIZE)
-					throw Out_of_ram();
-
-				resources.ram_quota.value -= Vmx_session_component::CORE_MEM_SIZE;
-
+			if (Hw::Virtualization_support::has_vmx())
 				return new (md_alloc())
 					Vmx_session_component(_vmid_alloc,
 					                      *ep(),
@@ -84,9 +72,7 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 					                      session_label_from_args(args),
 					                      session_diag_from_args(args),
 					                      _ram_allocator, _local_rm, priority,
-					                      _trace_sources,
-					                      _ram_allocator);
-			}
+					                      _trace_sources);
 
 			Genode::error( "No virtualization support detected.");
 			throw Core::Service_denied();
