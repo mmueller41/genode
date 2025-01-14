@@ -29,17 +29,6 @@
 using namespace Core;
 
 
-Ram_dataspace_capability Platform_thread::Utcb::_allocate(Ram_allocator &ram)
-{
-	try {
-		return ram.alloc(sizeof(Native_utcb), CACHED);
-	} catch (...) {
-		error("failed to allocate UTCB");
-		throw Out_of_ram();
-	}
-}
-
-
 addr_t Platform_thread::Utcb::_attach(Region_map &core_rm)
 {
 	Region_map::Attr attr { };

@@ -69,7 +69,14 @@ class Core::Platform_thread : Noncopyable
 			addr_t const core_addr; /* UTCB address within core/kernel */
 			addr_t const phys_addr;
 
-			Ram_dataspace_capability _allocate(Ram_allocator &);
+			/*
+			 * \throw Out_of_ram
+			 * \throw Out_of_caps
+			 */
+			Ram_dataspace_capability _allocate(Ram_allocator &ram)
+			{
+				return ram.alloc(sizeof(Native_utcb), CACHED);
+			}
 
 			addr_t _attach(Region_map &);
 

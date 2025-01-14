@@ -63,7 +63,7 @@ Cpu_session_component::create_thread(Capability<Pd_session> pd_cap,
 					Cpu_thread_component &thread = *new (&_thread_alloc)
 						Cpu_thread_component(
 							cap(), *this, _thread_ep, _local_rm, _pager_ep,
-							*pd, platform_pd, pd_threads, _trace_control_area,
+							*pd, _ram_alloc, platform_pd, pd_threads, _trace_control_area,
 							_trace_sources, weight, _weight_to_quota(weight.value),
 							_thread_affinity(affinity), _label, name,
 							_priority, utcb);
