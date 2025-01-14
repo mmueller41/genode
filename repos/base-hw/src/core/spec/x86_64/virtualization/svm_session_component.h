@@ -116,7 +116,6 @@ class Core::Svm_session_component
 		                      Diag diag,
 		                      Ram_allocator &ram_alloc,
 		                      Region_map &region_map,
-		                      unsigned,
 		                      Trace::Source_registry &)
 		:
 			Session_object(ds_ep, resources, label, diag),

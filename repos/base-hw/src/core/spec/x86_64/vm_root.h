@@ -43,15 +43,6 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 
 		Session_object<Vm_session> *_create_session(const char *args) override
 		{
-			unsigned priority = 0;
-			Arg a = Arg_string::find_arg(args, "priority");
-			if (a.valid()) {
-				priority = (unsigned)a.ulong_value(0);
-
-				/* clamp priority value to valid range */
-				priority = min((unsigned)Cpu_session::PRIORITY_LIMIT - 1, priority);
-			}
-
 			Session::Resources resources = session_resources_from_args(args);
 
 			if (Hw::Virtualization_support::has_svm())
@@ -61,7 +52,7 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 					                      resources,
 					                      session_label_from_args(args),
 					                      session_diag_from_args(args),
-					                      _ram_allocator, _local_rm, priority,
+					                      _ram_allocator, _local_rm,
 					                      _trace_sources);
 
 			if (Hw::Virtualization_support::has_vmx())
@@ -71,7 +62,7 @@ class Core::Vm_root : public Root_component<Session_object<Vm_session>>
 					                      session_resources_from_args(args),
 					                      session_label_from_args(args),
 					                      session_diag_from_args(args),
-					                      _ram_allocator, _local_rm, priority,
+					                      _ram_allocator, _local_rm,
 					                      _trace_sources);
 
 			Genode::error( "No virtualization support detected.");
