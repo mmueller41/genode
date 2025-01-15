@@ -28,8 +28,16 @@ __attribute__((aligned(get_page_size())));
 
 Bootstrap::Platform & Bootstrap::platform()
 {
-	static Bootstrap::Platform platform { };
-	return platform;
+	/*
+	 * Don't use static local variable because cmpxchg cannot be executed
+	 * w/o MMU on ARMv6.
+	 */
+	static long _obj[(sizeof(Bootstrap::Platform)+sizeof(long))/sizeof(long)];
+	static Bootstrap::Platform *ptr;
+	if (!ptr)
+		ptr = construct_at<Bootstrap::Platform>(_obj);
+
+	return *ptr;
 }
 
 
