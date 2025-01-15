@@ -15,6 +15,7 @@
 #define _INCLUDE__SANDBOX__SANDBOX_H_
 
 #include <util/xml_node.h>
+#include <util/callable.h>
 #include <util/noncopyable.h>
 #include <base/registry.h>
 #include <base/service.h>
@@ -60,12 +61,13 @@ class Genode::Sandbox : Noncopyable
 				Region_map             &address_space;
 			};
 
-			struct Fn : Interface { virtual void call(Intrinsics &) const = 0; };
+			using With_intrinsics = Callable<void, Intrinsics &>;
 
 			/**
-			 * Call 'Fn' with the 'Intrinsics' that apply for the specified PD
+			 * Call 'fn' with the 'Intrinsics' that apply for the specified PD
 			 */
-			virtual void with_intrinsics(Capability<Pd_session>, Pd_session &, Fn const &) = 0;
+			virtual void with_intrinsics(Capability<Pd_session>, Pd_session &,
+			                             With_intrinsics::Ft const &fn) = 0;
 
 			/**
 			 * Start the initial thread of new PD at the given instruction pointer

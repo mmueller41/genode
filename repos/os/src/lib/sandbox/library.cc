@@ -259,13 +259,14 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	{
 		Env &_env;
 
-		void with_intrinsics(Capability<Pd_session>, Pd_session &pd, Fn const &fn) override
+		void with_intrinsics(Capability<Pd_session>, Pd_session &pd,
+		                     With_intrinsics::Ft const &fn) override
 		{
 			Region_map_client region_map(pd.address_space());
 
 			Intrinsics intrinsics { _env.pd(),  _env.pd_session_cap(),
 			                        _env.cpu(), _env.cpu_session_cap(), region_map };
-			fn.call(intrinsics);
+			fn(intrinsics);
 		}
 
 		void start_initial_thread(Capability<Cpu_thread> cap, addr_t ip) override
