@@ -38,9 +38,8 @@ static inline bool can_use_super_page(addr_t, size_t)
 }
 
 
-Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(addr_t const phys_base,
-                                                                              size_t const size_in,
-                                                                              addr_t const req_base)
+Io_mem_session_component::Map_local_result Io_mem_session_component::_map_local(addr_t const phys_base,
+                                                                                size_t const size_in)
 {
 	size_t const size = size_in;
 
@@ -95,16 +94,16 @@ Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(ad
 	size_t align = (size >= get_super_page_size()) ? get_super_page_size_log2()
 	                                               : get_page_size_log2();
 
-	return platform().region_alloc().alloc_aligned(size, align).convert<Dataspace_attr>(
+	return platform().region_alloc().alloc_aligned(size, align).convert<Map_local_result>(
 
 		[&] (void *ptr) {
 			addr_t const core_local_base = (addr_t)ptr;
 			map_io_region(phys_base, core_local_base, size);
-			return Dataspace_attr(size_in, 0, phys_base, _cacheable, req_base);
+			return Map_local_result { .core_local_addr = 0, .success = true };
 		},
 
 		[&] (Range_allocator::Alloc_error) {
 			error("core-local mapping of memory-mapped I/O range failed");
-			return Dataspace_attr();
+			return Map_local_result();
 		});
 }

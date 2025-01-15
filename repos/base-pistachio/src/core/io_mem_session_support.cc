@@ -56,9 +56,8 @@ static inline bool can_use_super_page(addr_t base, size_t size)
 }
 
 
-Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(addr_t const phys_base,
-                                                                              size_t const size_in,
-                                                                              addr_t const req_base)
+Io_mem_session_component::Map_local_result Io_mem_session_component::_map_local(addr_t const phys_base,
+                                                                                size_t const size_in)
 {
 	using namespace Pistachio;
 
@@ -85,7 +84,7 @@ Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(ad
 	addr_t const local_base = (addr_t)alloc_virt_range();
 
 	if (!local_base)
-		return Dataspace_attr ();
+		return Map_local_result ();
 
 	for (unsigned offset = 0; size; ) {
 
@@ -108,5 +107,5 @@ Io_mem_session_component::Dataspace_attr Io_mem_session_component::_map_local(ad
 		size   -= page_size;
 	}
 
-	return Dataspace_attr(size_in, local_base, phys_base, _cacheable, req_base);
+	return { .core_local_addr = local_base, .success = true };
 }
