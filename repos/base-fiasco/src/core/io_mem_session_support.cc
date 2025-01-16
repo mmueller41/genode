@@ -99,7 +99,7 @@ Io_mem_session_component::Map_local_result Io_mem_session_component::_map_local(
 		[&] (void *ptr) {
 			addr_t const core_local_base = (addr_t)ptr;
 			map_io_region(phys_base, core_local_base, size);
-			return Map_local_result { .core_local_addr = 0, .success = true };
+			return Map_local_result { .core_local_addr = core_local_base, .success = true };
 		},
 
 		[&] (Range_allocator::Alloc_error) {
