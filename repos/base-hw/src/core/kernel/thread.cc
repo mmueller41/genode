@@ -385,6 +385,7 @@ void Thread::_call_restart_thread()
 		_die();
 		return;
 	}
+
 	user_arg_0(thread._restart());
 }
 
@@ -392,7 +393,10 @@ void Thread::_call_restart_thread()
 bool Thread::_restart()
 {
 	assert(_state == ACTIVE || _state == AWAITS_RESTART);
-	if (_state != AWAITS_RESTART) { return false; }
+
+	if (_state == ACTIVE && _exception_state == NO_EXCEPTION)
+		return false;
+
 	_exception_state = NO_EXCEPTION;
 	_become_active();
 	return true;
@@ -803,7 +807,8 @@ void Thread::_call_ack_pager_signal()
 	Thread &thread = *(Thread*)user_arg_2();
 	thread.helping_finished();
 
-	bool resolved = user_arg_3();
+	bool resolved = user_arg_3() ||
+	                thread._exception_state == NO_EXCEPTION;
 	if (resolved) thread._restart();
 	else          thread._become_inactive(AWAITS_RESTART);
 }
