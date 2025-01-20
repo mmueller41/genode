@@ -914,10 +914,14 @@ void Thread::_signal_to_pager()
 		return;
 	}
 
-	bool const help = Cpu_context::_helping_possible(_fault_context->pager);
+	/* first signal to pager to wake it up */
+	_fault_context->sc.submit(1);
+
+	/* only help pager thread if runnable and scheduler allows it */
+	bool const help = Cpu_context::_helping_possible(_fault_context->pager)
+	                  && (_fault_context->pager._state == ACTIVE);
 	if (help) Cpu_context::_help(_fault_context->pager);
 	else _become_inactive(AWAITS_RESTART);
-	_fault_context->sc.submit(1);
 }
 
 
