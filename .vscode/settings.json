@@ -158,7 +158,7 @@
     "html.format.wrapLineLength": 80,
     "editor.wordWrap": "bounded",
     "editor.wordWrapColumn": 90,
-    "editor.fontSize": 12,
+    "editor.fontSize": 13,
     "terminal.integrated.shellIntegration.suggestEnabled": true,
     "git.mergeEditor": true,
     "merge-conflict.autoNavigateNextConflict.enabled": true,
