@@ -36,17 +36,18 @@ extern "C" {
 #define LWIP_NETIF_LOOPBACK         1  /* Looping back to same address? */
 #define LWIP_STATS                  0  /* disable stating */
 #define LWIP_TCP_TIMESTAMPS         1
-#define TCP_LISTEN_BACKLOG              1
+#define TCP_LISTEN_BACKLOG              255
 #define TCP_MSS                         1460
-#define TCP_WND                     (32 * TCP_MSS)
-#define TCP_SND_BUF                 (32 * TCP_MSS)
+#define TCP_WND                     (46 * TCP_MSS)
+#define TCP_SND_BUF                 (46 * TCP_MSS)
 #define LWIP_WND_SCALE                  3
 #define TCP_RCV_SCALE                   2
-#define TCP_SND_QUEUELEN                ((8 * (TCP_SND_BUF) + (TCP_MSS - 1))/(TCP_MSS))
+#define TCP_SND_QUEUELEN                ((128 * (TCP_SND_BUF) + (TCP_MSS - 1))/(TCP_MSS))
 
 #define LWIP_NETIF_STATUS_CALLBACK  1  /* callback function used for interface changes */
 #define LWIP_NETIF_LINK_CALLBACK    1  /* callback function used for link-state changes */
 
+#define TCP_QUEUE_OOSEQ 0
 
 /***********************************
  ** Checksum calculation settings **
@@ -61,6 +62,8 @@ extern "C" {
 
 #define MEM_LIBC_MALLOC             1
 #define MEMP_MEM_MALLOC             1
+#define MEMP_MEM_INIT               0
+#define MEMP_NUM_TCP_SEG            (2*TCP_SND_QUEUELEN)
 /* MEM_ALIGNMENT > 4 e.g. for x86_64 are not supported, see Genode issue #817 */
 #define MEM_ALIGNMENT               4
 
@@ -69,10 +72,11 @@ extern "C" {
 
 #define RECV_BUFSIZE_DEFAULT        (512*1024)
 
-#define PBUF_POOL_SIZE             96
+#define PBUF_POOL_SIZE             1024
 
-#define MEMP_NUM_SYS_TIMEOUT        16
-#define MEMP_NUM_TCP_PCB           128
+#define MEMP_NUM_SYS_TIMEOUT        64
+#define MEMP_NUM_TCP_PCB           512
+#define MEMP_NUM_PBUF              (128*4096)
 
 #ifndef MEMCPY
 #define MEMCPY(dst,src,len)             genode_memcpy(dst,src,len)
