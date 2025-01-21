@@ -319,7 +319,10 @@ class Nitpicker::Capture_root : public Root_component<Capture_session>
 				[&] (Point const p) {
 					_sessions.for_each([&] (Capture_session const &session) {
 						if (!result && session.bounding_box().contains(p))
-							result = true; }); },
+							result = true; });
+					if (!result)
+						result = _fallback_bounding_box.contains(p);
+				},
 				[&] (Nowhere) { });
 			return result;
 		}
@@ -714,11 +717,11 @@ struct Nitpicker::Main : Focus_updater, Hover_updater,
 
 			/* redraw */
 			_view_stack.update_all_views();
-
-			/* notify clients about the change screen mode */
-			for (Gui_session *s = _session_list.first(); s; s = s->next())
-				s->notify_mode_change();
 		}
+
+		/* notify GUI clients about the mode-info change */
+		for (Gui_session *s = _session_list.first(); s; s = s->next())
+			s->notify_mode_change();
 
 		_report_panorama();
 		_update_input_connection();

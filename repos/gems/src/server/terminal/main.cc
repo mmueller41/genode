@@ -267,7 +267,8 @@ void Terminal::Main::_handle_config()
 
 	_font.destruct();
 
-	_root_dir.apply_config(config.sub_node("vfs"));
+	config.with_optional_sub_node("vfs", [&] (Xml_node const &vfs_config) {
+		_root_dir.apply_config(vfs_config); });
 
 	Cached_font::Limit const cache_limit {
 		config.attribute_value("cache", Number_of_bytes(256*1024)) };
@@ -363,6 +364,9 @@ void Terminal::Main::_handle_config()
 
 void Terminal::Main::_handle_input()
 {
+	if (!_text_screen_surface.constructed())
+		return;
+
 	_gui.input.for_each_event([&] (Input::Event const &event) {
 
 		event.handle_absolute_motion([&] (int x, int y) {
@@ -484,7 +488,7 @@ void Terminal::Main::_handle_input()
 
 void Terminal::Main::_report_clipboard_selection()
 {
-	if (!_clipboard_reporter.constructed())
+	if (!_text_screen_surface.constructed() || !_clipboard_reporter.constructed())
 		return;
 
 	_clipboard_reporter->generate([&] (Xml_generator &xml) {

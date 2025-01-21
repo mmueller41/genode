@@ -258,7 +258,7 @@ class Fs_rom::Rom_session_component : public  Rpc_object<Rom_session>
 					return false;
 				}
 			} else {
-				memset(_file_ds.local_addr<char>(), 0x00, _file_ds.size());
+				_file_ds.clear();
 			}
 
 			/* omit read if file is empty */
@@ -304,7 +304,13 @@ class Fs_rom::Rom_session_component : public  Rpc_object<Rom_session>
 			catch (Watch_failed) { }
 
 			try { return _read_dataspace(update_only); }
-			catch (Lookup_failed)     { /* missing but may appear anytime soon */ }
+			catch (Lookup_failed) {
+				if (_file_size > 0) {
+					_file_ds.clear();
+					_file_size = 0;
+					Signal_transmitter(_sigh).submit();
+				}
+			}
 			catch (Invalid_handle)    { warning(_file_path, ": invalid handle"); }
 			catch (Invalid_name)      { warning(_file_path, ": invalid name"); }
 			catch (Permission_denied) { warning(_file_path, ": permission denied"); }
@@ -333,7 +339,7 @@ class Fs_rom::Rom_session_component : public  Rpc_object<Rom_session>
 				/* notify if the file is removed */
 				catch (File_system::Lookup_failed) {
 					if (_file_size > 0) {
-						memset(_file_ds.local_addr<char>(), 0x00, (size_t)_file_size);
+						_file_ds.clear();
 						_file_size = 0;
 						Signal_transmitter(_sigh).submit();
 					}

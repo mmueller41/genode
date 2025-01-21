@@ -1,3 +1,31 @@
+#
+# Return Bender option that configures Bender's Intel HWP plugin
+#
+# \param --bender-intel-hwp-mode   Run the Intel HWP plugin of Bender in the
+#                                  given mode. Valid argument values are
+#                                     "off",
+#                                     "performance",
+#                                     "balanced", and
+#                                     "power_saving"
+#                                  The argument value defaults to
+#                                  "performance".
+#
+proc bender_intel_hwp_mode_option { } {
+
+	set opt [get_cmd_arg_first --bender-intel-hwp-mode "performance"]
+	if {$opt == "off"} {
+		return "intel_hwp_off"
+	} elseif {$opt == "performance"} {
+		return "intel_hwp_performance"
+	} elseif {$opt == "balanced"} {
+		return "intel_hwp_balanced"
+	} elseif {$opt == "power_saving"} {
+		return "intel_hwp_power_saving"
+	} else {
+		return "intel_hwp_performance"
+	}
+}
+
 proc binary_name_ld_lib_so { } { return "ld-hw.lib.so" }
 proc binary_name_core_a    { } { return "core-hw.a"    }
 proc binary_name_timer     { } { return "hw_timer"     }
@@ -7,6 +35,8 @@ proc binary_name_image_elf { } { return "image-hw.elf" }
 proc run_boot_string { } { return "\nkernel initialized" }
 
 proc boot_output { } { return "serial" }
+
+proc grub_menuentry { } { return "'Genode on base-hw'" }
 
 
 proc bootstrap_link_address { } {
@@ -75,6 +105,7 @@ proc run_boot_dir {binaries} {
 	if {[file exists debug/core-hw-[board].a]} {
 		build_core debug/core-hw-[board].a         {} [run_dir].core      [core_link_address]
 		build_core [run_dir]/genode/$bootstrap_obj {} [run_dir].bootstrap [bootstrap_link_address]
+		exec [cross_dev_prefix]objcopy --only-keep-debug [run_dir].core [run_dir].core.debug
 	}
 
 	# determine modules to be incorporated into the core image
@@ -102,7 +133,7 @@ proc run_boot_dir {binaries} {
 	exec mkdir -p [run_dir]/boot
 	exec mv [run_dir]/image-hw.elf [run_dir]/boot/image-hw.elf
 
-	set options_bender "[boot_output] "
+	set options_bender "[boot_output] [bender_intel_hwp_mode_option]"
 
 	if {[have_include "image/iso"] || [have_include "image/disk"] || [have_include image/uefi]} {
 		#
@@ -128,7 +159,7 @@ proc run_boot_dir {binaries} {
 		#
 		set fh [create_header_grub2_config]
 
-		puts $fh "menuentry 'Genode on base-hw' {"
+		puts $fh "menuentry [grub_menuentry] {"
 		puts $fh " insmod multiboot2"
 		puts $fh " multiboot2 /boot/bender $options_bender"
 		puts $fh " module2 /boot/image-hw.elf.gz image-hw.elf"

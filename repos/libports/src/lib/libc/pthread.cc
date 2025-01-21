@@ -950,12 +950,19 @@ extern "C" {
 		__attribute__((alias("pthread_mutexattr_settype")));
 
 
-	int pthread_mutex_init(pthread_mutex_t *mutex,
-	                       pthread_mutexattr_t const *attr)
+	int mutex_init(pthread_mutex_t *mutex,
+	               pthread_mutexattr_t const *attr)
 	{
-		if (!mutex)
-			return EINVAL;
+		static Mutex mutex_init_mutex { };
 
+		Mutex::Guard guard(mutex_init_mutex);
+
+		/*
+		 * '*mutex' could have been initialized by a different
+		 * thread which got the init mutex earlier.
+		 */
+		if (*mutex != PTHREAD_MUTEX_INITIALIZER)
+			return 0;
 
 		Libc::Allocator alloc { };
 
@@ -966,13 +973,22 @@ extern "C" {
 		case PTHREAD_MUTEX_ADAPTIVE_NP: *mutex = new (alloc) Pthread_mutex_normal; break;
 		case PTHREAD_MUTEX_ERRORCHECK:  *mutex = new (alloc) Pthread_mutex_errorcheck; break;
 		case PTHREAD_MUTEX_RECURSIVE:   *mutex = new (alloc) Pthread_mutex_recursive; break;
-
-		default:
-			*mutex = nullptr;
-			return EINVAL;
+		default:                        return EINVAL;
 		}
 
 		return 0;
+	}
+
+	int pthread_mutex_init(pthread_mutex_t *mutex,
+	                       pthread_mutexattr_t const *attr)
+	{
+		if (!mutex)
+			return EINVAL;
+
+		/* mark as uninitialized for 'mutex_init()' */
+		*mutex = PTHREAD_MUTEX_INITIALIZER;
+
+		return mutex_init(mutex, attr);
 	}
 
 	typeof(pthread_mutex_init) _pthread_mutex_init
@@ -1001,7 +1017,7 @@ extern "C" {
 			return EINVAL;
 
 		if (*mutex == PTHREAD_MUTEX_INITIALIZER)
-			pthread_mutex_init(mutex, nullptr);
+			mutex_init(mutex, nullptr);
 
 		return (*mutex)->lock();
 	}
@@ -1016,7 +1032,7 @@ extern "C" {
 			return EINVAL;
 
 		if (*mutex == PTHREAD_MUTEX_INITIALIZER)
-			pthread_mutex_init(mutex, nullptr);
+			mutex_init(mutex, nullptr);
 
 		return (*mutex)->trylock();
 	}
@@ -1032,7 +1048,7 @@ extern "C" {
 			return EINVAL;
 
 		if (*mutex == PTHREAD_MUTEX_INITIALIZER)
-			pthread_mutex_init(mutex, nullptr);
+			mutex_init(mutex, nullptr);
 
 		/* abstime must be non-null according to the spec */
 		return (*mutex)->timedlock(*abstimeout);
@@ -1070,6 +1086,15 @@ extern "C" {
 		sem_t           signal_sem;
 		sem_t           handshake_sem;
 
+		struct Invalid_timedwait_clock { };
+
+		void _cleanup()
+		{
+			sem_destroy(&handshake_sem);
+			sem_destroy(&signal_sem);
+			pthread_mutex_destroy(&counter_mutex);
+		}
+
 		pthread_cond(clockid_t clock_id) : num_waiters(0), num_signallers(0)
 		{
 			pthread_mutex_init(&counter_mutex, nullptr);
@@ -1077,17 +1102,12 @@ extern "C" {
 			sem_init(&handshake_sem, 0, 0);
 
 			if (sem_set_clock(&signal_sem, clock_id)) {
-				struct Invalid_timedwait_clock { };
+				_cleanup();
 				throw Invalid_timedwait_clock();
 			}
 		}
 
-		~pthread_cond()
-		{
-			sem_destroy(&handshake_sem);
-			sem_destroy(&signal_sem);
-			pthread_mutex_destroy(&counter_mutex);
-		}
+		~pthread_cond() { _cleanup(); }
 	};
 
 
@@ -1099,17 +1119,11 @@ extern "C" {
 
 	int pthread_condattr_init(pthread_condattr_t *attr)
 	{
-		static Mutex condattr_init_mutex { };
-
 		if (!attr)
 			return EINVAL;
 
-		try {
-			Mutex::Guard guard(condattr_init_mutex);
-			Libc::Allocator alloc { };
-			*attr = new (alloc) pthread_cond_attr;
-			return 0;
-		} catch (...) { return ENOMEM; }
+		Libc::Allocator alloc { };
+		*attr = new (alloc) pthread_cond_attr;
 
 		return 0;
 	}
@@ -1145,22 +1159,35 @@ extern "C" {
 	{
 		static Mutex cond_init_mutex { };
 
-		if (!cond)
-			return EINVAL;
+		Mutex::Guard guard(cond_init_mutex);
+
+		/*
+		 * '*cond' could have been initialized by a different
+		 * thread which got the init mutex earlier.
+		 */
+		if (*cond != PTHREAD_COND_INITIALIZER)
+			return 0;
+
+		Libc::Allocator alloc { };
 
 		try {
-			Mutex::Guard guard(cond_init_mutex);
-			Libc::Allocator alloc { };
 			*cond = attr && *attr ? new (alloc) pthread_cond((*attr)->clock_id)
 			                      : new (alloc) pthread_cond(CLOCK_REALTIME);
-			return 0;
-		} catch (...) { return ENOMEM; }
+		} catch (pthread_cond::Invalid_timedwait_clock) { return EINVAL; }
+
+		return 0;
 	}
 
 
 	int pthread_cond_init(pthread_cond_t *__restrict cond,
 	                      const pthread_condattr_t *__restrict attr)
 	{
+		if (!cond)
+			return EINVAL;
+
+		/* mark as uninitialized for 'cond_init()' */
+		*cond = PTHREAD_COND_INITIALIZER;
+
 		return cond_init(cond, attr);
 	}
 
