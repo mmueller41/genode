@@ -1,6 +1,9 @@
 #include "server.h"
 #include "network/server.h"
 #include <iostream>
+#include <mx/system/environment.h>
+#include <base/heap.h>
+#include <timer_session/connection.h>
 
 using namespace application::blinktree_server;
 
@@ -18,7 +21,16 @@ void Server::run()
     this->_tree = std::make_unique<db::index::blinktree::BLinkTree<std::uint64_t, std::int64_t>>(
         this->_node_isolation_level, this->_preferred_synchronization_method);
 
-    server = new network::Server{this->_port, mx::tasking::runtime::channels()};
+    Libc::Env &env = mx::system::Environment::env();
+
+    static mx::memory::dynamic::Allocator *alloc = new (mx::memory::GlobalHeap::allocate_cache_line_aligned(sizeof(mx::memory::dynamic::Allocator))) mx::memory::dynamic::Allocator();
+
+    static Timer::Connection timer{env};
+
+    static Genode::Heap _alloc{env.ram(), env.rm()};
+
+    Mxip::mxip_init(*alloc, timer);
+    server = new network::Server{env, this->_port, mx::tasking::runtime::channels(), timer, _alloc};
 
     std::cout << "Waiting for requests on port :" << this->_port << std::endl;
     auto network_thread = std::thread{[server, tree = this->_tree.get()]() {
@@ -26,7 +38,10 @@ void Server::run()
     }};
     mx::tasking::runtime::start_and_wait();
 
-    //network_thread.join();
 
-    delete server;
+
+    network_thread.join();
+
+
+    //delete server;
 }
