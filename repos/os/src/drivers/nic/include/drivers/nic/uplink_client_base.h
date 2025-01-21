@@ -33,7 +33,7 @@ class Genode::Uplink_client_base : Noncopyable
 		enum class Write_result { WRITE_SUCCEEDED, WRITE_FAILED };
 
 		enum { PKT_SIZE = Nic::Packet_allocator::DEFAULT_PACKET_SIZE };
-		enum { BUF_SIZE = Uplink::Session::QUEUE_SIZE * PKT_SIZE };
+		enum { BUF_SIZE = 64*Uplink::Session::QUEUE_SIZE * PKT_SIZE };
 
 		Env                                &_env;
 		Allocator                          &_alloc;
