@@ -64,6 +64,18 @@ struct Libc::Malloc_ram_allocator : Ram_allocator
 			[&] (Alloc_error error) {
 				return error; });
 	}
+	
+	Alloc_result try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cache) override
+	{
+		return _ram.try_alloc(size, numa_id, cache).convert<Alloc_result>(
+
+			[&] (Ram_dataspace_capability cap) {
+				new (_md_alloc) Registered<Dataspace>(_dataspaces, cap);
+				return cap; },
+
+			[&] (Alloc_error error) {
+				return error; });
+	}
 
 	void free(Ram_dataspace_capability ds_cap) override
 	{

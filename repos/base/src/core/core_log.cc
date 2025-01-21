@@ -51,8 +51,10 @@ void Core::init_core_log(Core_log_range const &r) { range = r; }
 
 void Core::Core_log::output(char const * str)
 {
+	acquire();
 	for (unsigned i = 0; i < Genode::strlen(str); i++) {
 		out(str[i]);
 		out_mem(str[i]);
 	}
+	release();
 }

@@ -2,9 +2,9 @@ LICENSE   := GPLv2
 VERSION   := git
 DOWNLOADS := nova.git
 
-# r10 branch
-URL(nova) := https://github.com/alex-ab/NOVA.git
-REV(nova) := fc9ad04ecec3911302451fcbf6cd87063be66ad0
+# feature/numa branch
+URL(nova) := https://github.com/mmueller41/NOVA.git
+REV(nova) := tukija 
 DIR(nova) := src/kernel/nova
 
 PATCHES   := $(sort $(wildcard $(REP_DIR)/patches/*.patch))

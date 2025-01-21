@@ -71,7 +71,8 @@ class Genode::Parent
 			static Client::Id log()     { return { 3 }; }
 			static Client::Id binary()  { return { 4 }; }
 			static Client::Id linker()  { return { 5 }; }
-			static Client::Id last()    { return { 5 }; }
+			static Client::Id topo() 	{ return { 6 }; }
+			static Client::Id last()    { return { 6 }; }
 
 			/**
 			 * True if session ID refers to an environment session
@@ -283,6 +284,12 @@ class Genode::Parent
 		 */
 		virtual void yield_response() = 0;
 
+		/**
+		 * Obtain information about the resources gained, e.g. from a resource request
+		 * 
+		 */
+		virtual Resource_args gained_resources() = 0;
+
 		/*
 		 * Health monitoring
 		 */
@@ -328,6 +335,7 @@ class Genode::Parent
 		           Resource_args const &);
 		GENODE_RPC(Rpc_yield_sigh, void, yield_sigh, Signal_context_capability);
 		GENODE_RPC(Rpc_yield_request, Resource_args, yield_request);
+		GENODE_RPC(Rpc_gained_resources, Resource_args, gained_resources);
 		GENODE_RPC(Rpc_yield_response, void, yield_response);
 		GENODE_RPC(Rpc_heartbeat_sigh, void, heartbeat_sigh, Signal_context_capability);
 		GENODE_RPC(Rpc_heartbeat_response, void, heartbeat_response);
@@ -337,7 +345,7 @@ class Genode::Parent
 		                     Rpc_close, Rpc_session_response, Rpc_main_thread,
 		                     Rpc_deliver_session_cap, Rpc_resource_avail_sigh,
 		                     Rpc_resource_request, Rpc_yield_sigh,
-		                     Rpc_yield_request, Rpc_yield_response,
+		                     Rpc_yield_request, Rpc_yield_response, Rpc_gained_resources,
 		                     Rpc_heartbeat_sigh, Rpc_heartbeat_response);
 };
 

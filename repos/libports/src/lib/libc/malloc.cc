@@ -86,7 +86,7 @@ class Libc::Malloc
 			SLAB_START    = 5,  /* 32 bytes (log2) */
 			SLAB_STOP     = 11, /* 2048 bytes (log2) */
 			NUM_SLABS     = (SLAB_STOP - SLAB_START) + 1,
-			DEFAULT_ALIGN = 16
+			DEFAULT_ALIGN = 64
 		};
 
 		struct Metadata

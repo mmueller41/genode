@@ -45,7 +45,7 @@ class Core::Ram_dataspace_factory : public Ram_allocator,
 		Rpc_entrypoint &_ep;
 
 		Range_allocator &_phys_alloc;
-		Phys_range const _phys_range;
+		Phys_range _phys_range;
 
 
 		/*
@@ -82,6 +82,11 @@ class Core::Ram_dataspace_factory : public Ram_allocator,
 		 */
 		void _clear_ds(Dataspace_component &ds);
 
+		/**
+		 * Remove core-local mappings of dataspace
+		 */
+		void _unmap_ds_from_core(Dataspace_component &ds);
+
 	public:
 
 		Ram_dataspace_factory(Rpc_entrypoint  &ep,
@@ -109,6 +114,7 @@ class Core::Ram_dataspace_factory : public Ram_allocator,
 		 *****************************/
 
 		Alloc_result try_alloc(size_t, Cache) override;
+		Alloc_result try_alloc(size_t, Ram_allocator::Numa_id, Cache) override;
 		void free(Ram_dataspace_capability) override;
 		size_t dataspace_size(Ram_dataspace_capability ds) const override;
 };

@@ -21,6 +21,7 @@
 #include <session/session.h>
 #include <dataspace/capability.h>
 #include <pd_session/pd_session.h>
+#include <base/affinity.h>
 
 namespace Genode {
 
@@ -106,6 +107,14 @@ struct Genode::Cpu_session : Session
 	virtual void kill_thread(Thread_capability thread) = 0;
 
 	/**
+	 * Migrate a thread to a new location
+	 * 
+	 * \param thread 	capability of the thread to migrate
+	 * \param loc 		component-local location to migrate the thread to 
+	 */
+	virtual void migrate_thread(Thread_capability thread, Genode::Affinity::Location loc) = 0;
+
+	/**
 	 * Register default signal handler for exceptions
 	 *
 	 * This handler is used for all threads that have no explicitly installed
@@ -124,6 +133,12 @@ struct Genode::Cpu_session : Session
 	 * represent the physical CPUs that are available.
 	 */
 	virtual Affinity::Space affinity_space() const = 0;
+
+	/**
+	 * @brief Update affinity location of this CPU session
+	 * 
+	 */
+	virtual void move(const Genode::Affinity::Location ) = 0;
 
 	/**
 	 * Translate generic priority value to kernel-specific priority levels
@@ -231,8 +246,10 @@ struct Genode::Cpu_session : Session
 	           Capability<Pd_session>, Name const &, Affinity::Location,
 	           Weight, addr_t);
 	GENODE_RPC(Rpc_kill_thread, void, kill_thread, Thread_capability);
+	GENODE_RPC(Rpc_migrate_thread, void, migrate_thread, Thread_capability, Affinity::Location);
 	GENODE_RPC(Rpc_exception_sigh, void, exception_sigh, Signal_context_capability);
 	GENODE_RPC(Rpc_affinity_space, Affinity::Space, affinity_space);
+	GENODE_RPC(Rpc_move, void, move, Affinity::Location);
 	GENODE_RPC(Rpc_trace_control, Dataspace_capability, trace_control);
 	GENODE_RPC(Rpc_ref_account, int, ref_account, Cpu_session_capability);
 	GENODE_RPC(Rpc_transfer_quota, int, transfer_quota, Cpu_session_capability, size_t);
@@ -241,7 +258,7 @@ struct Genode::Cpu_session : Session
 
 	GENODE_RPC_INTERFACE(Rpc_create_thread, Rpc_kill_thread, Rpc_exception_sigh,
 	                     Rpc_affinity_space, Rpc_trace_control, Rpc_ref_account,
-	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu);
+	                     Rpc_transfer_quota, Rpc_quota, Rpc_native_cpu, Rpc_migrate_thread, Rpc_move);
 };
 
 

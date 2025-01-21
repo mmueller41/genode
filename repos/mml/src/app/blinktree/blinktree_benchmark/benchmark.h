@@ -14,6 +14,10 @@
 #include <string>
 #include <vector>
 #include <libc/component.h>
+#include <mx/tasking/task.h>
+
+#include <trace/timestamp.h>
+#include <base/log.h>
 
 namespace application::blinktree_benchmark {
 /**
@@ -22,6 +26,7 @@ namespace application::blinktree_benchmark {
 class Benchmark final : public Listener
 {
 public:
+
     Benchmark(Libc::Env &env, benchmark::Cores &&, std::uint16_t iterations, std::string &&fill_workload_file,
               std::string &&mixed_workload_file, bool use_performance_counter,
               mx::synchronization::isolation_level node_isolation_level,
@@ -46,6 +51,11 @@ public:
      * Starts the benchmark after initialization.
      */
     void start();
+
+    void start_chronometer() {
+        this->_chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(this->_workload)),
+                                this->_current_iteration + 1, this->_cores.current());
+    }
 
 private:
     // Collection of cores the benchmark should run on.
@@ -100,5 +110,57 @@ private:
      * @return Name of the file to write profiling results to.
      */
     [[nodiscard]] std::string profile_file_name() const;
+
+    friend class StartMeasurementTask;
+    friend class StopMeasurementTask;
+};
+
+class StartMeasurementTask : public mx::tasking::TaskInterface
+{
+    private:
+        Benchmark &_benchmark;
+
+    public:
+        constexpr StartMeasurementTask(Benchmark& benchmark) : _benchmark(benchmark) {}
+        ~StartMeasurementTask() override = default;
+
+        mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override 
+        {
+            //_benchmark._chronometer.start(static_cast<std::uint16_t>(static_cast<benchmark::phase>(_benchmark._workload)), _benchmark._current_iteration + 1, _benchmark._cores.current());
+            //_benchmark._start = Genode::Trace::timestamp();
+            return mx::tasking::TaskResult::make_remove();
+        }
+};
+
+class StopMeasurementTask : public mx::tasking::TaskInterface
+{
+    private:
+        Benchmark &_benchmark;
+
+    public:
+        constexpr StopMeasurementTask(Benchmark& benchmark) : _benchmark(benchmark) {}
+        ~StopMeasurementTask() override = default;
+
+        mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override 
+        {
+            _benchmark.requests_finished();
+            return mx::tasking::TaskResult::make_remove();
+        }
+};
+
+class RestartTask : public mx::tasking::TaskInterface
+{
+    private:
+        Benchmark &_benchmark;
+
+    public:
+        constexpr RestartTask(Benchmark &benchmark) : _benchmark(benchmark) {}
+        ~RestartTask() override = default;
+
+        mx::tasking::TaskResult execute(const std::uint16_t core_id, const std::uint16_t channel_id) override
+        {
+            _benchmark.start();
+            return mx::tasking::TaskResult::make_remove();
+        }
 };
 } // namespace application::blinktree_benchmark

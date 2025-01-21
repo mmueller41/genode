@@ -14,6 +14,7 @@
 #ifndef _INCLUDE__BASE__ATTACHED_RAM_DATASPACE_H_
 #define _INCLUDE__BASE__ATTACHED_RAM_DATASPACE_H_
 
+#include <util/string.h>
 #include <util/touch.h>
 #include <base/ram_allocator.h>
 #include <base/env.h>
@@ -112,6 +113,7 @@ class Genode::Attached_ram_dataspace
 			_size(size), _ram(&ram), _rm(&rm), _cache(cache)
 		{
 			_alloc_and_attach();
+			memset(_local_addr, 0, _size);
 		}
 
 		/**

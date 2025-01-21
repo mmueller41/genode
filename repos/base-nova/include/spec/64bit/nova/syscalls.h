@@ -37,6 +37,7 @@
 
 #include <nova/stdint.h>
 #include <nova/syscall-generic.h>
+#include <base/trace/types.h>
 
 #define ALWAYS_INLINE __attribute__((always_inline))
 
@@ -45,7 +46,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline mword_t rdi(Syscall s, uint8_t flags, mword_t sel)
 	{
-		return sel << 8 | (flags & 0xf) << 4 | s;
+		return sel << 9 | (flags & 0xf) << 5 | s;
 	}
 
 
@@ -155,7 +156,7 @@ namespace Nova {
 	ALWAYS_INLINE
 	inline uint8_t call(mword_t pt)
 	{
-		return syscall_1(NOVA_CALL, 0, pt, 0);
+		return syscall_1(NOVA_CALL, 0, 0, pt);
 	}
 
 
@@ -254,6 +255,36 @@ namespace Nova {
 		return util_time(NOVA_EC_CTRL, ec, Ec_op::EC_TIME, time);
 	}
 
+	ALWAYS_INLINE
+	inline uint8_t hpc_ctrl(Hpc_op op, mword_t sel, mword_t type, mword_t &p1, mword_t &p2, mword_t &p3)
+	{
+		uint8_t res = syscall_6(NOVA_EC_CTRL, op, sel, type, p1, p2, p3);
+		return res;
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_read(mword_t sel, mword_t type, mword_t &value)
+	{
+			return syscall_5(NOVA_EC_CTRL, HPC_READ, sel, type, value);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_start(mword_t sel, mword_t type)
+	{
+		return syscall_1(NOVA_EC_CTRL, HPC_START, sel, type);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_stop(mword_t sel, mword_t type)
+	{
+		return syscall_1(NOVA_EC_CTRL, HPC_STOP, sel, type);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t hpc_reset(mword_t sel, mword_t type, mword_t val)
+	{
+		return syscall_2(NOVA_EC_CTRL, HPC_RESET, sel, type, val);
+	}
 
 	ALWAYS_INLINE
 	inline uint8_t create_sc(mword_t sc, mword_t pd, mword_t ec, Qpd qpd)
@@ -415,6 +446,77 @@ namespace Nova {
 		msi_addr = dev;
 		msi_data = cpu;
 		return syscall_5(NOVA_ASSIGN_GSI, flags.value(), sm, msi_addr, msi_data, si);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t yield(bool release_core = true, bool block = true)
+	{
+		Nova::uint8_t flags = block ? release_core : 3;
+		return syscall_0(NOVA_YIELD, flags, 0);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t mxinit(mword_t rip, mword_t id, mword_t channel)
+	{
+		return syscall_2(NOVA_MXINIT, 0, id, rip, channel);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t alloc_cores(mword_t count, mword_t &allocated, mword_t &remainder)
+	{
+		Nova::mword_t rest = 0;
+		Nova::mword_t null = 0;
+		Nova::uint8_t res = syscall_6(NOVA_ALLOC_CORES, 0, 0, count, allocated, rest, null);
+		remainder = rest;
+		return res;
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t wake_core(mword_t core)
+	{
+		return syscall_1(NOVA_RESERVE_CPU, 0, 0, core);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t core_allocation(mword_t &allocation, bool mask = false)
+	{
+		return syscall_5(NOVA_CORE_ALLOC, static_cast<Nova::uint8_t>(mask), 0, allocation, allocation);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t cpu_id(mword_t &cpuid)
+	{
+		return syscall_5(NOVA_CPUID, 0, 0, cpuid, cpuid);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t create_cell(mword_t pd, mword_t prio, mword_t mask, mword_t start, mword_t count)
+	{
+		return syscall_5(NOVA_CREATE_CELL, static_cast<Nova::uint8_t>(prio), pd, mask, start, count);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t update_cell(mword_t pd, mword_t mask, mword_t index)
+	{
+		return syscall_2(NOVA_CELL_CTRL, Cell_op::GROW, pd, mask, index);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t create_habitat(mword_t start_cpu, mword_t size)
+	{
+		return syscall_2(NOVA_CREATE_HAB, 0, 0, start_cpu, size);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t acquire_console()
+	{
+		return syscall_0(NOVA_CONS_CTRL, Nova::Cons_op::LOCK);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t release_console()
+	{
+		return syscall_0(NOVA_CONS_CTRL, Nova::Cons_op::UNLOCK);
 	}
 }
 #endif /* _INCLUDE__SPEC__64BIT__NOVA__SYSCALLS_H_ */

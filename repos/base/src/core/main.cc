@@ -38,6 +38,7 @@
 #include <io_mem_root.h>
 #include <irq_root.h>
 #include <trace/root.h>
+#include <topo_root.h>
 #include <platform_services.h>
 
 using namespace Core;
@@ -184,7 +185,7 @@ class Core_child : public Child_policy
 		Pd_session           &ref_pd()           override { return _core_pd; }
 		Pd_session_capability ref_pd_cap() const override { return _core_pd_cap; }
 
-		size_t session_alloc_batch_size() const override { return 128; }
+		size_t session_alloc_batch_size() const override { return 2*128; }
 
 		Id_space<Parent::Server> &server_id_space() override { return _server_ids; }
 };
@@ -278,6 +279,7 @@ void Genode::bootstrap_component(Genode::Platform &)
 	                                platform().irq_alloc(), sliced_heap);
 	static Trace_root  trace_root  (core_ram_alloc, local_rm, ep, sliced_heap,
 	                                Core::Trace::sources(), trace_policies);
+	static Topo_root topo_root(core_ram_alloc, local_rm, ep, sliced_heap);
 
 	static Core_service<Rom_session_component>    rom_service    (services, rom_root);
 	static Core_service<Rm_session_component>     rm_service     (services, rm_root);
@@ -287,6 +289,7 @@ void Genode::bootstrap_component(Genode::Platform &)
 	static Core_service<Io_mem_session_component> io_mem_service (services, io_mem_root);
 	static Core_service<Irq_session_component>    irq_service    (services, irq_root);
 	static Core_service<Trace_session_component>  trace_service  (services, trace_root);
+	static Core_service<Topo_session_component> topo_service(services, topo_root);
 
 	/* make platform-specific services known to service pool */
 	platform_add_local_services(ep, sliced_heap, services, Core::Trace::sources(), core_ram_alloc);
@@ -294,7 +297,7 @@ void Genode::bootstrap_component(Genode::Platform &)
 	size_t const avail_ram_quota = core_pd.avail_ram().value;
 	size_t const avail_cap_quota = core_pd.avail_caps().value;
 
-	size_t const preserved_ram_quota = 224*1024;
+	size_t const preserved_ram_quota = 224*1024+(1<<20);
 	size_t const preserved_cap_quota = 1000;
 
 	if (avail_ram_quota < preserved_ram_quota) {

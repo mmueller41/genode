@@ -1,0 +1,175 @@
+set build_components {
+    core init timer app/blinktree_server hoitaja server/nic_router
+}
+
+
+create_boot_directory
+import_from_depot [depot_user]/pkg/[drivers_nic_pkg] \
+
+build $build_components
+set config {
+<config>
+    <parent-provides>
+        <service name="LOG"/>
+        <service name="PD"/>
+        <service name="CPU"/>
+        <service name="ROM"/>
+        <service name="RAM"/>
+        <service name="IRQ"/>
+        <service name="IO_MEM"/>
+        <service name="IO_PORT"/>
+        <service name="RM"/>
+        <service name="TOPO"/>
+        <service name="TRACE"/>
+    </parent-provides>
+    <default-route>
+        <any-service><parent/><any-child/></any-service>
+    </default-route>
+    <default caps="200"/>
+    <start name="timer">
+        <resource name="RAM" quantum="16M"/>
+        <!--<resource name="CPU" quantum="10"/>-->
+        <provides><service name="Timer"/></provides>
+        <route>
+            <any-service><parent/><any-child/></any-service>
+        </route>
+    </start>
+}
+
+append config {
+
+    <!-- Actual benchmark -->
+
+    <start name="hoitaja" caps="1048576" managing_system="yes">
+        <resource name="RAM" quantum="250G"/>
+        <provides>
+            <service name="TASKING"/>
+        </provides>
+        <config prio_levels="32">
+            <parent-provides>
+                <service name="LOG"/>
+                <service name="PD"/>
+                <service name="CPU"/>
+                <service name="ROM"/>
+                <service name="RAM"/>
+                <service name="IRQ"/>
+                <service name="IO_MEM"/>
+                <service name="IO_PORT"/>
+                <service name="CAP"/>
+                <service name="RM"/>
+                <service name="SIGNAL"/>
+                <service name="TOPO"/>
+                <service name="Timer"/>
+                <service name="TASKING"/>
+                <service name="TRACE"/>
+            </parent-provides>
+            <default-route>
+                <any-service><parent/><any-child/></any-service>
+            </default-route>
+            <default caps="1800"/> 
+            <affinity-space width="64" height="1"/>
+           
+            <start name="drivers" caps="1000" managing_system="yes" brick="yes">
+                <resource name="RAM" quantum="512M"/>
+                <affinity xpos="1" ypos="0" width="1" height="1"/>
+                <binary name="init"/>
+                <route>
+                    <service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+                    <service name="Timer"> <parent/> </service>
+                    <service name="Uplink"> <child name="nic_router"/> </service>
+                    <any-service> <parent/> </any-service>
+                </route>
+            </start>
+            <start name="nic_router" caps="2000" brick="yes">
+                <affinity xpos="2" ypos="0" width="1" height="1"/>
+                <resource name="RAM" quantum="16G"/>
+                <provides>
+                    <service name="Nic"/>
+                    <service name="Uplink"/>
+                </provides>
+                <config verbose_domain_state="yes" max_packets_per_signal="10">
+
+                    <policy label_prefix="blinktree_server" domain="downlink"/>
+                    <policy label_prefix="drivers"   domain="uplink"/>
+
+                    <domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1" verbose_packets="no">
+                    <!--
+                    <domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="false">
+                    -->
+
+                        <nat domain="downlink"
+                            tcp-ports="16384"
+                            udp-ports="16384"
+                            icmp-ids="16384"/>
+
+                        <tcp-forward port="12345" domain="downlink" to="10.0.3.55"/>
+
+                        <udp-forward port="7"    domain="downlink" to="10.0.3.55"/>
+                        <udp-forward port="7070" domain="downlink" to="10.0.3.55"/>
+
+                    </domain>
+
+                    <domain name="downlink" interface="10.0.3.1/24" verbose_packets="no">
+
+                        <dhcp-server ip_first="10.0.3.55" ip_last="10.0.3.55">
+                            <dns-server ip="8.8.8.8"/>
+                            <dns-server ip="1.1.1.1"/>
+                        </dhcp-server>
+
+                        <tcp dst="0.0.0.0/0"><permit-any domain="uplink" /></tcp>
+                        <udp dst="0.0.0.0/0"><permit-any domain="uplink" /></udp>
+                        <icmp dst="0.0.0.0/0" domain="uplink"/>
+
+                    </domain>
+                </config>
+            </start>
+                
+                <start name="blinktree_server" caps="1000">
+                    <binary name="blinktree_daemon"/>
+                    <resource name="RAM" quantum="200G"/>
+                    <!--<resource name="CPU" quantum="90"/>-->
+                    <config ip_addr="10.0.3.55">
+                        <vfs>
+                            <dir name="dev"> 
+                                <log/> 
+                                <inline name="rtc">2022-07-20 14:30</inline> 
+                            </dir>
+                            <dir name="tmp">    <ram/> </dir>
+                        </vfs>
+                        <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+                    </config>
+                    <route>
+                        <service name="Nic"> <child name="nic_router"/> </service>
+                        <any-service> <parent/> <any-child/> </any-service>
+                    </route>
+                </start>
+            </config>
+            <route>
+                <service name="Timer"> <child name="timer"/> </service>
+                <service name="Nic"> <child name="nic_router"/> </service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+    </config>
+    }
+
+    install_config $config
+
+    build_boot_image { core init timer ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so vfs.lib.so blinktree_daemon hoitaja nic_router }
+
+    append qemu_args "-nographic"
+    append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::12345-:12345,hostfwd=tcp::18080-:12345,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
+
+    run_genode_until forever
+
+    set rounds 100
+    set succeeded 0
+
+    for {set r 0} {$r < $rounds} {incr r} {
+        run_genode_until {\[init -> hoitaja -> blinktree1\] Finished\.} 300
+        kill_spawned [output_spawn_id]
+        incr succeeded
+    }
+
+    puts "$succeeded of $rounds rounds succeeded."
+

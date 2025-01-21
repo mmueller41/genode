@@ -21,6 +21,7 @@
 
 /* base-internal includes */
 #include <base/internal/globals.h>
+#include <topo_session/capability.h>
 #include <base/internal/platform.h>
 
 namespace Genode { struct Component_env; }
@@ -86,6 +87,7 @@ struct Genode::Component_env : Env
 	Region_map  &rm()     override { return _rm; }
 	Pd_session  &pd()     override { return _pd; }
 	Entrypoint  &ep()     override { return _ep; }
+		Genode::Topo_session &topo() override { return *Genode::env_deprecated()->topo_session(); }
 
 	Cpu_session_capability cpu_session_cap() override { return _cpu_cap; }
 	Pd_session_capability  pd_session_cap()  override { return _pd_cap; }

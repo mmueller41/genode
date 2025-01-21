@@ -21,14 +21,13 @@
 #include <session/session.h>
 #include <region_map/region_map.h>
 #include <base/ram_allocator.h>
-
+#include <base/affinity.h>
 namespace Genode {
 	struct Pd_session;
 	struct Pd_session_client;
 	struct Parent;
 	struct Signal_context;
 }
-
 
 struct Genode::Pd_session : Session, Ram_allocator
 {
@@ -273,6 +272,11 @@ struct Genode::Pd_session : Session, Ram_allocator
 	 */
 	Ram_quota avail_ram() const { return { ram_quota().value - used_ram().value }; }
 
+	/**
+	 * \brief Create new dataspace factory for given NUMA node
+	 * \param  
+	 */
+
 
 	/*****************************************
 	 ** Access to kernel-specific interface **
@@ -345,6 +349,12 @@ struct Genode::Pd_session : Session, Ram_allocator
 	 */
 	virtual Attach_dma_result attach_dma(Dataspace_capability, addr_t at) = 0;
 
+	/*
+	 * Create a new cell at the kernel for this protection domain
+	*/
+	virtual void create_cell(long prioritiy, const Affinity::Location &loc) = 0;
+
+	virtual void update_cell(const Affinity::Location &loc) = 0;
 
 	/*********************
 	 ** RPC declaration **
@@ -370,6 +380,7 @@ struct Genode::Pd_session : Session, Ram_allocator
 	GENODE_RPC(Rpc_cap_quota, Cap_quota, cap_quota);
 	GENODE_RPC(Rpc_used_caps, Cap_quota, used_caps);
 	GENODE_RPC(Rpc_try_alloc, Alloc_result, try_alloc, size_t, Cache);
+	GENODE_RPC(Rpc_try_alloc_numa, Alloc_result, try_alloc, size_t, Ram_allocator::Numa_id, Cache);
 	GENODE_RPC(Rpc_free, void, free, Ram_dataspace_capability);
 	GENODE_RPC(Rpc_transfer_ram_quota, Transfer_ram_quota_result, transfer_quota,
 	           Capability<Pd_session>, Ram_quota);
@@ -382,16 +393,21 @@ struct Genode::Pd_session : Session, Ram_allocator
 	GENODE_RPC(Rpc_attach_dma, Attach_dma_result, attach_dma,
 	           Dataspace_capability, addr_t);
 
+	GENODE_RPC(Rpc_create_cell, void, create_cell, long, Affinity::Location const &);
+
+	GENODE_RPC(Rpc_update_cell, void, update_cell, Affinity::Location const &);
+
 	GENODE_RPC_INTERFACE(Rpc_assign_parent, Rpc_assign_pci, Rpc_map,
 	                     Rpc_signal_source, Rpc_free_signal_source,
 	                     Rpc_alloc_context, Rpc_free_context, Rpc_submit,
 	                     Rpc_alloc_rpc_cap, Rpc_free_rpc_cap, Rpc_address_space,
 	                     Rpc_stack_area, Rpc_linker_area, Rpc_ref_account,
 	                     Rpc_transfer_cap_quota, Rpc_cap_quota, Rpc_used_caps,
-	                     Rpc_try_alloc, Rpc_free,
+	                     Rpc_try_alloc, Rpc_try_alloc_numa, Rpc_free,
 	                     Rpc_transfer_ram_quota, Rpc_ram_quota, Rpc_used_ram,
 	                     Rpc_native_pd, Rpc_system_control_cap,
-	                     Rpc_dma_addr, Rpc_attach_dma);
+	                     Rpc_dma_addr, Rpc_attach_dma,
+						 Rpc_create_cell, Rpc_update_cell);
 };
 
 #endif /* _INCLUDE__PD_SESSION__PD_SESSION_H_ */

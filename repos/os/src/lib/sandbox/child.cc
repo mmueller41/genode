@@ -15,7 +15,7 @@
 #include <vm_session/vm_session.h>
 
 /* local includes */
-#include <child.h>
+#include <sandbox/child.h>
 
 
 void Sandbox::Child::destroy_services()
@@ -693,6 +693,7 @@ Genode::Affinity Sandbox::Child::filter_session_affinity(Affinity const &session
 	Affinity::Space    const &session_space    = session_affinity.space();
 	Affinity::Location const &session_location = session_affinity.location();
 
+
 	/* scale resolution of resulting space */
 	Affinity::Space space(child_space.multiply(session_space));
 	Affinity::Location child_session(child_location.xpos(), child_location.ypos(),
@@ -750,6 +751,7 @@ Sandbox::Child::Child(Env                      &env,
                       Cpu_quota_transfer       &cpu_quota_transfer,
                       Prio_levels               prio_levels,
                       Affinity::Space const    &affinity_space,
+					  Affinity::Location const &location,
                       Registry<Parent_service> &parent_services,
                       Registry<Routed_service> &child_services,
                       Registry<Local_service>  &local_services,
@@ -767,7 +769,7 @@ Sandbox::Child::Child(Env                      &env,
 	_cpu_quota_transfer(cpu_quota_transfer),
 	_name_registry(name_registry),
 	_heartbeat_enabled(start_node.has_sub_node("heartbeat")),
-	_resources(_resources_from_start_node(start_node, prio_levels, affinity_space,
+	_resources(_resources_from_start_node(start_node, prio_levels, affinity_space, location,
 	                                      default_caps_accessor.default_caps())),
 	_pd_intrinsics(pd_intrinsics),
 	_parent_services(parent_services),

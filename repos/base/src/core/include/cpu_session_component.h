@@ -169,8 +169,10 @@ class Core::Cpu_session_component : public  Session_object<Cpu_session>,
 		Create_thread_result create_thread(Capability<Pd_session>, Name const &,
 		                                   Affinity::Location, Weight, addr_t) override;
 		void kill_thread(Thread_capability) override;
+		void migrate_thread(Thread_capability, Affinity::Location) override;
 		void exception_sigh(Signal_context_capability) override;
 		Affinity::Space affinity_space() const override;
+		void move(const Affinity::Location) override;
 		Dataspace_capability trace_control() override;
 		int ref_account(Cpu_session_capability c) override;
 		int transfer_quota(Cpu_session_capability, size_t) override;

@@ -1,0 +1,80 @@
+set build_components {
+    core init timer app/hpc_test
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+
+build $build_components
+
+create_boot_directory
+
+set config {
+    <config>
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="CAP"/>
+            <service name="RM"/>
+            <service name="SIGNAL"/>
+            <service name="TOPO"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="16M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+}
+
+append config {
+        <start name="hpc_test1">
+            <binary name="hpc_test"/>
+            <resource name="RAM" quantum="64M"/>
+            <config>
+                <vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+            <route>
+                <service name="Timer"><child name="timer"/></service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+        <start name="hpc_test2">
+            <binary name="hpc_test"/>
+            <resource name="RAM" quantum="64M"/>
+            <config>
+                <vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+            <route>
+                <service name="Timer"><child name="timer"/></service>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+    </config>
+}
+
+install_config $config
+
+set boot_modules {
+    core init timer vfs.lib.so ld.lib.so posix.lib.so libc.lib.so libm.lib.so stdcxx.lib.so hpc_test
+}
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+append qemu_args "-nographic "
+
+run_genode_until forever

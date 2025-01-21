@@ -340,6 +340,8 @@ class Core::Pd_session_component : public Session_object<Pd_session>
 
 		Alloc_result try_alloc(size_t, Cache) override;
 
+		Alloc_result try_alloc(size_t, Ram_allocator::Numa_id, Cache) override;
+
 		void free(Ram_dataspace_capability) override;
 
 		size_t dataspace_size(Ram_dataspace_capability) const override;
@@ -372,6 +374,13 @@ class Core::Pd_session_component : public Session_object<Pd_session>
 		addr_t dma_addr(Ram_dataspace_capability) override;
 
 		Attach_dma_result attach_dma(Dataspace_capability, addr_t) override;
+
+		/******************************************
+		 ** Support for EalánOS cells            **
+		 ******************************************/
+		void create_cell(long prioritiy, const Affinity::Location &loc) override;
+
+		void update_cell(const Affinity::Location &loc) override;
 };
 
 #endif /* _CORE__INCLUDE__PD_SESSION_COMPONENT_H_ */

@@ -257,7 +257,7 @@ ALL_INC_DIR += $(LIBGCC_INC_DIR)
 ALL_INC_DIR += $(HOST_INC_DIR)
 
 VERBOSE     ?= @
-VERBOSE_DIR ?= --no-print-directory
+VERBOSE_DIR ?= --print-directory
 
 MSG_LINK     ?= @$(ECHO) "    LINK     "
 MSG_COMP     ?= @$(ECHO) "    COMPILE  "

@@ -134,6 +134,16 @@ void Test::Child::_handle_yield()
 	size_t const requested_ram_quota =
 		Arg_string::find_arg(args.string(), "ram_quota").ulong_value(0);
 
+	size_t const requested_cpu_quota =
+		Arg_string::find_arg(args.string(), "cpu_quota").ulong_value(0);
+
+	log("released ", requested_cpu_quota, " portions of cpu_quota");
+	
+	size_t const requested_gpu_quota =
+		Arg_string::find_arg(args.string(), "gpus").ulong_value(0);
+
+	log("got request to release ", requested_gpu_quota, " gpus");
+
 	/* free chunks of RAM to comply with the request */
 	size_t released_quota = 0;
 	while (released_quota < requested_ram_quota) {
@@ -208,6 +218,10 @@ class Test::Parent
 
 		unsigned _wait_cnt = 0;
 
+		unsigned long _start = 0;
+
+		unsigned long _end = 0;
+
 		enum State { WAIT, YIELD_REQUESTED, YIELD_GOT_RESPONSE };
 		State _state = WAIT;
 
@@ -232,7 +246,9 @@ class Test::Parent
 			log("request yield (ram prior yield: ", _used_ram_prior_yield);
 
 			/* issue yield request */
-			Genode::Parent::Resource_args yield_args("ram_quota=5M");
+			Genode::Parent::Resource_args yield_args("ram_quota=5M,cpu_quota=10,gpus=1");
+
+			_start = _timer.elapsed_us();
 			_child.yield(yield_args);
 
 			_state = YIELD_REQUESTED;
@@ -251,7 +267,9 @@ class Test::Parent
 
 		void _yield_response()
 		{
-			log("got yield response");
+			_end = _timer.elapsed_us();
+			log("got yield response after ", (_end-_start), "us");
+
 			_state = YIELD_GOT_RESPONSE;
 
 			_print_status();
@@ -281,7 +299,7 @@ class Test::Parent
 			Parent &_parent;
 
 			Static_parent_services<Pd_session, Cpu_session, Rom_session,
-			                       Log_session, Timer::Session>
+			                       Log_session, Timer::Session, Topo_session>
 				_parent_services { _env };
 
 			Cap_quota   const _cap_quota { 50 };

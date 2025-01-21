@@ -48,6 +48,7 @@ class Genode::Thread
 		using Location = Affinity::Location;
 		using Name     = Cpu_session::Name;
 		using Weight   = Cpu_session::Weight;
+		typedef unsigned Numa_id;
 
 		struct Stack_info { addr_t base; addr_t top;
 		                    addr_t libc_tls_pointer_offset; };
@@ -432,6 +433,8 @@ class Genode::Thread
 		 * Thread affinity
 		 */
 		Affinity::Location affinity() const { return _affinity; }
+
+		void pin(Affinity::Location &loc);
 };
 
 #endif /* _INCLUDE__BASE__THREAD_H_ */

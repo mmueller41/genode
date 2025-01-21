@@ -103,7 +103,7 @@ addr_t Core::Platform::_map_pages(addr_t const phys_addr, addr_t const pages,
  *****************************/
 
 
-enum { CORE_PAGER_UTCB_ADDR = 0xbff02000 };
+enum { CORE_PAGER_UTCB_ADDR = 0xfff02000 };
 
 
 /**
@@ -200,7 +200,7 @@ static void page_fault_handler()
 
 static addr_t core_pager_stack_top()
 {
-	enum { STACK_SIZE = 4*1024 };
+	enum { STACK_SIZE = 8*1024 };
 	static char stack[STACK_SIZE];
 	return (addr_t)&stack[STACK_SIZE - sizeof(addr_t)];
 }
@@ -445,6 +445,7 @@ Core::Platform::Platform()
 	size_t kernel_memory = 0;
 
 	log("Found ", num_mem_desc, " memory entries in HIP");
+	memset(numa_mem_ranges, 0, sizeof(Genode::Range_allocator::Range) * MAX_SUPPORTED_CPUS);
 	/*
 	 * All "available" ram must be added to our physical allocator before all
 	 * non "available" regions that overlaps with ram get removed.
@@ -476,6 +477,11 @@ Core::Platform::Platform()
 
 		_io_mem_alloc.remove_range((addr_t)base, (size_t)size);
 		ram_alloc().add_range((addr_t)base, (size_t)size);
+		log("Add mem range ", reinterpret_cast<void*>(base), "-", reinterpret_cast<void*>(base + size), " for node ", mem_desc->domain);
+		if (numa_mem_ranges[mem_desc->domain].start == 0)
+			numa_mem_ranges[mem_desc->domain] = {base, base + size};
+		else if (base > numa_mem_ranges[mem_desc->domain].end)
+			numa_mem_ranges[mem_desc->domain].end = base + size;
 	}
 
 	addr_t hyp_log = 0;
@@ -795,13 +801,13 @@ Core::Platform::Platform()
 	log(Number_of_bytes(kernel_memory), " kernel memory"); log("");
 
 	/* add capability selector ranges to map */
-	unsigned const first_index = 0x2000;
+	unsigned const first_index = 0x0000;
 	unsigned index = first_index;
 	for (unsigned i = 0; i < 32; i++)
 	{
 		void * phys_ptr = nullptr;
 
-		ram_alloc().alloc_aligned(get_page_size(), get_page_size_log2()).with_result(
+		ram_alloc().alloc_aligned(128*get_page_size(), get_page_size_log2()).with_result(
 			[&] (void *ptr) { phys_ptr = ptr; },
 			[&] (Range_allocator::Alloc_error) { /* covered by nullptr test below */ });
 
@@ -809,7 +815,7 @@ Core::Platform::Platform()
 			break;
 
 		addr_t phys_addr = reinterpret_cast<addr_t>(phys_ptr);
-		addr_t core_local_addr = _map_pages(phys_addr, 1);
+		addr_t core_local_addr = _map_pages(phys_addr, 128);
 
 		if (!core_local_addr) {
 			ram_alloc().free(phys_ptr);
@@ -895,6 +901,7 @@ Core::Platform::Platform()
 		                                    (unsigned)(sc_idle_base + kernel_cpu_id),
 		                                    "killed");
 	});
+	log("Added idle ECs to trace sources");
 
 	/* add exception handler EC for core and EC root thread to trace sources */
 	struct Core_trace_source : public  Trace::Source::Info_accessor,
@@ -943,6 +950,7 @@ Core::Platform::Platform()
 			registry.insert(this);
 		}
 	};
+	log("Added exception handler EC");
 
 	new (core_mem_alloc())
 		Core_trace_source(Trace::sources(),
@@ -953,6 +961,7 @@ Core::Platform::Platform()
 		Core_trace_source(Trace::sources(),
 		                  Affinity::Location(0, 0, _cpus.width(), 1),
 		                  hip.sel_exc + 1, "root");
+	log("Created trace sources");
 }
 
 

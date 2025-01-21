@@ -3,8 +3,9 @@
  * \author Norman Feske
  * \author Sebastian Sumpf
  * \author Alexander Boettcher
+ * \author Michael Müller
  * \author Benjamin Lamowski
- * \date   2009-12-27
+ * \date   2022-12-13
  */
 
 /*
@@ -36,6 +37,7 @@
 #define _INCLUDE__NOVA__SYSCALL_GENERIC_H_
 
 #include <nova/stdint.h>
+#include <base/log.h>
 
 namespace Nova {
 
@@ -65,6 +67,16 @@ namespace Nova {
 		NOVA_ASSIGN_PCI = 0xd,
 		NOVA_ASSIGN_GSI = 0xe,
 		NOVA_PD_CTRL    = 0xf,
+		NOVA_YIELD		= 0x10,
+		NOVA_MXINIT     = 0x11,
+		NOVA_ALLOC_CORES= 0x12,
+		NOVA_CORE_ALLOC = 0x13,
+		NOVA_CREATE_CELL= 0x14,
+		NOVA_CELL_CTRL  = 0x15,
+		NOVA_CONS_CTRL  = 0x16,
+		NOVA_CPUID		= 0x17,
+		NOVA_RESERVE_CPU= 0x18,
+		NOVA_CREATE_HAB = 0x19,
 	};
 
 	/**
@@ -135,11 +147,19 @@ namespace Nova {
 		bool has_feature_svm()   const { return feature_flags & (1 << 2); }
 
 		struct Cpu_desc {
+			enum Vendor
+			{
+				UNKNOWN,
+				INTEL,
+				AMD
+			};
+
 			uint8_t flags;
 			uint8_t thread;
 			uint8_t core;
 			uint8_t package;
 			uint8_t acpi_id;
+			uint8_t vendor;
 			uint8_t family;
 			uint8_t model;
 			uint8_t stepping:4;
@@ -179,6 +199,36 @@ namespace Nova {
 			return desc ? desc->flags & 0x1 : false;
 		}
 
+		unsigned numa_nodes() const {
+			unsigned node_num = 1;
+			unsigned long nodes = 0x0;
+			unsigned long last_node = 0;
+
+			for (unsigned cpu = 0; cpu < cpu_max(); cpu++) {
+				Cpu_desc const *c = cpu_desc_of_cpu(cpu);
+				if (c->numa_id != last_node && !(nodes & (1<<c->numa_id))) {
+					node_num++;
+					nodes |= (1 << c->numa_id);
+				}
+			}
+			return node_num;
+		}
+
+		unsigned numa_nodes() const {
+			unsigned node_num = 1;
+			unsigned long nodes = 0x0;
+			unsigned long last_node = 0;
+
+			for (unsigned cpu = 0; cpu < cpu_max(); cpu++) {
+				Cpu_desc const *c = cpu_desc_of_cpu(cpu);
+				if (c->numa_id != last_node && !(nodes & (1<<c->numa_id))) {
+					node_num++;
+					nodes |= (1 << c->numa_id);
+				}
+			}
+			return node_num;
+		}
+
 		/**
 		 * Resort CPU ids such, that
 		 * - the boot CPU id is ever logical CPU id 0
@@ -196,12 +246,7 @@ namespace Nova {
 			unsigned const num_cpus = cpus();
 			bool too_many_cpus = false;
 			unsigned cpu_i = 0;
-
-			/* fallback lambda in case re-ordering fails */
-			auto remap_failure = [&] {
-				for (uint16_t i = 0; i < max_cpus; i++) { map_cpus[i] = i; }
-				return false;
-			};
+			unsigned const num_nodes = numa_nodes();
 
 			/* assign boot cpu ever the virtual cpu id 0 */
 			Cpu_desc const * const boot = cpu_desc_of_cpu(boot_cpu);
@@ -211,45 +256,25 @@ namespace Nova {
 			map_cpus[cpu_i++] = (uint8_t)boot_cpu;
 			if (cpu_i >= num_cpus)
 				return true;
-			if (cpu_i >= max_cpus)
-				return remap_failure();
 
-			/* assign cores + SMT threads first and skip E-cores */
-			bool done = for_all_cpus([&](auto const &cpu, auto const kernel_cpu_id) {
-				if (kernel_cpu_id == boot_cpu)
-					return false;
+			for (uint8_t node = 0; node < num_nodes; node++) {
+				for (unsigned i = 0; i < num_cpus; i++) {
+					if (i == boot_cpu || !is_cpu_enabled(i))
+						continue;
 
-				/* handle normal or P-core */
-				if (cpu.e_core())
-					return false;
+					Cpu_desc const *c = cpu_desc_of_cpu(i);
+					if (!(c->numa_id == node))
+						continue;
 
-				map_cpus[cpu_i++] = (uint8_t)kernel_cpu_id;
+					cpu_numa_map[i] = c->numa_id;
+					map_cpus[cpu_i++] = (uint8_t)i;
 
-				too_many_cpus = !!(cpu_i >= max_cpus);
+					if (cpu_i >= num_cpus)
+						return true;
+				}
+			}
 
-				return (cpu_i >= num_cpus || too_many_cpus);
-			});
-
-			if (done)
-				return too_many_cpus ? remap_failure() : true;
-
-			/* assign remaining E-cores */
-			done = for_all_cpus([&](auto &cpu, auto &kernel_cpu_id) {
-				if (kernel_cpu_id == boot_cpu)
-					return false;
-
-				/* handle solely E-core */
-				if (!cpu.e_core())
-					return false;
-
-				map_cpus[cpu_i++] = (uint16_t)kernel_cpu_id;
-
-				too_many_cpus = !!(cpu_i >= max_cpus);
-
-				return (cpu_i >= num_cpus || too_many_cpus);
-			});
-
-			return too_many_cpus ? remap_failure() : done;
+			return false;
 		}
 
 		/**
@@ -321,6 +346,28 @@ namespace Nova {
 		SC_TIME_CROSS  = 1,
 		SC_TIME_KILLED = 2,
 		SC_EC_TIME     = 3,
+	};
+
+	/**
+	 * Hpc operations
+	 * 
+	 */
+	enum Hpc_op
+	{
+		HPC_SETUP = 6U,
+		HPC_START = 7U,
+		HPC_STOP = 8U,
+		HPC_RESET = 9U,
+		HPC_READ = 10U,
+	};
+
+	/**
+	 * Cell operations
+	*/
+	enum Cell_op
+	{
+		SHRINK = 0,
+		GROW = 1,
 	};
 
 	/**
@@ -612,7 +659,7 @@ namespace Nova {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 10000, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)
@@ -891,5 +938,13 @@ namespace Nova {
 		SM_SEL_EC         = 0x1d,  /* convention on Genode */
 	};
 
+	/**
+	 * Console operations
+	*/
+	enum Cons_op
+	{
+		LOCK = 0,
+		UNLOCK = 1,
+	};
 }
 #endif /* _INCLUDE__NOVA__SYSCALL_GENERIC_H_ */

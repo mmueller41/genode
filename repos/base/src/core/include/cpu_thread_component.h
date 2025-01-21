@@ -174,6 +174,7 @@ class Core::Cpu_thread_component : public  Rpc_object<Cpu_thread>,
 
 			_address_space_region_map.add_client(_rm_client);
 			_platform_thread.pager(_rm_client);
+			_platform_thread.affinity(location);
 			_trace_sources.insert(&_trace_source);
 		}
 

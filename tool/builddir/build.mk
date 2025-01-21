@@ -64,7 +64,7 @@ INSTALL_DIR    := $(CURDIR)/bin
 export BASE_DIR         ?= ../base
 export REPOSITORIES     ?= $(BASE_DIR:%base=%base-linux) $(BASE_DIR)
 export VERBOSE          ?= @
-export VERBOSE_DIR      ?= --no-print-directory
+export VERBOSE_DIR      ?= --print-directory
 export VERBOSE_MK       ?= @
 export LIB_CACHE_DIR    ?= $(BUILD_BASE_DIR)/var/libcache
 export LIB_PROGRESS_LOG ?= $(BUILD_BASE_DIR)/progress.log

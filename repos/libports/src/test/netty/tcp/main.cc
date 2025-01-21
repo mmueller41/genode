@@ -13,7 +13,7 @@
 
 /* Local includes */
 #include <netty.h>
-
+#include <thread>
 
 namespace Netty { struct Tcp; }
 
@@ -59,56 +59,69 @@ void Netty::Tcp::server(int const sd, bool const nonblock, bool const read_write
 			Genode::log("okay, accept will not block");
 		}
 
-		Genode::log("test in ", nonblock ? "non-blocking" : "blocking", " mode");
+		//Genode::log("test in ", nonblock ? "non-blocking" : "blocking", " mode");
 
 		int const cd = accept(sd, pcaddr, &scaddr);
-		Genode::log("cd=", cd);
+		//Genode::log("cd=", cd);
 		if (cd == -1) DIE("accept");
 
-		getnames(cd);
+		//getnames(cd);
 
-		size_t count = 0;
-		static char data[64*1024];
 
 		if (nonblock) nonblocking(cd);
 
-		while (true) {
-			int ret = read_write
-			        ? read(cd, data, sizeof(data))
-			        : recv(cd, data, sizeof(data), 0);
+		auto con_handler = std::thread{[cd, read_write, nonblock]()
+									   {
+										size_t count = 0;
+										static char data[64*1024];
+										   while (true)
+										   {
+											   		//GENODE_LOG_TSC_NAMED(10, "netty_read");
+											   int ret = read_write
+															 ? read(cd, data, sizeof(data))
+															 : recv(cd, data, sizeof(data), 0);
 
-			if (ret == 0) {
-				Genode::log("experienced EOF");
-				break;
-			}
+											   if (ret == 0)
+											   {
+												   // Genode::log("experienced EOF");
+												   break;
+											   }
 
-			if (ret > 0) {
-				/* echo received data */
-				ret = read_write
-				    ? write(cd, data, ret)
-				    : send(cd, data, ret, 0);
-				if (ret == -1) DIE(read_write ? "write" : "send");
+											   if (ret > 0)
+											   {
+											   		//GENODE_LOG_TSC_NAMED(10, "netty_write");
+												   /* echo received data */
+												   ret = read_write
+															 ? write(cd, data, ret)
+															 : send(cd, data, ret, 0);
+												   if (ret == -1)
+													   DIE(read_write ? "write" : "send");
 
-				count += ret;
-				continue;
-			}
+												   count += ret;
+												   continue;
+											   }
 
-			if (!nonblock || errno != EAGAIN)
-				DIE(read_write ? "read" : "recv");
+											   if (!nonblock || errno != EAGAIN)
+												   DIE(read_write ? "read" : "recv");
 
-			Genode::log("block in select because of EAGAIN");
-			fd_set read_fds; FD_ZERO(&read_fds); FD_SET(cd, &read_fds);
-			ret = select(cd + 1, &read_fds, nullptr, nullptr, nullptr);
-			if (ret == -1) DIE("select");
-		}
+											   Genode::log("block in select because of EAGAIN");
+											   fd_set read_fds;
+											   FD_ZERO(&read_fds);
+											   FD_SET(cd, &read_fds);
+											   ret = select(cd + 1, &read_fds, nullptr, nullptr, nullptr);
+											   if (ret == -1)
+												   DIE("select");
 
-		Genode::log("echoed ", count, " bytes");
+											  ret = shutdown(cd, SHUT_RDWR);
+											  if (ret == -1) DIE("shutdown");
 
-		ret = shutdown(cd, SHUT_RDWR);
-		if (ret == -1) DIE("shutdown");
+											  ret = close(cd);
+											  if (ret == -1) DIE("close");
+										   }
+									   }};
+		con_handler.detach();
 
-		ret = close(cd);
-		if (ret == -1) DIE("close");
+		//Genode::log("echoed ", count, " bytes");
 	}
 }
 

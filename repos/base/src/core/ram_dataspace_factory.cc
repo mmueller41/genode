@@ -13,6 +13,8 @@
 
 /* core includes */
 #include <ram_dataspace_factory.h>
+#include <platform_generic.h>
+#include <platform.h>
 
 using namespace Core;
 
@@ -126,6 +128,7 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	Dataspace_component &ds = *ds_ptr;
 
 	/* create native shared memory representation of dataspace */
+#ifdef ZERO_AT_ALLOC
 	try { _export_ram_ds(ds); }
 	catch (Core_virtual_memory_exhausted) {
 		warning("could not export RAM dataspace of size ", ds.size());
@@ -140,8 +143,8 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	 * function must also make sure to flush all cache lines related to the
 	 * address range used by the dataspace.
 	 */
-	_clear_ds(ds);
-
+	_unmap_ds_from_core(ds);
+#endif 
 	Dataspace_capability ds_cap = _ep.manage(&ds);
 
 	phys_alloc_guard.keep = true;
@@ -149,6 +152,14 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	return static_cap_cast<Ram_dataspace>(ds_cap);
 }
 
+Ram_allocator::Alloc_result Ram_dataspace_factory::try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cached=CACHED)
+{
+	Ram_dataspace_factory::Phys_range old = {_phys_range.start, _phys_range.end};
+	_phys_range = {platform_specific().mem_range(numa_id).start, platform_specific().mem_range(numa_id).end};
+	Ram_allocator::Alloc_result result = Ram_dataspace_factory::try_alloc(size, cached);
+	_phys_range = {old.start, old.end};
+	return result;
+}
 
 void Ram_dataspace_factory::free(Ram_dataspace_capability ds_cap)
 {
@@ -176,8 +187,25 @@ void Ram_dataspace_factory::free(Ram_dataspace_capability ds_cap)
 	});
 
 	/* call dataspace destructor and free memory */
-	if (ds)
+	if (ds) {
+		try { _export_ram_ds(*ds); }
+		catch (Core_virtual_memory_exhausted) {
+			warning("could not export RAM dataspace of size ", ds->size());
+
+			/* cleanup unneeded resources */
+			destroy(_ds_slab, ds);
+			return;
+		}
+
+		/*
+		* Fill new dataspaces with zeros. For non-cached RAM dataspaces, this
+		* function must also make sure to flush all cache lines related to the
+		* address range used by the dataspace.
+		*/
+		_clear_ds(*ds);
+		_unmap_ds_from_core(*ds);
 		destroy(_ds_slab, ds);
+	}
 }
 
 

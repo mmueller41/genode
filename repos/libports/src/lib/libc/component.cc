@@ -77,4 +77,4 @@ void Component::construct(Genode::Env &env)
  * Default stack size for libc-using components
  */
 Genode::size_t Libc::Component::stack_size() __attribute__((weak));
-Genode::size_t Libc::Component::stack_size() { return 32UL*1024*sizeof(long); }
+Genode::size_t Libc::Component::stack_size() { return 96UL*1024*sizeof(long); }

@@ -149,11 +149,16 @@ class Core::Account
 
 				/* make sure to stay within the initial limit */
 				if (amount.value > _transferrable_quota().value)
+				{
+					Genode::log("Limit exceeded : ", _label);
 					throw Limit_exceeded();
+				}
 
-				/* downgrade from this account */
-				if (!_quota_guard.try_downgrade(amount))
-					throw Limit_exceeded();
+					/* downgrade from this account */
+					if (!_quota_guard.try_downgrade(amount)) {
+						Genode::log("Limit exceeded: ", _label);
+						throw Limit_exceeded();
+					}
 			}
 
 			/* credit to 'other' */

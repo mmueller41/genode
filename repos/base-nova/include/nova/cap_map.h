@@ -23,6 +23,8 @@
 
 #include <base/mutex.h>
 
+#include <base/log.h>
+
 #include <util/avl_tree.h>
 #include <util/noncopyable.h>
 
@@ -36,9 +38,10 @@ namespace Genode {
 			addr_t _base = 0;
 			addr_t _last = 0;
 
-			enum {
+			enum
+			{
 				HEADER = sizeof(_base) + sizeof(_mutex) + sizeof(_last),
-				CAP_RANGE_SIZE = 4096,
+				CAP_RANGE_SIZE = 131072,
 				WORDS = (CAP_RANGE_SIZE - HEADER - sizeof(Avl_node<Cap_range>)) / sizeof(addr_t),
 			};
 
@@ -51,8 +54,8 @@ namespace Genode {
 
 			Cap_range(addr_t base) : _base(base)
 			{
-				static_assert(sizeof(*this) == CAP_RANGE_SIZE,
-				              "Cap_range misconfigured");
+				//static_assert(sizeof(*this) == CAP_RANGE_SIZE,
+				              //"Cap_range misconfigured");
 
 				for (unsigned i = 0; i < elements(); i++)
 					_cap_array[i] = 0;

@@ -80,6 +80,11 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 	{
 		return call<Rpc_try_alloc>(size, cache);
 	}
+	
+	Alloc_result try_alloc(size_t size, Ram_allocator::Numa_id numa_id, Cache cache = CACHED) override
+	{
+		return call<Rpc_try_alloc_numa>(size, numa_id, cache);
+	}
 
 	void free(Ram_dataspace_capability ds) override { call<Rpc_free>(ds); }
 
@@ -106,6 +111,16 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 
 	Attach_dma_result attach_dma(Dataspace_capability ds, addr_t at) override {
 		return call<Rpc_attach_dma>(ds, at); }
+
+	void create_cell(long prioritiy, const Affinity::Location &loc) override
+	{
+		call<Rpc_create_cell>(prioritiy, loc);
+	}
+	
+	void update_cell(const Affinity::Location &loc) override
+	{
+		call<Rpc_update_cell>(loc);
+	}
 };
 
 #endif /* _INCLUDE__PD_SESSION__CLIENT_H_ */

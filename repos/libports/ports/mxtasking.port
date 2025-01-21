@@ -3,7 +3,7 @@ DOWNLOADS := mxtasking.git
 VERSION := git
 
 URL(mxtasking) := https://github.com/mmueller41/mxtasking.git
-REV(mxtasking) := c81b9168104be5fceebf35674b867bb965e95d43
+REV(mxtasking) := yritys 
 DIR(mxtasking) := src/lib/mxtasking
 
 DIRS += include/mx/memory
@@ -42,6 +42,12 @@ DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/vector.h
 DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/mpsc_queue.h
 DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/queue.h
 DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/random.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/bits.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/compiler.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/atomic.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/bit_alloc.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/field_alloc.h
+DIR_CONTENT(include/mx/util) += src/lib/mxtasking/src/mx/util/util.h
 DIR_CONTENT(include/mx/system) += src/lib/mxtasking/src/mx/system/builtin.h
 DIR_CONTENT(include/mx/system) += src/lib/mxtasking/src/mx/system/cpuid.h
 DIR_CONTENT(include/mx/system) += src/lib/mxtasking/src/mx/system/cache.h

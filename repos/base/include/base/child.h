@@ -26,6 +26,7 @@
 #include <cpu_session/connection.h>
 #include <log_session/connection.h>
 #include <rom_session/connection.h>
+#include <topo_session/connection.h>
 #include <cpu_thread/client.h>
 #include <parent/capability.h>
 
@@ -334,6 +335,8 @@ class Genode::Child : protected Rpc_object<Parent>,
 		/* arguments fetched by the child in response to a yield signal */
 		Mutex         _yield_request_mutex { };
 		Resource_args _yield_request_args  { };
+		Mutex         _resource_gain_mutex { };
+		Resource_args _gained_resources  { };
 
 		/* number of unanswered heartbeat signals */
 		unsigned _outstanding_heartbeats = 0;
@@ -613,6 +616,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Env_connection<Cpu_connection> _cpu    { *this, Env::cpu(),    _policy.name() };
 		Env_connection<Log_connection> _log    { *this, Env::log(),    _policy.name() };
 		Env_connection<Rom_connection> _binary { *this, Env::binary(), _policy.binary_name() };
+		Env_connection<Topo_connection> _topo  { *this, Env::topo(),    _policy.name() };
 
 		Constructible<Env_connection<Rom_connection> > _linker { };
 
@@ -764,6 +768,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		Ram_allocator       &ram()       { return _pd.session(); }
 		Ram_allocator const &ram() const { return _pd.session(); }
 		Cpu_session         &cpu()       { return _cpu.session(); }
+		Topo_session        &topo() 	 { return _topo.session(); }
 		Pd_session          &pd()        { return _pd.session(); }
 		Pd_session    const &pd()  const { return _pd.session(); }
 
@@ -781,6 +786,14 @@ class Genode::Child : protected Rpc_object<Parent>,
 		 * refer to the description given in 'parent/parent.h'.
 		 */
 		void yield(Resource_args const &args);
+
+		/**
+		 * Bestow resources on the child
+		 * 
+		 * By calling this method, the child will be notified about
+		 * the having gained the specified amount of resources.
+		 */
+		void accept(Resource_args const &args);
 
 		/**
 		 * Notify the child about newly available resources
@@ -818,6 +831,7 @@ class Genode::Child : protected Rpc_object<Parent>,
 		void resource_request(Resource_args const &) override;
 		void yield_sigh(Signal_context_capability) override;
 		Resource_args yield_request() override;
+		Resource_args gained_resources() override;
 		void yield_response() override;
 		void heartbeat_sigh(Signal_context_capability) override;
 		void heartbeat_response() override;

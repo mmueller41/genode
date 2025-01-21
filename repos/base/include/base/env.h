@@ -18,6 +18,7 @@
 #include <base/entrypoint.h>
 #include <cpu_session/capability.h>
 #include <pd_session/capability.h>
+#include <topo_session/capability.h>
 
 namespace Genode { struct Env; }
 
@@ -49,6 +50,12 @@ struct Genode::Env : Interface
 	Ram_allocator &ram() { return pd(); }
 
 	/**
+	 * @brief Topology model
+	 * 
+	 */
+	virtual Topo_session &topo() = 0;
+
+	/**
 	 * Entrypoint for handling RPC requests and signals
 	 */
 	virtual Entrypoint &ep() = 0;
@@ -62,6 +69,12 @@ struct Genode::Env : Interface
 	 * Return the PD-session capability of the component
 	 */
 	virtual Pd_session_capability pd_session_cap()  = 0;
+
+	/**
+	 * @brief Return the Topo-session capability 
+	 * 
+	 */
+	virtual Topo_session_capability topo_session_cap() = 0;
 
 	/**
 	 * ID space of sessions obtained from the parent

@@ -1,0 +1,146 @@
+LICENSE := GPL
+DOWNLOADS := ciao-ip.git
+VERSION := git
+
+URL(ciao-ip) := git@ess-git.inf.uos.de:software/ciao-ip.git
+REV(ciao-ip) := master
+DIR(ciao-ip) := src/lib/ciao-ip
+
+CC_OPT += "--target x86_64-linux-gnu"
+#ifndef CIAO_IP_CONFIG
+# CIAO_IP_CONFIG = $(realpath $(dir $(PORT)))/.ciao-ip-config
+#endif
+
+# Include the configuration file
+#include $(CIAO_IP_CONFIG)
+
+#ACXX := $(which ag++)
+#ASPECTSRC = $(shell find -L ./src/lib/ciao-ip/src/ -name "*.ah" -not -name ".*"|cut -b 3-)
+
+# Apply rules for conditional compilation, i.e., remove files if not selected
+#include $(realpath $(dir $(PORT)))/ciao-ip-config.mk
+
+#ACXXFLAGS += $(foreach file,$(ASPECTSRC),-a $(file)) -p ./src/lib/ciao-ip/src/
+
+DIRS += include/ciao-ip/hw/hal
+DIRS += include/ciao-ip/ipstack/router
+DIRS += include/ciao-ip/ipstack/api
+DIRS += include/ciao-ip/ipstack/arp
+DIRS += include/ciao-ip/ipstack/arp/ipv4
+DIRS += include/ciao-ip/ipstack/demux
+DIRS += include/ciao-ip/ipstack/icmp
+DIRS += include/ciao-ip/ipstack/ipv4/ipv4_icmp
+DIRS += include/ciao-ip/ipstack/ipv4/ipv4_tcp
+DIRS += include/ciao-ip/ipstack/ipv4/ipv4_udp
+DIRS += include/ciao-ip/ipstack/ipv4
+DIRS += include/ciao-ip/ipstack/router
+DIRS += include/ciao-ip/ipstack/tcp/tcp_history
+DIRS += include/ciao-ip/ipstack/tcp/tcp_receivebuffer
+DIRS += include/ciao-ip/ipstack/tcp/sws
+DIRS += include/ciao-ip/ipstack/tcp/statemachine
+DIRS += include/ciao-ip/ipstack/tcp/tcp_options
+DIRS += include/ciao-ip/ipstack/tcp
+DIRS += include/ciao-ip/ipstack/udp
+DIRS += include/ciao-ip/ipstack/util
+DIRS += include/ciao-ip/ipstack
+DIRS += include/ciao-ip/util
+
+
+
+# for f in $(find build -name "*.ah"); do DST=$(dirname $f | sed -s 's/build\/header/include\/ciao-ip/' | sed -s "s/include/DIR_CONTENT(include/" | sed -s "s/$/) += /"); echo $DST $f; done
+DIR_CONTENT(include/ciao-ip/hw/hal) +=  src/lib/ciao-ip/build/header/hw/hal/NetworkDevice.h
+DIR_CONTENT(include/ciao-ip/ipstack/icmp) +=  src/lib/ciao-ip/build/header/ipstack/icmp/ICMP.h
+DIR_CONTENT(include/ciao-ip/ipstack/router) +=  src/lib/ciao-ip/build/header/ipstack/router/Interface.h
+DIR_CONTENT(include/ciao-ip/ipstack/router) +=  src/lib/ciao-ip/build/header/ipstack/router/Router.h
+DIR_CONTENT(include/ciao-ip/ipstack/util) +=  src/lib/ciao-ip/build/header/ipstack/util/MempoolBase.h
+DIR_CONTENT(include/ciao-ip/ipstack/util) +=  src/lib/ciao-ip/build/header/ipstack/util/RingbufferBase.h
+DIR_CONTENT(include/ciao-ip/ipstack/util) +=  src/lib/ciao-ip/build/header/ipstack/util/Mempool.h
+DIR_CONTENT(include/ciao-ip/ipstack/util) +=  src/lib/ciao-ip/build/header/ipstack/util/Ringbuffer.h
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/Eth_Frame.h
+DIR_CONTENT(include/ciao-ip/ipstack/as) +=  src/lib/ciao-ip/build/header/ipstack/as/EventSupport.h
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/Clock.h
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/IPStack_Config_kconf.h
+DIR_CONTENT(include/ciao-ip/ipstack/udp) +=  src/lib/ciao-ip/build/header/ipstack/udp/UDP.h
+DIR_CONTENT(include/ciao-ip/ipstack/udp) +=  src/lib/ciao-ip/build/header/ipstack/udp/UDP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp) +=  src/lib/ciao-ip/build/header/ipstack/tcp/TCP.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_receivebuffer) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_receivebuffer/TCP_ReceiveBuffer.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_receivebuffer) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_receivebuffer/TCP_RecvElement.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp) +=  src/lib/ciao-ip/build/header/ipstack/tcp/TCP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp) +=  src/lib/ciao-ip/build/header/ipstack/tcp/TCP_Config.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_history) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_history/TCP_Record.h
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_history) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_history/TCP_History.h
+DIR_CONTENT(include/ciao-ip/ipstack/api) +=  src/lib/ciao-ip/build/header/ipstack/api/Setup.h
+DIR_CONTENT(include/ciao-ip/ipstack/api) +=  src/lib/ciao-ip/build/header/ipstack/api/IPv4_UDP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/api) +=  src/lib/ciao-ip/build/header/ipstack/api/IPv4_TCP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/demux) +=  src/lib/ciao-ip/build/header/ipstack/demux/Demux.h
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/IPv4_TCP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4.h
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_udp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_udp/IPv4_UDP_Socket.h
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/InternetChecksum.h
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/IPStack_Config.h
+DIR_CONTENT(include/ciao-ip/ipstack/arp) +=  src/lib/ciao-ip/build/header/ipstack/arp/ARP_Cache.h
+DIR_CONTENT(include/ciao-ip/ipstack/arp) +=  src/lib/ciao-ip/build/header/ipstack/arp/ARP.h
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/Eth_ARP_IPv4_Packet.h
+DIR_CONTENT(include/ciao-ip/util) +=  src/lib/ciao-ip/build/header/util/types.h
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/Little_Endian.ah
+DIR_CONTENT(include/ciao-ip/ipstack/router) +=  src/lib/ciao-ip/build/header/ipstack/router/Interface_Delegation.ah
+DIR_CONTENT(include/ciao-ip/ipstack/router) +=  src/lib/ciao-ip/build/header/ipstack/router/Router.ah
+DIR_CONTENT(include/ciao-ip/ipstack/router) +=  src/lib/ciao-ip/build/header/ipstack/router/Interface.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/sws) +=  src/lib/ciao-ip/build/header/ipstack/tcp/sws/SWS_SenderAvoidance.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/sws) +=  src/lib/ciao-ip/build/header/ipstack/tcp/sws/SWS_ReceiverAvoidance.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/sws) +=  src/lib/ciao-ip/build/header/ipstack/tcp/sws/SWS_SenderAvoidance_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/synsent.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/synrcvd.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/listen.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/closed.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/closewait.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/finwait2.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/closing.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/established.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/finwait1.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/TCP_Statemachine.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/lastack.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/synsent_dummy.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/statemachine) +=  src/lib/ciao-ip/build/header/ipstack/tcp/statemachine/timewait.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_options) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_options/MSS.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_options) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_options/MSS_TCP_Segment_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_options) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_options/MSS_TCP_Socket_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_history) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_history/TCP_Record_RetransmissionCounter.ah
+DIR_CONTENT(include/ciao-ip/ipstack/tcp/tcp_history) +=  src/lib/ciao-ip/build/header/ipstack/tcp/tcp_history/TCP_Record_RetransmissionCounter_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/demux) +=  src/lib/ciao-ip/build/header/ipstack/demux/Demux.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/IPv4_TCP_Listen.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/IPv4_TCP_Tx_Checksumming.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/IPv4_TCP_Socket_Listen_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/Demux_IPv4_TCP_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/IPv4_TCP_Receive.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_tcp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_tcp/Demux_IPv4_TCP_Listen_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/Demux_IPv4_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4_Receive_Ethernet.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/Router_IPv4_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4_Receive.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4_Socket_Ethernet.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_icmp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_icmp/IPv4_ICMP_Ethernet.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_icmp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_icmp/IPv4_ICMP_Receive.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_icmp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_icmp/IPv4_ICMP_Echo_Reply.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4/ipv4_icmp) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/ipv4_icmp/Demux_IPv4_ICMP_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/IPv4.ah
+DIR_CONTENT(include/ciao-ip/ipstack/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/ipv4/Interface_IPv4_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack) +=  src/lib/ciao-ip/build/header/ipstack/Receive_Ethernet.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp) +=  src/lib/ciao-ip/build/header/ipstack/arp/ARP_Ethernet.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp) +=  src/lib/ciao-ip/build/header/ipstack/arp/ARP.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp) +=  src/lib/ciao-ip/build/header/ipstack/arp/Demux_ARP_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/ARP_Cache_IPv4_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/ARP_Cache_IPv4_Send_Receive_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/ARP_Cache_IPv4_Send_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_ARP_Send.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_Socket_Ethernet_ARP_Slice.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_ARP.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_Socket_Ethernet_ARP.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_ARP_Receive.ah
+DIR_CONTENT(include/ciao-ip/ipstack/arp/ipv4) +=  src/lib/ciao-ip/build/header/ipstack/arp/ipv4/IPv4_ARP_Send_Receive.ah
+
+headers:
+	ACXXFLAGS=$(CC_OPT) make -C src/lib/ciao-ip header
+
+_dirs: headers

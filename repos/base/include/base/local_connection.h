@@ -93,8 +93,15 @@ struct Genode::Local_connection_base : Noncopyable
 
 			if (_session_state->phase == Session_state::INSUFFICIENT_RAM_QUOTA
 			 || _session_state->phase == Session_state::INSUFFICIENT_CAP_QUOTA)
-				warning("giving up to increase session quota for ", service.name(), " session "
+			 {
+				warning("[", label, "] giving up to increase session quota for ", service.name(), " session "
 				        "after ", (int)NUM_ATTEMPTS, " attempts");
+				if (_session_state->phase == Session_state::INSUFFICIENT_RAM_QUOTA)
+					warning("Insufficient RAM quota: ", resources.ram_quota.value);
+				
+				if (_session_state->phase == Session_state::INSUFFICIENT_CAP_QUOTA)
+					warning("Insufficient CAP quota ", resources.cap_quota.value);
+			 }
 		}
 
 		void close()

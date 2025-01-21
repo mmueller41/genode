@@ -135,9 +135,9 @@ Net::Nic_client_interface::Nic_client_interface(Env                 &env,
 	Nic::Connection             { env, this, BUF_SIZE, BUF_SIZE, label.string() },
 	_session_link_state_handler { env.ep(), *this,
 	                              &Nic_client_interface::_handle_session_link_state },
-	_interface                  { env.ep(), timer, mac_address(), alloc,
+	_interface                  ( env.ep(), timer, mac_address(), alloc,
 	                              Mac_address(), config, interfaces, *rx(), *tx(),
-	                              *this }
+	                              *this )
 {
 	/* install packet stream signal handlers */
 	rx_channel()->sigh_packet_avail(_interface.pkt_stream_signal_handler());

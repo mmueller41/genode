@@ -19,6 +19,8 @@
 #include <platform_generic.h>
 #include <core_mem_alloc.h>
 #include <address_space.h>
+#include <base/allocator.h>
+#include <nova/syscall-generic.h>
 
 namespace Core { class Platform; }
 
@@ -51,7 +53,10 @@ class Core::Platform : public Platform_generic
 
 		/* map of virtual cpu ids in Genode to kernel cpu ids */
 		uint16_t map_cpu_ids[MAX_SUPPORTED_CPUS];
-			uint8_t cpu_numa_map[MAX_SUPPORTED_CPUS];
+		uint8_t cpu_numa_map[MAX_SUPPORTED_CPUS];
+		/* map of kernel NUMA region to Genode memory ranges */
+		Genode::Range_allocator::Range numa_mem_ranges[MAX_SUPPORTED_CPUS]; // TODO: Add new macro for max of numa regions
+
 
 		addr_t _map_pages(addr_t phys_page, addr_t pages,
 		                  bool guard_page = false);
@@ -121,8 +126,25 @@ class Core::Platform : public Platform_generic
 			unsigned pager_index(Affinity::Location location) const;
 			unsigned kernel_cpu_id(Affinity::Location location) const;
 
+			/**
+			 * @brief ID of NUMA region the CPU belongs to
+			 * 
+			 * @param kernel_cpu_id id of CPU
+			 * @return unsigned ID of corresponding NUMA region
+			 */
 			unsigned domain_of_cpu(unsigned kernel_cpu_id) const {
 				return cpu_numa_map[kernel_cpu_id];
+			}
+
+			/**
+			 * @brief Return memory range of a given NUMA region
+			 * 
+			 * @param numa_id ID of NUMA region
+			 * @return Genode::Range_allocator::Range physical address range for this NUMA region
+			 */
+
+			Genode::Range_allocator::Range &mem_range(unsigned numa_id) {
+				return numa_mem_ranges[numa_id];
 			}
 
 		Affinity::Location sanitize(Affinity::Location location) {
@@ -136,15 +158,17 @@ class Core::Platform : public Platform_generic
 		 */
 		unsigned core_pd_sel() const { return _core_pd_sel; }
 
-		void for_each_location(auto const &fn)
-		{
-			for (unsigned x = 0; x < _cpus.width(); x++) {
-				for (unsigned y = 0; y < _cpus.height(); y++) {
-					Affinity::Location location(x, y, 1, 1);
-					fn(location);
+			template <typename FUNC>
+			void for_each_location(FUNC const &fn)
+			{
+				for (unsigned x = 0; x < _cpus.width(); x++) {
+					for (unsigned y = 0; y < _cpus.height(); y++) {
+						Affinity::Location location(x, y, 1, 1);
+						fn(location);
+					}
 				}
 			}
-		}
-};
+	};
+}
 
 #endif /* _CORE__INCLUDE__PLATFORM_H_ */

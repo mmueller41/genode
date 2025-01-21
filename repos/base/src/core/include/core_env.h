@@ -17,6 +17,7 @@
 
 /* Genode includes */
 #include <base/env.h>
+#include <topo_session/capability.h>
 
 /* base-internal includes */
 #include <base/internal/globals.h>
@@ -92,6 +93,8 @@ class Core::Core_env : public Noncopyable
 		Pd_session             *pd_session()      { return &_pd_session; }
 		Cpu_session            *cpu_session()     { ASSERT_NEVER_CALLED; }
 		Cpu_session_capability  cpu_session_cap() { ASSERT_NEVER_CALLED; }
+		Topo_session *topo_session() override { ASSERT_NEVER_CALLED; }
+		Topo_session_capability topo_session_cap() override { ASSERT_NEVER_CALLED; }
 		Pd_session_capability   pd_session_cap()  { return _pd_session.cap(); }
 };
 

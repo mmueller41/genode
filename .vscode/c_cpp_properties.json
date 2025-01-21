@@ -1,0 +1,78 @@
+{
+    "configurations": [
+        {
+            "name": "EalánOS",
+            "includePath": [
+                "${workspaceFolder}/depot/genodelabs/api/libc/**",
+                "${workspaceFolder}/depot/genodelabs/api/stdcxx/**",
+                "${workspaceFolder}/repos/**",
+                "${workspaceFolder}/repos/mml/**",
+                "${workspaceFolder}/repos/libports/include/**",
+                "${workspaceFolder}/contrib/mxtasking-07a3844690ae8eb15832d93e29567a5a8e6e45af/include/**",
+                "${workspaceFolder}/contrib/libpfm4-b0ec09148c2be9f4a96203a3d2de4ebed6ce2da0/include/**",
+                "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/libc/**",
+                "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/spec/x86_64/libc",
+                "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/libc/sys/**",
+                "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/",
+                "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/std",
+                "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/c_std",
+                "${workspaceFolder}/repos/libports/include/spec/x86_64/stdcxx",
+                "${workspaceFolder}/repos/base-nova/src/core/include/**",
+                "${workspaceFolder}/repos/base-nova/src/include/**",
+                "${workspaceFolder}/repos/base-nova/include/**",
+                "${workspaceFolder}/repos/base/src/core/include/**",
+                "${workspaceFolder}/repos/base/src/include/**",
+                "${workspaceFolder}/repos/base/include/**",
+                "/usr/local/genode/tool/21.05/lib/gcc/x86_64-pc-elf/10.3.0/include",
+                "/home/mml/loopbench/**"
+            ],
+            "defines": [
+                "__GENODE__",
+                "__FreeBSD__=12",
+                "_GLIBCXX_HAVE_MBSTATE_T",
+                "_GLIBCXX_ATOMIC_BUILTINS_4",
+                "_GLIBCXX_NO_OBSOLETE_ISINF_ISNAN_DYNAMIC"
+            ],
+            "compilerPath": "/usr/local/genode/tool/21.05/bin/genode-x86-gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "compilerArgs": [
+                "-nostdinc",
+                "-m64"
+            ],
+            "configurationProvider": "ms-vscode.makefile-tools",
+            "forcedInclude": [
+                "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/libc/stdint.h"
+            ],
+            "mergeConfigurations": true,
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/libc/**",
+                    "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/spec/x86_64/libc",
+                    "${workspaceFolder}/contrib/libc-c7cd230b11ca71979f32950803bc78b45adfa0ce/include/libc/sys/**",
+                    "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/",
+                    "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/std",
+                    "${workspaceFolder}/contrib/stdcxx-d2865c41fafbbf66051d38e7b742c4d5bc2f05a3/include/stdcxx/c_std",
+                    "${workspaceFolder}/repos/libports/include/spec/x86_64/stdcxx"
+                ]
+            }
+        },
+        {
+            "name": "Genode",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/repos/base/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/local/genode/tool/21.05/bin/genode-x86-gcc",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "${default}",
+            "configurationProvider": "ms-vscode.makefile-tools",
+            "mergeConfigurations": true
+        }
+    ],
+    "version": 4
+}

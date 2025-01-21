@@ -33,6 +33,10 @@ namespace Core {
 
 struct Core::Core_log
 {
+	void acquire();
+
+	void release();
+
 	void out(char const c);
 
 	void output(char const * str);

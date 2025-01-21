@@ -1,6 +1,7 @@
 #include "benchmark.h"
 #include <argparse.hpp>
 #include <benchmark/cores.h>
+#include <mx/memory/global_heap.h>
 #include <mx/system/environment.h>
 //#include <mx/system/thread.h>
 #include <mx/tasking/runtime.h>
@@ -8,6 +9,7 @@
 #include <tuple>
 #include <libc/component.h>
 #include <cstring>
+#include <cstdio>
 
 using namespace application::blinktree_benchmark;
 
@@ -41,6 +43,7 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
     {
         return 1;
     }
+    Genode::log("Using system allocator = ", (use_system_allocator? "true" : "false"));
 
     mx::util::core_set cores{};
 
@@ -48,6 +51,7 @@ int bt_main(Libc::Env &env, int count_arguments, char **arguments)
     while ((cores = benchmark->core_set()))
     {
         mx::tasking::runtime_guard _(false, cores, prefetch_distance);
+        benchmark->start_chronometer();
         benchmark->start();
         //wait_for_continue();
     }
@@ -162,15 +166,22 @@ std::tuple<Benchmark *, std::uint16_t, bool> create_benchmark(Libc::Env &env, in
     if (argument_parser.get<bool>("--latched"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::Latch;
+        Genode::log("Set synchronization method to latch");
     }
     else if (argument_parser.get<bool>("--olfit"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::OLFIT;
+        Genode::log("Set synchronization method to OLFIT");
     }
     else if (argument_parser.get<bool>("--sync4me"))
     {
         preferred_synchronization_method = mx::synchronization::protocol::None;
+        Genode::log("Set synchronization method to None");
+    } else {
+        Genode::log("Set synchronization method to Queue");
     }
+
+    Genode::log("Isolation level ", (isolation_level == mx::synchronization::isolation_level::Exclusive) ? "exclusive readers/writers" : "exclusive writers/parallel readers");
 
     // Create the benchmark.
     //Genode::Heap _heap{env.ram(), env.rm()};
@@ -189,16 +200,21 @@ void Libc::Component::construct(Libc::Env &env) {
 
     mx::system::Environment::set_env(&env);
 
-    std::uint16_t cores = env.cpu().affinity_space().total();
+    auto sys_cores = mx::util::core_set::build(64);
+    mx::system::Environment::set_cores(&sys_cores);
+
+    mx::memory::GlobalHeap::myself();
+    std::uint16_t cores = 59;
+     //env.cpu().affinity_space().total();
 
     char cores_arg[10];
-    snprintf(cores_arg, 9, "1:%d", cores);
+    sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_benchmark", cores_arg, "-pd", "3", "--sync4me"};
+    char *args[] = {"blinktree_benchmark", "-i", "200", "--olfit", cores_arg};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree benchmark" << std::endl;
-                        bt_main(env, 2, args); 
+                        bt_main(env, 5, args); 
                     });
 }

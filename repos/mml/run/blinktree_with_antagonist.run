@@ -1,0 +1,136 @@
+set build_components {
+    core init timer app/blinktree app/antagonist hoitaja
+}
+
+source ${genode_dir}/repos/base/run/platform_drv.inc 
+append_platform_drv_build_components
+build $build_components
+
+create_boot_directory
+
+
+set config {
+    <config>
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="RM"/>
+            <service name="TOPO"/>
+            <service name="TRACE"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="200"/>
+        <start name="timer">
+            <resource name="RAM" quantum="16M"/>
+            <!--<resource name="CPU" quantum="10"/>-->
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+}
+
+append config {
+    <start name="hoitaja" caps="62000">
+        <resource name="RAM" quantum="250G"/>
+        <provides><service name="TASKING"/></provides>
+        <config prio_levels="32">
+            <parent-provides>
+                <service name="LOG"/>
+                <service name="PD"/>
+                <service name="CPU"/>
+                <service name="ROM"/>
+                <service name="RAM"/>
+                <service name="IRQ"/>
+                <service name="IO_MEM"/>
+                <service name="IO_PORT"/>
+                <service name="CAP"/>
+                <service name="RM"/>
+                <service name="SIGNAL"/>
+                <service name="TOPO"/>
+                <service name="Timer"/>
+                <service name="TASKING"/>
+                <service name="TRACE"/>
+            </parent-provides>
+            <default-route>
+                <any-service><parent/><any-child/></any-service>
+            </default-route>
+            <default caps="600"/> 
+            <affinity-space width="64" height="1"/>
+            <start name="blinktree1" caps="1000">
+                <binary name="blinktree"/>
+                <affinity xpos="1" ypos="0" width="16" height="1"/>
+                <resource name="RAM" quantum="75G"/>
+                <!--<resource name="CPU" quantum="90"/>-->
+                <config>
+                    <vfs>
+                        <dir name="dev"> 
+                            <log/> 
+                            <inline name="rtc">2022-07-20 14:30</inline> 
+                        </dir>
+                        <dir name="workloads">
+                            <rom name="fill_randint_workloada"/>
+                            <rom name="mixed_randint_workloada"/>
+                        </dir>
+                    </vfs>
+                    <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+                </config>
+            </start>
+            
+            <start name="antagonist">
+                <binary name="stress_genode"/>
+                <resource name="RAM" quantum="60G"/>
+                <route>
+                    <any-service><parent/><any-child/></any-service>
+                </route>
+                <config>
+                    <vfs> <dir name="dev"> 
+                        <log/> 
+                        <inline name="rtc">2022-07-20 14:30</inline> 
+                        </dir>
+                    </vfs> 
+                    <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+                </config>
+            </start>
+
+        </config>
+        <route>
+            <service name="Timer"> <child name="timer"/> </service>
+            <any-service><parent/><any-child/></any-service>
+        </route>
+    </start>
+</config>
+}
+
+install_config $config
+
+set boot_modules { 
+    core init timer vfs.lib.so ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so  hoitaja blinktree stress_genode fill_randint_workloada mixed_randint_workloada
+}
+
+append_platform_drv_boot_modules
+
+build_boot_image $boot_modules
+append qemu_args "-nographic"
+
+run_genode_until forever
+
+set rounds 100
+set succeeded 0
+
+for {set r 0} {$r < $rounds} {incr r} {
+    run_genode_until {\[init -> hoitaja -> blinktree1\] Finished\.} 300
+    kill_spawned [output_spawn_id]
+    incr succeeded
+}
+
+puts "$succeeded of $rounds rounds succeeded."
+

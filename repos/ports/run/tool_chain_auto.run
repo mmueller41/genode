@@ -245,7 +245,7 @@ install_config {
 
 build_boot_image [list {*}[build_artifacts] bash_profile genode.tar $binutils.tar $gcc.tar]
 
-append qemu_args " -nographic -m 800 "
+append qemu_args " -nographic  "
 
 # wait until Noux started
 run_genode_until {.*\[init -> vfs\] creating build directory\.\.\..*\n} $boot_timeout

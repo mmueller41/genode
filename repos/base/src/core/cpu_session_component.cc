@@ -15,12 +15,14 @@
 
 /* Genode includes */
 #include <util/arg_string.h>
+#include <cpu_thread/client.h>
 
 /* core includes */
 #include <cpu_session_component.h>
 #include <rm_session_component.h>
 #include <pd_session_component.h>
 #include <platform_generic.h>
+
 
 using namespace Core;
 
@@ -149,6 +151,10 @@ void Cpu_session_component::kill_thread(Thread_capability thread_cap)
 	}
 }
 
+void Cpu_session_component::migrate_thread(Thread_capability thread_cap, Affinity::Location loc) 
+{
+	_thread_ep.apply(thread_cap, [&] (Cpu_thread_component *t) { t->affinity(_thread_affinity(loc)); });
+}
 
 void Cpu_session_component::exception_sigh(Signal_context_capability sigh)
 {
@@ -170,6 +176,10 @@ Affinity::Space Cpu_session_component::affinity_space() const
 	return Affinity::Space(_location.width(), _location.height());
 }
 
+void Cpu_session_component::move(const Affinity::Location destination)
+{
+	_location = destination;
+}
 
 Dataspace_capability Cpu_session_component::trace_control()
 {

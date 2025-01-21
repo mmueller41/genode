@@ -45,6 +45,15 @@ void Child::yield(Resource_args const &args)
 		Signal_transmitter(_yield_sigh).submit();
 }
 
+void Child::accept(Resource_args const &args)
+{
+	Mutex::Guard guard{_resource_gain_mutex};
+
+	_gained_resources = args;
+
+	if (_resource_avail_sigh.valid())
+		Signal_transmitter(_resource_avail_sigh).submit();
+}
 
 void Child::notify_resource_avail() const
 {
@@ -690,6 +699,12 @@ Parent::Resource_args Child::yield_request()
 	return _yield_request_args;
 }
 
+Parent::Resource_args Child::gained_resources()
+{
+	Mutex::Guard guard(_resource_gain_mutex);
+
+	return _gained_resources;
+}
 
 void Child::yield_response() { _policy.yield_response(); }
 
@@ -734,7 +749,7 @@ void Child::_try_construct_env_dependent_members()
 {
 	/* check if the environment sessions are complete */
 	if (!_pd.cap().valid() || !_cpu.cap().valid() || !_log.cap().valid()
-	 || !_binary.cap().valid())
+	 || !_binary.cap().valid() || !_topo.cap().valid())
 		return;
 
 	/*
@@ -803,6 +818,7 @@ void Child::initiate_env_sessions()
 	_cpu   .initiate();
 	_log   .initiate();
 	_binary.initiate();
+	_topo.initiate();
 
 	/*
 	 * Issue environment-session request for obtaining the linker binary. We
@@ -885,6 +901,7 @@ void Child::close_all_sessions()
 	 * Issue close requests to the providers of the environment sessions,
 	 * which may be async services.
 	 */
+	_topo.close();
 	_log.close();
 	_binary.close();
 	if (_linker.constructed())
@@ -898,6 +915,7 @@ void Child::close_all_sessions()
 	_discard_env_session(Env::log());
 	_discard_env_session(Env::binary());
 	_discard_env_session(Env::linker());
+	_discard_env_session(Env::topo());
 
 	/*
 	 * Remove dynamically created sessions from the child's ID space.

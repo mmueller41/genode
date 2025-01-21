@@ -34,7 +34,8 @@ Id_space<Parent::Client> &Genode::env_session_id_space()
 		cpu    { dummy, id_space, Parent::Env::cpu()    },
 		log    { dummy, id_space, Parent::Env::log()    },
 		binary { dummy, id_space, Parent::Env::binary() },
-		linker { dummy, id_space, Parent::Env::linker() };
+		linker { dummy, id_space, Parent::Env::linker() },
+		topo   { dummy, id_space, Parent::Env::topo()   };
 
 	return id_space;
 }

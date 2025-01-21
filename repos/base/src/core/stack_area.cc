@@ -132,6 +132,10 @@ struct Stack_area_ram_allocator : Ram_allocator
 	Alloc_result try_alloc(size_t, Cache) override {
 		return reinterpret_cap_cast<Ram_dataspace>(Native_capability()); }
 
+	Alloc_result try_alloc(size_t, Ram_allocator::Numa_id, Cache) override {
+		return reinterpret_cap_cast<Ram_dataspace>(Native_capability()); }
+
+
 	void free(Ram_dataspace_capability) override { }
 
 	size_t dataspace_size(Ram_dataspace_capability) const override { return 0; }

@@ -33,11 +33,18 @@ struct Genode::Cpu_session_client : Rpc_client<Cpu_session>
 	void kill_thread(Thread_capability thread) override {
 		call<Rpc_kill_thread>(thread); }
 
+	void migrate_thread(Thread_capability thread, Affinity::Location loc) override {
+		call<Rpc_migrate_thread>(thread, loc); }
+
 	void exception_sigh(Signal_context_capability sigh) override {
 		call<Rpc_exception_sigh>(sigh); }
 
 	Affinity::Space affinity_space() const override {
 		return call<Rpc_affinity_space>(); }
+
+	void move(const Affinity::Location loc) override {
+		call<Rpc_move>(loc);
+	}
 
 	Dataspace_capability trace_control() override {
 		return call<Rpc_trace_control>(); }

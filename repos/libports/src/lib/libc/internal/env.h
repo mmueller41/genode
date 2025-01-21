@@ -100,6 +100,7 @@ class Libc::Env_implementation : public Libc::Env, public Config_accessor
 		Region_map    &rm()     override { return _env.rm(); }
 		Pd_session    &pd()     override { return _env.pd(); }
 		Entrypoint    &ep()     override { return _env.ep(); }
+		Topo_session &topo() override { return _env.topo(); }
 
 		Cpu_session_capability cpu_session_cap() override {
 			return _env.cpu_session_cap(); }
@@ -109,6 +110,10 @@ class Libc::Env_implementation : public Libc::Env, public Config_accessor
 
 		Id_space<Parent::Client> &id_space() override {
 			return _env.id_space(); }
+
+		Topo_session_capability topo_session_cap() override {
+			return _env.topo_session_cap();
+		}
 
 		Session_capability session(Parent::Service_name const &name,
 		                           Parent::Client::Id id,

@@ -56,28 +56,34 @@ static inline void * alloc_region(Dataspace_component &ds, const size_t size)
 
 void Ram_dataspace_factory::_clear_ds(Dataspace_component &ds)
 {
+	
 	size_t const page_rounded_size = align_addr(ds.size(), get_page_size_log2());
 
-	size_t memset_count = page_rounded_size / 4;
+	size_t memset_count = page_rounded_size / 32;
 	addr_t memset_ptr   = ds.core_local_addr();
 
-	if ((memset_count * 4 == page_rounded_size) && !(memset_ptr & 0x3))
-		asm volatile ("rep stosl" : "+D" (memset_ptr), "+c" (memset_count)
+	if ((memset_count * 32 == page_rounded_size) && !(memset_ptr & 0x3))
+	{
+		asm volatile ("rep stosq" : "+D" (memset_ptr), "+c" (memset_count)
 		                          : "a" (0)  : "memory");
-	else
+	} else
 		memset(reinterpret_cast<void *>(memset_ptr), 0, page_rounded_size);
+}
+
+void Ram_dataspace_factory::_unmap_ds_from_core(Dataspace_component &ds)
+{
+	size_t const page_rounded_size = align_addr(ds.size(), get_page_size_log2());
 
 	/* we don't keep any core-local mapping */
 	unmap_local(*reinterpret_cast<Nova::Utcb *>(Thread::myself()->utcb()),
-	            ds.core_local_addr(),
-	            page_rounded_size >> get_page_size_log2());
+				ds.core_local_addr(),
+				page_rounded_size >> get_page_size_log2());
 
-	platform().region_alloc().free((void*)ds.core_local_addr(),
-	                               page_rounded_size);
+	platform().region_alloc().free((void *)ds.core_local_addr(),
+								   page_rounded_size);
 
 	ds.assign_core_local_addr(nullptr);
 }
-
 
 void Ram_dataspace_factory::_export_ram_ds(Dataspace_component &ds) {
 
