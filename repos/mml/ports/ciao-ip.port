@@ -43,6 +43,7 @@ DIRS += include/ciao-ip/ipstack/tcp
 DIRS += include/ciao-ip/ipstack/udp
 DIRS += include/ciao-ip/ipstack/util
 DIRS += include/ciao-ip/ipstack
+DIRS += include/ciao-ip/util
 
 
 
