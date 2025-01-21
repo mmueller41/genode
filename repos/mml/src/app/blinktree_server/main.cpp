@@ -53,6 +53,7 @@ int bt_main(int count_arguments, char **arguments)
 
 std::tuple<Server *, std::uint16_t, bool> create_server(int count_arguments, char **arguments)
 {
+    /*
     // Set up arguments.
     argparse::ArgumentParser argument_parser("blinktree_server");
     argument_parser.add_argument("cores")
@@ -122,11 +123,16 @@ std::tuple<Server *, std::uint16_t, bool> create_server(int count_arguments, cha
     {
         preferred_synchronization_method = mx::synchronization::protocol::None;
     }
-
+    */
     // Create the benchmark.
-    auto *server = new Server(argument_parser.get<std::uint64_t>("--port"), std::move(cores), argument_parser.get<std::uint16_t>("-pd"), isolation_level, preferred_synchronization_method);
+    //auto *server = new Server(argument_parser.get<std::uint64_t>("--port"), std::move(cores), argument_parser.get<std::uint16_t>("-pd"), isolation_level, preferred_synchronization_method);
 
-    return {server, argument_parser.get<std::uint16_t>("-pd"), argument_parser.get<bool>("--system-allocator")};
+    auto cores = mx::util::core_set::build(64);
+
+    auto *server = new Server(12345, std::move(cores), 3, mx::synchronization::isolation_level::ExclusiveWriter, mx::synchronization::protocol::OLFIT);
+
+    return {server, 3, false};
+    // return {server, argument_parser.get<std::uint16_t>("-pd"), argument_parser.get<bool>("--system-allocator")};
 }
 
 void Libc::Component::construct(Libc::Env &env) {
@@ -143,11 +149,11 @@ void Libc::Component::construct(Libc::Env &env) {
     char cores_arg[10];
     sprintf(cores_arg, "%d", cores);
 
-    char *args[] = {"blinktree_server", "-pd", "3", cores_arg};
+    char *args[] = {"blinktree_server", cores_arg};
 
     Libc::with_libc([&]()
                     { 
                         std::cout << "Starting B-link tree server" << std::endl;
-                        bt_main(4, args); 
+                        bt_main(2, args); 
                     });
 }
