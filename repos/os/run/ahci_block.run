@@ -113,7 +113,7 @@ install_config {
 		<config atapi="yes">
 			<report ports="yes"/>
 			<policy label="test-ahci -> " device="0" writeable="yes" />
-			<policy label="test-ahci-atapi -> " device="1" writeable="no" />
+			<policy label="test-ahci-atapi -> " device="1" writeable="yes" />
 		</config>
 		<route>
 			<service name="Report"> <child name="ahci_report_rom"/> </service>
