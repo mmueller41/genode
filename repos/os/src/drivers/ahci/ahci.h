@@ -547,7 +547,7 @@ struct Ahci::Port : private Port_base
 		Port_base(index, plat, hba, delayer),
 		protocol(protocol), rm(rm)
 	{
-		reset();
+		//reset();
 		if (!enable())
 			throw 1;
 
