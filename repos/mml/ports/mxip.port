@@ -1,0 +1,23 @@
+LICENSE   := BSD
+VERSION   := 2.1.2
+DOWNLOADS := lwip.archive
+
+URL(lwip) := http://git.savannah.nongnu.org/cgit/lwip.git/snapshot/lwip-STABLE-2_1_2_RELEASE.tar.gz
+SHA(lwip) := da6a3e07944505e6add328f6efafea4ad670700731f36b1ba54bd43d4f35243e
+DIR(lwip) := src/lib/lwip
+
+UNPACKED_DIR := src/lib/lwip
+
+PATCHES   := $(wildcard $(REP_DIR)/src/lib/lwip/*.patch)
+PATCH_OPT := -p1 -d src/lib/lwip
+
+DIRS := \
+	include/lwip/lwip \
+	include/lwip/lwip/priv \
+	include/lwip/lwip/prot \
+	include/lwip/netif \
+
+DIR_CONTENT(include/lwip/lwip/priv) := $(UNPACKED_DIR)/src/include/lwip/priv/*.h
+DIR_CONTENT(include/lwip/lwip/prot) := $(UNPACKED_DIR)/src/include/lwip/prot/*.h
+DIR_CONTENT(include/lwip/lwip)      := $(UNPACKED_DIR)/src/include/lwip/*.h
+DIR_CONTENT(include/lwip/netif)     := $(UNPACKED_DIR)/src/include/netif/*.h
