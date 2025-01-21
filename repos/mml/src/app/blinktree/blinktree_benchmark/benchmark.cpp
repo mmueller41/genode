@@ -135,6 +135,7 @@ void Benchmark::requests_finished()
         //Genode::log("Stopping timer");
         const auto result = this->_chronometer.stop(this->_workload.size());
         mx::tasking::runtime::stop();
+        mx::tasking::runtime::reset_usage_predictions();
 
         //_end = Genode::Trace::timestamp();
 
