@@ -123,7 +123,9 @@ class Hoitaja_test::Volatile_cell
             for (; ;) {
 #ifdef ALLOC
                 Nova::mword_t allocation = 0;
-                if (Nova::alloc_cores(32, allocation) != Nova::NOVA_OK) {
+                Nova::mword_t remainder = 0;
+                if (Nova::alloc_cores(32, allocation, remainder) != Nova::NOVA_OK)
+                {
                     //Genode::error("Failed to allocate cores");
                 }
                 /*if (allocation != mask)
