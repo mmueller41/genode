@@ -1,20 +1,19 @@
 #include <nic_session/connection.h>
+#include <timer_session/connection.h>
 #include <nic/packet_allocator.h>
 #include <libc/component.h>
 #include <base/heap.h>
 #include <base/mutex.h>
 
-/* CiAO/IP includes */
-#include <ciao-ip/hw/hal/NetworkDevice.h>
-#include <ciao-ip/ipstack/api/Setup.h>
-#include <ciao-ip/ipstack/router/Router.h>
-#include <ciao-ip/ipstack/ipv4/IPv4.h>
+/* lwIP includes */
+#include <lwip/genode_init.h>
 
-class Raw_nic : public hw::hal::NetworkDevice
+class Raw_nic 
 {
     private:
         Nic::Packet_allocator _nic_tx_alloc;
         Nic::Connection _nic;
+        Timer::Connection _timer;
         Genode::Mutex _mutex{};
 
         unsigned char _mac[6];
@@ -43,9 +42,9 @@ class Raw_nic : public hw::hal::NetworkDevice
                 Nic::Packet_descriptor packet = rx.get_packet();
                 Genode::log("Received packet of size ", packet.size());
 
-                void *eth_frame = rx.packet_content(packet);
+                //void *eth_frame = rx.packet_content(packet);
 
-                demux(eth_frame, packet.size());
+                //demux(eth_frame, packet.size());
                 if (!rx.ready_to_ack())
                     return;
 
@@ -63,7 +62,7 @@ class Raw_nic : public hw::hal::NetworkDevice
             Genode::log("Send packets");
         }
 
-        void send(const void* pkt, unsigned pkt_size ) override
+        void send(const void* pkt, unsigned pkt_size ) 
         {
             try {
                 Nic::Packet_descriptor pkt_desc = _nic.tx()->alloc_packet(pkt_size);
@@ -77,7 +76,7 @@ class Raw_nic : public hw::hal::NetworkDevice
             }
         }
 
-        Raw_nic(Genode::Env &env, Genode::Allocator &alloc) : _nic_tx_alloc(&alloc), _nic(env, &_nic_tx_alloc, BUFF_SIZE, BUFF_SIZE), _link_state_handler(env.ep(), *this, &Raw_nic::handle_link_state), _rx_packet_handler(env.ep(), *this, &Raw_nic::handle_rx_packets), _tx_ready_handler(env.ep(), *this, &Raw_nic::handle_tx_ready) {
+        Raw_nic(Genode::Env &env, Genode::Allocator &alloc) : _nic_tx_alloc(&alloc), _nic(env, &_nic_tx_alloc, BUFF_SIZE, BUFF_SIZE), _timer(env), _link_state_handler(env.ep(), *this, &Raw_nic::handle_link_state), _rx_packet_handler(env.ep(), *this, &Raw_nic::handle_rx_packets), _tx_ready_handler(env.ep(), *this, &Raw_nic::handle_tx_ready) {
             Genode::log("Created NIC session.");
             Genode::log("Registering callbacks");
             _nic.link_state_sigh(_link_state_handler);
@@ -89,34 +88,9 @@ class Raw_nic : public hw::hal::NetworkDevice
             Genode::log("MAC address from NIC session: ", _nic.mac_address());
             _nic.mac_address().copy(_mac);
             Genode::log("Mac address read: ", _mac[0], ":", _mac[1], ":", _mac[2], ":", _mac[3], ":", _mac[4], ":", _mac[5]);
-            init();
-            Genode::log("Initialized CiAO/IP");
 
-            ipstack::Interface *interface = IP::getInterface(0);
-            if (interface) {
-                interface->setIPv4Addr(10, 0, 3,55);
-                interface->setIPv4Subnetmask(255, 255, 255, 0);
-                interface->setIPv4Up(true);
-                ipstack::Router::Inst().ipv4_set_gateway_addr(ipstack::IPv4_Packet::convert_ipv4_addr(10, 0, 3, 1));
-            }
+            Lwip::genode_init(alloc, _timer);
         }
-
-        /* CiAO/IP NetworkDevice public interface */
-        const char* getName() override {
-            return "eth0";
-        }
-
-        unsigned getMTU() override {
-            return 1500;
-        }
-
-        const unsigned char *getAddress() override {
-            return _mac;
-        }
-
-        unsigned char getType() override { return 1; }
-
-
 };
 
 void Libc::Component::construct(Libc::Env &env)
