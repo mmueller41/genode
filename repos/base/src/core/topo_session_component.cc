@@ -42,7 +42,7 @@ void Topo_session_component::construct()
     unsigned curr_node_id = 0;
     Topology::Numa_region *node_created = new (_md_alloc) Topology::Numa_region[64]();
 
-    Genode::log("[", label(), "] Creating new topology model of size ", width, "x", height);
+    //Genode::log("[", label(), "] Creating new topology model of size ", width, "x", height);
 
     for (unsigned x = 0; x < width; x++)
     {
@@ -58,14 +58,14 @@ void Topo_session_component::construct()
             unsigned cpu_id = platform_specific().kernel_cpu_id(loc);
             unsigned native_id = platform_specific().domain_of_cpu(cpu_id);
 
-            log("[", label(), "] CPU (", x, "x", y, ") is native CPU ", cpu_id, " on node ", native_id);
+            //log("[", label(), "] CPU (", x, "x", y, ") is native CPU ", cpu_id, " on node ", native_id);
 
             if (node_created[native_id].core_count() == 0)
             {
                 _nodes[curr_node_id] = _node_affinities[x][y] = Topology::Numa_region(curr_node_id, native_id);
                 _node_affinities[x][y].increment_core_count();
                 node_created[native_id] = _node_affinities[x][y];
-                log("[", label(), "] Found new native NUMA region ", native_id, " for CPU (", x, "x", y, ")");
+                //log("[", label(), "] Found new native NUMA region ", native_id, " for CPU (", x, "x", y, ")");
                 _node_count++;
                 curr_node_id++;
             }

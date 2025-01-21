@@ -837,7 +837,6 @@ Platform::Platform()
 		if (phys_ptr == nullptr)
 			break;
 
-		log("Mapping mem for cap range ", i);
 		addr_t phys_addr = reinterpret_cast<addr_t>(phys_ptr);
 		addr_t core_local_addr = _map_pages(phys_addr, 128);
 
@@ -845,7 +844,6 @@ Platform::Platform()
 			ram_alloc().free(phys_ptr);
 			break;
 		}
-		log("Creating cap range ", i, " at ", reinterpret_cast<void*>(core_local_addr));
 
 		Cap_range &range = *reinterpret_cast<Cap_range *>(core_local_addr);
 		construct_at<Cap_range>(&range, index);
@@ -853,7 +851,6 @@ Platform::Platform()
 		cap_map().insert(range);
 
 		index = (unsigned)(range.base() + range.elements());
-		log("Created cap range ", i, " at ", reinterpret_cast<void*>(core_local_addr));
 	}
 	_max_caps = index - first_index;
 
