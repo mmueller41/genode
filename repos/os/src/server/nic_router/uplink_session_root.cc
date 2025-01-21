@@ -97,7 +97,7 @@ Net::Uplink_session_component::Uplink_session_component(Session_env             
 	_interface                    { _session_env.ep(), timer, mac, _alloc,
 	                                Mac_address(), config, interfaces, *_tx.sink(),
 	                                *_rx.source(), _interface_policy },
-	_ram_ds                       { ram_ds }
+	_ram_ds                       ( ram_ds )
 {
 	_interface.attach_to_domain();
 
