@@ -27,6 +27,7 @@ class Hoitaja::Cell : public ::Sandbox::Child
     private:
         State_handler &_state_handler;
         long _priority{0};
+        bool _is_brick{false};
 
     public:
         friend class Habitat;
@@ -55,7 +56,13 @@ class Hoitaja::Cell : public ::Sandbox::Child
         { 
             _priority = ::Sandbox::priority_from_xml(start_node, prio_levels);
             _priority = (_priority == 0) ? 1 : _priority;
-            Genode::log("Creating new cell at Hoitaja <", name(), "> at ", location, " in ", affinity_space);
+            _is_brick = ::Sandbox::is_brick_from_xml(start_node);
+
+            if (_is_brick) {
+                Genode::log("Creating new brick at Hoitaja <", name(), "> at ", location, " in ", affinity_space);
+            } else {
+                Genode::log("Creating new cell at Hoitaja <", name(), "> at ", location, " in ", affinity_space);
+            }
         }
 
         virtual ~Cell() { };
@@ -103,4 +110,6 @@ class Hoitaja::Cell : public ::Sandbox::Child
                 __builtin_ia32_pause();
             create_at_tukija();
         }
+
+        bool is_brick() { return _is_brick; }
 };
