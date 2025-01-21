@@ -4,6 +4,7 @@
 #include <sandbox/server.h>
 #include <sandbox/heartbeat.h>
 #include <sandbox/config_model.h>
+#include <sandbox/sandbox.h>
 
 #include <base/env.h>
 #include <base/heap.h>
@@ -21,106 +22,111 @@ namespace Sandbox {
 namespace Genode {
     class Sandbox;
 }
-
 struct Sandbox::Library : ::Sandbox::State_reporter::Producer,
-                                  ::Sandbox::Child::Default_route_accessor,
-                                  ::Sandbox::Child::Default_caps_accessor,
-                                  ::Sandbox::Child::Ram_limit_accessor,
-                                  ::Sandbox::Child::Cap_limit_accessor,
-                                  ::Sandbox::Child::Cpu_limit_accessor,
-                                  ::Sandbox::Child::Cpu_quota_transfer,
-                                  ::Sandbox::Start_model::Factory,
-                                  ::Sandbox::Parent_provides_model::Factory
+								  ::Sandbox::Child::Default_route_accessor,
+								  ::Sandbox::Child::Default_caps_accessor,
+								  ::Sandbox::Child::Ram_limit_accessor,
+								  ::Sandbox::Child::Cap_limit_accessor,
+								  ::Sandbox::Child::Cpu_limit_accessor,
+								  ::Sandbox::Child::Cpu_quota_transfer,
+								  ::Sandbox::Start_model::Factory,
+								  ::Sandbox::Parent_provides_model::Factory
 {
 	using Routed_service = ::Sandbox::Routed_service;
 	using Parent_service = ::Sandbox::Parent_service;
-	using Local_service  = ::Genode::Sandbox::Local_service_base;
-	using Report_detail  = ::Sandbox::Report_detail;
+	using Local_service = ::Genode::Sandbox::Local_service_base;
+	using Report_detail = ::Sandbox::Report_detail;
 	using Child_registry = ::Sandbox::Child_registry;
-	using Verbose        = ::Sandbox::Verbose;
+	using Verbose = ::Sandbox::Verbose;
 	using State_reporter = ::Sandbox::State_reporter;
-	using Heartbeat      = ::Sandbox::Heartbeat;
-	using Server         = ::Sandbox::Server;
-	using Alias          = ::Sandbox::Alias;
-	using Child          = ::Sandbox::Child;
-	using Prio_levels    = ::Sandbox::Prio_levels;
-	using Ram_info       = ::Sandbox::Ram_info;
-	using Cap_info       = ::Sandbox::Cap_info;
-	using Cpu_quota      = ::Sandbox::Cpu_quota;
-	using Config_model   = ::Sandbox::Config_model;
-	using Start_model    = ::Sandbox::Start_model;
-	using Preservation   = ::Sandbox::Preservation;
+	using Heartbeat = ::Sandbox::Heartbeat;
+	using Server = ::Sandbox::Server;
+	using Alias = ::Sandbox::Alias;
+	using Child = ::Sandbox::Child;
+	using Prio_levels = ::Sandbox::Prio_levels;
+	using Ram_info = ::Sandbox::Ram_info;
+	using Cap_info = ::Sandbox::Cap_info;
+	using Cpu_quota = ::Sandbox::Cpu_quota;
+	using Config_model = ::Sandbox::Config_model;
+	using Start_model = ::Sandbox::Start_model;
+	using Preservation = ::Sandbox::Preservation;
+	using Pd_intrinsics = Genode::Sandbox::Pd_intrinsics;
 
-public: 
-	Env  &_env;
+	using State_handler = Genode::Sandbox::State_handler;
+
+	Env &_env;
 	Heap &_heap;
 
-	Registry<Parent_service>  _parent_services { };
-	Registry<Routed_service>  _child_services  { };
-	Registry<Local_service>  &_local_services;
-	Child_registry            _children        { };
+	Pd_intrinsics &_pd_intrinsics;
+
+	Registry<Parent_service> _parent_services{};
+	Registry<Routed_service> _child_services{};
+	Registry<Local_service> &_local_services;
+	Child_registry _children{};
 
 	/*
 	 * Global parameters obtained from config
 	 */
-	Reconstructible<Verbose>       _verbose        { };
-	Config_model::Version          _version        { };
-	Constructible<Buffered_xml>    _default_route  { };
-	Cap_quota                      _default_caps   { 0 };
-	Prio_levels                    _prio_levels    { };
-	Constructible<Affinity::Space> _affinity_space { };
-	Preservation                   _preservation   { };
+	Reconstructible<Verbose> _verbose{};
+	Config_model::Version _version{};
+	Constructible<Buffered_xml> _default_route{};
+	Cap_quota _default_caps{0};
+	Prio_levels _prio_levels{};
+	Constructible<Affinity::Space> _affinity_space{};
+	Preservation _preservation{};
 
 	Affinity::Space _effective_affinity_space() const
 	{
 		return _affinity_space.constructed() ? *_affinity_space
-		                                     : Affinity::Space { 1, 1 };
+											 : Affinity::Space{1, 1};
 	}
 
 	State_reporter _state_reporter;
 
-	Heartbeat _heartbeat { _env, _children, _state_reporter };
+	Heartbeat _heartbeat{_env, _children, _state_reporter};
 
 	/*
 	 * Internal representation of the XML configuration
 	 */
-	Config_model _config_model { };
+	Config_model _config_model{};
 
 	/*
 	 * Variables for tracking the side effects of updating the config model
 	 */
 	bool _server_appeared_or_disappeared = false;
-	bool _state_report_outdated          = false;
+	bool _state_report_outdated = false;
 
 	unsigned _child_cnt = 0;
 
-	Cpu_quota _avail_cpu       { .percent = 100 };
-	Cpu_quota _transferred_cpu { .percent =   0 };
+	Cpu_quota _avail_cpu{.percent = 100};
+	Cpu_quota _transferred_cpu{.percent = 0};
 
 	Ram_quota _avail_ram() const
 	{
 		Ram_quota avail_ram = _env.pd().avail_ram();
 
-		if (_preservation.ram.value > avail_ram.value) {
+		if (_preservation.ram.value > avail_ram.value)
+		{
 			error("RAM preservation exceeds available memory");
-			return Ram_quota { 0 };
+			return Ram_quota{0};
 		}
 
 		/* deduce preserved quota from available quota */
-		return Ram_quota { avail_ram.value - _preservation.ram.value };
+		return Ram_quota{avail_ram.value - _preservation.ram.value};
 	}
 
 	Cap_quota _avail_caps() const
 	{
-		Cap_quota avail_caps { _env.pd().avail_caps().value };
+		Cap_quota avail_caps{_env.pd().avail_caps().value};
 
-		if (_preservation.caps.value > avail_caps.value) {
+		if (_preservation.caps.value > avail_caps.value)
+		{
 			error("Capability preservation exceeds available capabilities");
-			return Cap_quota { 0 };
+			return Cap_quota{0};
 		}
 
 		/* deduce preserved quota from available quota */
-		return Cap_quota { avail_caps.value - _preservation.caps.value };
+		return Cap_quota{avail_caps.value - _preservation.caps.value};
 	}
 
 	/**
@@ -144,9 +150,10 @@ public:
 	/**
 	 * Child::Cpu_quota_transfer interface
 	 */
-	void transfer_cpu_quota(Cpu_session_capability cap, Cpu_quota quota) override
+	void transfer_cpu_quota(Capability<Pd_session> pd_cap, Pd_session &pd,
+							Capability<Cpu_session> cpu, Cpu_quota quota) override
 	{
-		Cpu_quota const remaining { 100 - min(100u, _transferred_cpu.percent) };
+		Cpu_quota const remaining{100 - min(100u, _transferred_cpu.percent)};
 
 		/* prevent division by zero in 'quota_lim_upscale' */
 		if (remaining.percent == 0)
@@ -155,7 +162,8 @@ public:
 		size_t const fraction =
 			Cpu_session::quota_lim_upscale(quota.percent, remaining.percent);
 
-		_env.cpu().transfer_quota(cap, fraction);
+		Child::with_pd_intrinsics(_pd_intrinsics, pd_cap, pd, [&](auto &intrinsics)
+								  { intrinsics.ref_cpu.transfer_quota(cpu, fraction); });
 
 		_transferred_cpu.percent += quota.percent;
 	}
@@ -166,10 +174,12 @@ public:
 	void produce_state_report(Xml_generator &xml, Report_detail const &detail) const override
 	{
 		if (detail.init_ram())
-			xml.node("ram",  [&] () { Ram_info::from_pd(_env.pd()).generate(xml); });
+			xml.node("ram", [&]()
+					 { Ram_info::from_pd(_env.pd()).generate(xml); });
 
 		if (detail.init_caps())
-			xml.node("caps", [&] () { Cap_info::from_pd(_env.pd()).generate(xml); });
+			xml.node("caps", [&]()
+					 { Cap_info::from_pd(_env.pd()).generate(xml); });
 
 		if (detail.children())
 			_children.report_state(xml, detail);
@@ -189,7 +199,7 @@ public:
 	Xml_node default_route() override
 	{
 		return _default_route.constructed() ? _default_route->xml()
-		                                    : Xml_node("<empty/>");
+											: Xml_node("<empty/>");
 	}
 
 	/**
@@ -201,19 +211,19 @@ public:
 	void _update_parent_services_from_config(Xml_node const &);
 	void _update_children_config(Xml_node const &);
 	void _destroy_abandoned_parent_services();
-	virtual void _destroy_abandoned_children();
+	void _destroy_abandoned_children();
 
-	Server _server { _env, _heap, _child_services, _state_reporter };
-
-	/**
-	 * Sandbox::Start_model::Factory
-	 */
-	virtual Child &create_child(Xml_node const &) override;
+	Server _server{_env, _heap, _child_services, _state_reporter};
 
 	/**
 	 * Sandbox::Start_model::Factory
 	 */
-	virtual void update_child(Child &, Xml_node const &) override;
+	Child &create_child(Xml_node const &) override;
+
+	/**
+	 * Sandbox::Start_model::Factory
+	 */
+	void update_child(Child &, Xml_node const &) override;
 
 	/**
 	 * Sandbox::Start_model::Factory
@@ -237,8 +247,8 @@ public:
 	/**
 	 * Sandbox::Start_model::Factory
 	 */
-	bool ready_to_create_child(Start_model::Name    const &,
-	                           Start_model::Version const &) const override;
+	bool ready_to_create_child(Start_model::Name const &,
+							   Start_model::Version const &) const override;
 
 	/**
 	 * Sandbox::Parent_provides_model::Factory
@@ -248,16 +258,48 @@ public:
 		return *new (_heap) Parent_service(_parent_services, _env, name);
 	}
 
+	/**
+	 * Default way of using the 'Env::pd' as the child's 'ref_pd' and accessing
+	 * the child's address space via RPC.
+	 */
+	struct Default_pd_intrinsics : Pd_intrinsics
+	{
+		Env &_env;
+
+		void with_intrinsics(Capability<Pd_session>, Pd_session &pd, Fn const &fn) override
+		{
+			Region_map_client region_map(pd.address_space());
+
+			Intrinsics intrinsics{_env.pd(), _env.pd_session_cap(),
+								  _env.cpu(), _env.cpu_session_cap(), region_map};
+			fn.call(intrinsics);
+		}
+
+		void start_initial_thread(Capability<Cpu_thread> cap, addr_t ip) override
+		{
+			Cpu_thread_client(cap).start(ip, 0);
+		}
+
+		Default_pd_intrinsics(Env &env) : _env(env) {}
+
+	} _default_pd_intrinsics{_env};
+
 	Library(Env &env, Heap &heap, Registry<Local_service> &local_services,
-	        Genode::Sandbox::State_handler &state_handler)
-	:
-		_env(env), _heap(heap), _local_services(local_services),
-		_state_reporter(_env, *this, state_handler)
-	{ }
+			State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
+		: _env(env), _heap(heap), _pd_intrinsics(pd_intrinsics),
+		  _local_services(local_services), _state_reporter(_env, *this, state_handler)
+	{
+	}
 
-	virtual void apply_config(Xml_node const &);
+	Library(Env &env, Heap &heap, Registry<Local_service> &local_services,
+			State_handler &state_handler)
+		: Library(env, heap, local_services, state_handler, _default_pd_intrinsics)
+	{
+	}
 
-	virtual void generate_state_report(Xml_generator &xml) const
+	void apply_config(Xml_node const &);
+
+	void generate_state_report(Xml_generator &xml) const
 	{
 		_state_reporter.generate(xml);
 	}

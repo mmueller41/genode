@@ -385,7 +385,7 @@ void Genode::Sandbox::generate_state_report(Xml_generator &xml) const
 Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
 :
 	_heap(env.ram(), env.rm()),
-	_library(*new (_heap) Library(env, _heap, _local_services, state_handler, pd_intrinsics))
+	_library(*new (_heap) ::Sandbox::Library(env, _heap, _local_services, state_handler, pd_intrinsics))
 { }
 
 
