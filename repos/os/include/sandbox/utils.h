@@ -205,6 +205,10 @@ namespace Sandbox {
 		return priority;
 	}
 
+	inline bool is_brick_from_xml(Xml_node start_node)
+	{
+		return start_node.attribute_value("brick", false);
+	}
 
 	inline Affinity::Location
 	affinity_location_from_xml(Affinity::Space const &space, Xml_node start_node)

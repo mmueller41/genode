@@ -98,11 +98,14 @@ void Hoitaja::Habitat::_destroy_abandoned_children()
 void Hoitaja::Habitat::maintain_cells()
 {
 	int xpos = _affinity_space->total();
+	int lower_limit = _affinity_space->total() - _core_allocator->cores_available();
 	_children.for_each_child([&](Child &child)
 							 {
                                 //log(child.name(), " ram: ", child.ram_quota());
                                 Cell &cell = static_cast<Cell&>(child);
-                                _core_allocator->update(cell, &xpos); });
+								if (!(cell.is_brick()))
+                                	_core_allocator->update(cell, &xpos, &lower_limit); 
+							});
 	/*suoritin.for_each([&](Tukija::Suoritin::Session_component &client)
 					  { Genode::log("Cell ", client.label(), "\n------------");
 		for (unsigned long channel_id = 0; channel_id < client.channels(); channel_id++) 

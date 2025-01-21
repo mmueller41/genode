@@ -41,20 +41,32 @@ class Hoitaja::Core_allocator
 
         double _resource_coeff; // Coefficient used for calculating resource shares
 
+        unsigned int _cores_for_cells; // Number of cores available to cells. This is the total number of cores in the habitat minus the cores occupied by bricks.
+
     public:
         inline unsigned int _calculate_resource_share(long priority) {
-            double ref_share = static_cast<double>(_affinity_space.total()) / _resource_coeff;
+            double ref_share = static_cast<double>(_cores_for_cells) / _resource_coeff;
             return static_cast<unsigned int>((1.0 / static_cast<double>(priority)) * ref_share);
         }
 
-        Core_allocator(Genode::Affinity::Space &affinity_space, ::Sandbox::Prio_levels prio_levels) : _affinity_space(affinity_space), _prio_levels(prio_levels), _resource_coeff(0.0)
+        Core_allocator(Genode::Affinity::Space &affinity_space, ::Sandbox::Prio_levels prio_levels) : _affinity_space(affinity_space), _prio_levels(prio_levels), _resource_coeff(0.0), _cores_for_cells(_affinity_space.total())
         {
             Genode::log("Created core allocator for ", affinity_space.total(), " cores and ", prio_levels.value, " priorities.");
             Nova::create_habitat(0, affinity_space.total());
         }
 
+        unsigned int cores_available() {
+            return _cores_for_cells;
+        }
+
         Genode::Affinity::Location allocate_cores_for_cell(Genode::Xml_node const &start_node)
         {
+            if (::Sandbox::is_brick_from_xml(start_node)) {
+                Genode::Affinity::Location brick = ::Sandbox::affinity_location_from_xml(_affinity_space, start_node);
+                _cores_for_cells -= brick.width();
+                return brick;
+            }
+
             // Calculate affinity from global affinity space and priority
             long priority = ::Sandbox::priority_from_xml(start_node, _prio_levels);
             priority = (priority == 0) ? 1 : priority;
@@ -63,7 +75,7 @@ class Hoitaja::Core_allocator
             unsigned int cores_share = _calculate_resource_share(priority);
             
          
-            return Genode::Affinity::Location( _affinity_space.total()-cores_share, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
+            return Genode::Affinity::Location( _cores_for_cells-cores_share, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
         }
 
         void free_cores_from_cell(Cell &cell)
@@ -77,7 +89,7 @@ class Hoitaja::Core_allocator
          * @brief Update core allocations for cells reported by Cell controller
          * 
          */
-        void update(Hoitaja::Cell &cell, int *xpos) {
+        void update(Hoitaja::Cell &cell, int *xpos, int *lower_limit) {
             if (cell.abandoned())
                 return;
             Cell::Resources resources = cell.resources();
@@ -88,8 +100,8 @@ class Hoitaja::Core_allocator
 
             cores_to_reclaim = (static_cast<int>(cores_to_reclaim) < 0) ? 0 : cores_to_reclaim;
 
-            if (*xpos - cores_share == 0) {
-                cores_share--; // Save one core for Hoitaja
+            if (*xpos - static_cast<int>(cores_share) <= *lower_limit) {
+                cores_share-= *lower_limit; // Save one core for Hoitaja
             }
 
             Genode::Affinity::Location location(*xpos - cores_share, resources.affinity.location().ypos(), cores_share, resources.affinity.location().height());
