@@ -131,7 +131,7 @@ static void disable_pit()
 		PIT_MODE       = 0x43,
 	};
 
-	/**
+	/*
 	 * Disable PIT timer channel. This is necessary since BIOS sets up
 	 * channel 0 to fire periodically.
 	 */
@@ -142,12 +142,11 @@ static void disable_pit()
 
 
 /*
- * Enable dispatch serializing lfence instruction on AMD processors.
+ * Enable dispatch serializing lfence instruction on AMD processors
  *
- * See:
- * Software techniques for managing speculation on AMD processors
- * Revision 5.09.23
- * Mitigation G-2
+ * See Software techniques for managing speculation on AMD processors
+ *     Revision 5.09.23
+ *     Mitigation G-2
  */
 static void amd_enable_serializing_lfence()
 {
@@ -158,14 +157,12 @@ static void amd_enable_serializing_lfence()
 
 	unsigned const family = Hw::Vendor::get_family();
 
-	/* In family 0Fh and 11h, lfence is always dispatch serializing */
-	if ((family == 0x10) ||
-	    (family == 0x12) ||
-	    /*
-	     * "AMD plans support for this MSR and access to this bit for all
-	     * future processors."
-	     */
-	    (family >= 0x14)) {
+	/*
+	 * In family 0Fh and 11h, lfence is always dispatch serializing and
+	 * "AMD plans support for this MSR and access to this bit for all future
+	 * processors." from family 14h on.
+	 */
+	if ((family == 0x10) || (family == 0x12) || (family >= 0x14)) {
 		Cpu::Amd_lfence::access_t amd_lfence = Cpu::Amd_lfence::read();
 		Cpu::Amd_lfence::Enable_dispatch_serializing::set(amd_lfence);
 		Cpu::Amd_lfence::write(amd_lfence);
@@ -358,7 +355,7 @@ Bootstrap::Platform::Board::Board()
 	}
 
 	/*
-	 * Enable serializing lfence on supported AMD processors.
+	 * Enable serializing lfence on supported AMD processors
 	 *
 	 * For APs this will be set up later, but we need it already to obtain
 	 * the most acurate results when calibrating the TSC frequency.

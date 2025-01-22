@@ -110,7 +110,8 @@ public:
 struct Hw::Tsc
 {
 	/*
-	 * Provide serialized access to the Timestamp Counter.
+	 * Provide serialized access to the Timestamp Counter
+	 *
 	 * See #5430 for more information.
 	 */
 	static Genode::uint64_t rdtsc()
