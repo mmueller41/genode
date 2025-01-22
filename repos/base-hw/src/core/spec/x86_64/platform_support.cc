@@ -60,7 +60,7 @@ void Platform::_init_additional_platform_info(Xml_generator &xml)
 		});
 		xml.node("tsc", [&] {
 			xml.attribute("invariant", Hw::Tsc::invariant_tsc());
-			xml.attribute("freq_khz", _boot_info().plat_info.tsc_frequency);
+			xml.attribute("freq_khz", _boot_info().plat_info.tsc_freq_khz);
 		});
 	});
 }

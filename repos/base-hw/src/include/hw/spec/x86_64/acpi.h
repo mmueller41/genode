@@ -266,16 +266,16 @@ struct Hw::Acpi_fadt : Genode::Mmio<276>
 
 	uint32_t calibrate_freq_khz(uint32_t sleep_ms, auto get_value_fn)
 	{
-		unsigned const acpi_timer_freq = 3579545;
+		unsigned const acpi_timer_freq = 3'579'545;
 
-		uint32_t initial = read_pm_tmr();
+		uint32_t const initial = read_pm_tmr();
 
 		if (!initial) return 0;
 
-		uint64_t t1 = get_value_fn();
+		uint64_t const t1 = get_value_fn();
 		while ((read_pm_tmr() - initial) < (acpi_timer_freq * sleep_ms / 1000))
 			asm volatile ("pause":::"memory");
-		uint64_t t2 = get_value_fn();
+		uint64_t const t2 = get_value_fn();
 
 		return (uint32_t)((t2 - t1) / sleep_ms);
 	}

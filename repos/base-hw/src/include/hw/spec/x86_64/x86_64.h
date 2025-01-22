@@ -120,8 +120,7 @@ struct Hw::Tsc
 	{
 		using Cpu = Hw::X86_64_cpu;
 
-		Cpu::Cpuid_80000007_eax::access_t eax =
-	    Cpu::Cpuid_80000007_eax::read();
+		Cpu::Cpuid_80000007_eax::access_t eax = Cpu::Cpuid_80000007_eax::read();
 		return Cpu::Cpuid_80000007_eax::Invariant_tsc::get(eax);
 	}
 };

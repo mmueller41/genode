@@ -69,8 +69,7 @@ static Hw::Acpi_rsdp search_rsdp(addr_t area, addr_t area_size)
 
 static uint32_t calibrate_tsc_frequency(addr_t fadt_addr)
 {
-	const unsigned Tsc_fixed_value = 2400;
-	uint32_t default_freq = Tsc_fixed_value * 1000;
+	uint32_t const default_freq = 2'400'000;
 
 	if (!fadt_addr) {
 		warning("FADT not found, returning fixed TSC frequency of ", default_freq, "kHz");
@@ -81,16 +80,14 @@ static uint32_t calibrate_tsc_frequency(addr_t fadt_addr)
 
 	Hw::Acpi_fadt fadt(reinterpret_cast<Hw::Acpi_generic *>(fadt_addr));
 
-	uint32_t val = fadt.calibrate_freq_khz(sleep_ms, []() {
-			return Hw::Tsc::rdtsc();
-		});
+	uint32_t const freq = fadt.calibrate_freq_khz(sleep_ms, []() { return Hw::Tsc::rdtsc(); });
 
-	if (!val) {
+	if (!freq) {
 		warning("Unable to calibrate TSC, returning fixed TSC frequency of ", default_freq, "kHz");
 		return default_freq;
 	}
 
-	return val;
+	return freq;
 }
 
 
@@ -278,7 +275,7 @@ Bootstrap::Platform::Board::Board()
 		cpus = !cpus ? 1 : max_cpus;
 	}
 
-	info.tsc_frequency = calibrate_tsc_frequency(info.acpi_fadt);
+	info.tsc_freq_khz = calibrate_tsc_frequency(info.acpi_fadt);
 
 	/* copy 16 bit boot code for AP CPUs and for ACPI resume */
 	addr_t ap_code_size = (addr_t)&_start - (addr_t)&_ap;
