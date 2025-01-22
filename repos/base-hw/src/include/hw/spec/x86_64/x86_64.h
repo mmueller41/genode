@@ -122,6 +122,8 @@ struct Hw::Tsc
 			"rdtsc;"
 			"lfence;"
 			: "=a"(low), "=d"(high)
+			:
+			: "memory"
 		);
 		return (Genode::uint64_t)(high) << 32 | low;
 	}
