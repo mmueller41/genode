@@ -84,27 +84,32 @@ struct Hw::Local_apic : Genode::Mmio<Hw::Cpu_memory_map::LAPIC_SIZE>
 		};
 	};
 
-	void calibrate_divider(uint32_t &ticks_per_ms, uint32_t &divider, auto calibration_fn)
+	struct Calibration { uint32_t freq_khz; uint32_t div; };
+
+	Calibration calibrate_divider(auto calibration_fn)
 	{
+		Calibration result { };
+
 		/* calibrate LAPIC frequency to fullfill our requirements */
 		for (Divide_configuration::access_t div = Divide_configuration::Divide_value::MAX;
-		     div && ticks_per_ms < TIMER_MIN_TICKS_PER_MS; div--)
-		{
+		     div && result.freq_khz < TIMER_MIN_TICKS_PER_MS; div--) {
+
 			if (!div) {
 				raw("Failed to calibrate Local APIC frequency");
-				ticks_per_ms = 0;
-				break;
+				return { 0, 1 };
 			}
 			write<Divide_configuration::Divide_value>((uint8_t)div);
 
 			write<Tmr_initial>(~0U);
 
 			/* Calculate timer frequency */
-			ticks_per_ms = calibration_fn();
-			divider      = div;
+			result.freq_khz = calibration_fn();
+			result.div      = div;
 
 			write<Tmr_initial>(0);
 		}
+
+		return result;
 	}
 
 	Local_apic(addr_t const addr) : Mmio({(char*)addr, Mmio::SIZE}) {}

@@ -45,7 +45,7 @@ void Board::Timer::init()
 	}
 
 	Platform::apply_with_boot_info([&](auto const &boot_info) {
-			ticks_per_ms = boot_info.plat_info.lapic_ticks_per_ms;
+			ticks_per_ms = boot_info.plat_info.lapic_freq_khz;
 			divider = boot_info.plat_info.lapic_div;
 		});
 }

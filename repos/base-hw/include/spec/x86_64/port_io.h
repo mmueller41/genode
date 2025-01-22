@@ -17,6 +17,7 @@
 #include <base/fixed_stdint.h>
 
 namespace Hw {
+
 	using Genode::uint8_t;
 	using Genode::uint16_t;
 
