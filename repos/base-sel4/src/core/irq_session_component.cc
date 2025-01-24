@@ -99,8 +99,9 @@ Irq_object::Irq_object(unsigned irq)
 Irq_session_component::Irq_session_component(Range_allocator &irq_alloc,
                                              const char      *args)
 :
-	_irq_number(Irq_args(args).irq_number() +
-	            Irq_args(args).type() != TYPE_LEGACY ? Irq_object::MSI_OFFSET : 0),
+	_irq_number(unsigned(Irq_args(args).type() == TYPE_LEGACY ?
+	            Irq_args(args).irq_number() :
+	            Irq_args(args).irq_number() + Irq_object::MSI_OFFSET)),
 	_irq_alloc(irq_alloc),
 	_irq_object(_irq_number)
 {
