@@ -236,11 +236,11 @@ Test::Main::Main(Genode::Env &env) : _env(env)
 
 	Gui::Area const size { 256, 256 };
 
-	Framebuffer::Mode const mode { .area = size };
+	Framebuffer::Mode const mode { .area = size, .alpha = _config.alpha };
 
 	log("screen is ", mode);
 
-	_gui.buffer(mode, _config.alpha);
+	_gui.buffer(mode);
 
 	_fb_ds.construct(_env.rm(), _gui.framebuffer.dataspace());
 
@@ -264,6 +264,8 @@ Test::Main::Main(Genode::Env &env) : _env(env)
 				input_mask[i*size.w + j] = alpha[i*size.w + j] > 127;
 			}
 		}
+
+	_gui.framebuffer.refresh({ { 0, 0 }, size });
 
 	_view_stack.construct(View_stack::Input_mask_ptr { .size = size,
 	                                                   .ptr  = input_mask });

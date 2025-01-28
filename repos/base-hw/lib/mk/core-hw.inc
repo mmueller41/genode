@@ -46,7 +46,6 @@ SRC_CC += ram_dataspace_factory.cc
 SRC_CC += signal_transmitter_noinit.cc
 SRC_CC += thread_start.cc
 SRC_CC += env.cc
-SRC_CC += region_map_support.cc
 SRC_CC += pager.cc
 SRC_CC += _main.cc
 SRC_CC += kernel/cpu.cc
@@ -55,12 +54,15 @@ SRC_CC += kernel/ipc_node.cc
 SRC_CC += kernel/irq.cc
 SRC_CC += kernel/main.cc
 SRC_CC += kernel/object.cc
-SRC_CC += kernel/signal_receiver.cc
+SRC_CC += kernel/signal.cc
 SRC_CC += kernel/thread.cc
 SRC_CC += kernel/timer.cc
 SRC_CC += capability.cc
 SRC_CC += stack_area_addr.cc
 SRC_CC += heartbeat.cc
+
+BOARD  ?= unknown
+CC_OPT_platform += -DBOARD_NAME="\"$(BOARD)\""
 
 # provide Genode version information
 include $(BASE_DIR)/src/core/version.inc

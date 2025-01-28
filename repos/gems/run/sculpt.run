@@ -7,7 +7,7 @@
 #
 # Note: the string must be exactly 5 bytes long.
 #
-proc sculpt_version { } { return "24.06" }
+proc sculpt_version { } { return "24.10" }
 
 
 proc assert_platform_supported { } {
@@ -15,6 +15,7 @@ proc assert_platform_supported { } {
 	if {[have_board pc]}          return
 	if {[have_board imx8q_evk]}   return
 	if {[have_board mnt_reform2]} return
+	if {[have_board mnt_pocket]}  return
 	if {[have_board linux]}       return
 	if {[have_board pinephone]}   return
 
@@ -188,10 +189,25 @@ proc driver_routes { } {
 		<service name="ROM" label="mmc.dtb">           <parent label="imx8mq_sd_card-mnt_reform2.dtb"/> </service>
 		<service name="ROM" label="nic">               <parent label="fec_nic"/> </service>
 		<service name="ROM" label="nic.dtb">           <parent label="fec_nic-mnt_reform2.dtb"/> </service>
-		<service name="ROM" label="usb">               <parent label="imx8mq_usb_host"/> </service>
-		<service name="ROM" label="usb.dtb">           <parent label="imx8mq_usb_host-mnt_reform2.dtb"/> </service>
+		<service name="ROM" label="usb">               <parent label="imx8m_usb_host"/> </service>
+		<service name="ROM" label="usb.dtb">           <parent label="imx8m_usb_host-mnt_reform2.dtb"/> </service>
 		<service name="ROM" label="wifi.lib.so">       <parent label="imx8mq_wifi.lib.so"/> </service>
 		<service name="ROM" label="wifi_firmware.tar"> <parent label="imx8mq_wifi_firmware.tar"/> </service>
+		<service name="I2c"> <child name="drivers"/> </service>
+	}
+
+	set result(mnt_pocket) {
+		<service name="ROM" label="fb">                <parent label="imx8mq_fb"/> </service>
+		<service name="ROM" label="fb.dtb">            <parent label="imx8mq_fb-mnt_pocket.dtb"/> </service>
+		<service name="ROM" label="mmc">               <parent label="imx8mq_sd_card"/> </service>
+		<service name="ROM" label="mmc.dtb">           <parent label="imx8mq_sd_card-mnt_pocket.dtb"/> </service>
+		<service name="ROM" label="nic">               <parent label="stmmac_nic"/> </service>
+		<service name="ROM" label="nic.dtb">           <parent label="stmmac_nic-mnt_pocket.dtb"/> </service>
+		<service name="ROM" label="usb">               <parent label="imx8m_usb_host"/> </service>
+		<service name="ROM" label="usb.dtb">           <parent label="imx8m_usb_host-mnt_pocket.dtb"/> </service>
+		<service name="ROM" label="wifi.dtb">          <parent label="wifi-mnt_pocket.dtb"/> </service>
+		<service name="ROM" label="wifi.lib.so">       <parent label="imx8mp_qcacld2_wifi.lib.so"/> </service>
+		<service name="ROM" label="wifi_firmware.tar"> <parent label="imx8mp_qcacld2_wifi_firmware.tar"/> </service>
 		<service name="I2c"> <child name="drivers"/> </service>
 	}
 
@@ -459,7 +475,7 @@ install_config {
 	</start>
 
 	<start name="nitpicker" caps="1000" priority="-1">
-		<resource name="RAM" quantum="12M"/>
+		<resource name="RAM" quantum="18M"/>
 		<resource name="CPU" quantum="10"/>
 		<affinity xpos="1" width="1"/> <!-- decouple nitpicker from boot CPU -->
 		<provides>
@@ -467,9 +483,11 @@ install_config {
 		</provides>
 		<route>
 			<service name="ROM" label="config">
-				<child name="config_fs_rom" label="nitpicker"/> </service>
+				<child name="config_fs_rom" label="managed/nitpicker"/> </service>
 			<service name="ROM" label="focus">
 				<child name="nit_focus"/> </service>
+			<service name="Report" label="panorama">
+				<child name="fs_report"/> </service>
 			<service name="Report" label="keystate">
 				<child name="report_logger"/> </service>
 			<service name="Report"> <child name="report_rom"/> </service>
@@ -713,8 +731,8 @@ install_config {
 			} [log_route] [driver_routes] {
 			<service name="Event" label="leitzentrale"> <child name="leitzentrale"/> </service>
 			<service name="Event"> <child name="event_filter"/> </service>
-			<service name="Capture" label="global">       <child name="nitpicker"/>    </service>
 			<service name="Capture" label="leitzentrale"> <child name="leitzentrale"/> </service>
+			<service name="Capture">                      <child name="nitpicker"/>    </service>
 			<service name="Pin_state">   <child name="drivers"/> </service>
 			<service name="Pin_control"> <child name="drivers"/> </service>
 			<service name="Terminal"> <child name="terminal_monitor"/> </service>
@@ -830,7 +848,7 @@ set fd [open [managed_config_path depot_query] w]
 puts $fd "<query/>"
 close $fd
 
-foreach config { fonts wifi runtime event_filter system } {
+foreach config { fonts wifi runtime event_filter system nitpicker } {
 	set ingredient [single_ingredient $config "default"]
 	if {$ingredient != ""} {
 		set from [ingredient_path $config $ingredient]
@@ -1102,9 +1120,13 @@ if {[have_board linux]} {
 	# The Linux version of core does not export a platform_info ROM module.
 	#
 	install_boot_module "platform_info" {<platform/>}
+}
 
+
+if {[have_spec linux] || [have_spec fiasco] || [have_spec foc]} {
 	#
-	# Managed dataspaces as used by cached_fs_rom are not supported on Linux.
+	# Managed dataspaces as used by cached_fs_rom are not supported fully
+	# on all kernels.
 	#
 	copy_file [run_dir]/genode/fs_rom [run_dir]/genode/cached_fs_rom
 }

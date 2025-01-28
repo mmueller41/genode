@@ -17,18 +17,20 @@
 /* Genode includes */
 #include <base/session_label.h>
 #include <base/thread.h>
-#include <base/object_pool.h>
 #include <base/signal.h>
 #include <pager/capability.h>
 
 /* core includes */
-#include <kernel/signal_receiver.h>
+#include <kernel/signal.h>
 #include <hw/mapping.h>
 #include <mapping.h>
 #include <object.h>
 #include <rpc_cap_factory.h>
 
 namespace Core {
+
+	class Platform;
+	class Platform_thread;
 
 	/**
 	 * Interface used by generic region_map code
@@ -53,6 +55,10 @@ namespace Core {
 	using Pager_capability = Capability<Pager_object>;
 
 	enum { PAGER_EP_STACK_SIZE = sizeof(addr_t) * 2048 };
+
+	extern void init_page_fault_handling(Rpc_entrypoint &);
+
+	void init_pager_thread_per_cpu_memory(unsigned const cpus, void * mem);
 }
 
 
@@ -93,23 +99,29 @@ class Core::Ipc_pager
 };
 
 
-class Core::Pager_object : private Object_pool<Pager_object>::Entry,
-                           private Kernel_object<Kernel::Signal_context>
+class Core::Pager_object : private Kernel_object<Kernel::Signal_context>
 {
 	friend class Pager_entrypoint;
-	friend class Object_pool<Pager_object>;
 
 	private:
 
 		unsigned long    const _badge;
+		Affinity::Location     _location;
 		Cpu_session_capability _cpu_session_cap;
 		Thread_capability      _thread_cap;
+		Platform_thread       *_pager_thread { nullptr };
 
 		/**
 		 * User-level signal handler registered for this pager object via
 		 * 'Cpu_session::exception_handler()'.
 		 */
 		Signal_context_capability _exception_sigh { };
+
+		/*
+		 * Noncopyable
+		 */
+		Pager_object(const Pager_object&) = delete;
+		Pager_object& operator=(const Pager_object&) = delete;
 
 	public:
 
@@ -123,10 +135,14 @@ class Core::Pager_object : private Object_pool<Pager_object>::Entry,
 		             Affinity::Location, Session_label const&,
 		             Cpu_session::Name const&);
 
+		virtual ~Pager_object() {}
+
 		/**
 		 * User identification of pager object
 		 */
 		unsigned long badge() const { return _badge; }
+
+		Affinity::Location location() { return _location; }
 
 		/**
 		 * Resume faulter
@@ -158,7 +174,8 @@ class Core::Pager_object : private Object_pool<Pager_object>::Entry,
 		 *
 		 * \param receiver  signal receiver that receives the page faults
 		 */
-		void start_paging(Kernel_object<Kernel::Signal_receiver> & receiver);
+		void start_paging(Kernel_object<Kernel::Signal_receiver> &receiver,
+		                  Platform_thread &pager_thread);
 
 		/**
 		 * Called when a page-fault finally could not be resolved
@@ -166,6 +183,11 @@ class Core::Pager_object : private Object_pool<Pager_object>::Entry,
 		void unresolved_page_fault_occurred();
 
 		void print(Output &out) const;
+
+		void with_pager(auto const &fn)
+		{
+			if (_pager_thread) fn(*_pager_thread);
+		}
 
 
 		/******************
@@ -192,24 +214,44 @@ class Core::Pager_object : private Object_pool<Pager_object>::Entry,
 		Cpu_session_capability cpu_session_cap() const { return _cpu_session_cap; }
 		Thread_capability      thread_cap()      const { return _thread_cap; }
 
-		using Object_pool<Pager_object>::Entry::cap;
+		Untyped_capability cap() {
+			return Kernel_object<Kernel::Signal_context>::_cap; }
 };
 
 
-class Core::Pager_entrypoint : public  Object_pool<Pager_object>,
-                               public  Thread,
-                               private Ipc_pager
+class Core::Pager_entrypoint
 {
 	private:
 
-		Kernel_object<Kernel::Signal_receiver> _kobj;
+		friend class Platform;
+
+		class Thread : public  Genode::Thread,
+		               private Ipc_pager
+		{
+			private:
+
+				friend class Pager_entrypoint;
+
+				Kernel_object<Kernel::Signal_receiver> _kobj;
+
+			public:
+
+				explicit Thread(Affinity::Location);
+
+
+				/**********************
+				 ** Thread interface **
+				 **********************/
+
+				void entry() override;
+		};
+
+		unsigned const _cpus;
+		Thread        *_threads;
 
 	public:
 
-		/**
-		 * Constructor
-		 */
-		Pager_entrypoint(Rpc_cap_factory &);
+		explicit Pager_entrypoint(Rpc_cap_factory &);
 
 		/**
 		 * Associate pager object 'obj' with entry point
@@ -220,13 +262,6 @@ class Core::Pager_entrypoint : public  Object_pool<Pager_object>,
 		 * Dissolve pager object 'obj' from entry point
 		 */
 		void dissolve(Pager_object &obj);
-
-
-		/**********************
-		 ** Thread interface **
-		 **********************/
-
-		void entry() override;
 };
 
 #endif /* _CORE__PAGER_H_ */

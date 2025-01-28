@@ -66,7 +66,7 @@ struct Test::Main
 			}
 		}
 
-		bool _gui_buffer_init = ( _validate_mode(), _gui.buffer(_mode, false), true );
+		bool _gui_buffer_init = ( _validate_mode(), _gui.buffer(_mode), true );
 
 		Attached_dataspace _fb_ds { _env.rm(), _gui.framebuffer.dataspace() };
 
@@ -75,7 +75,7 @@ struct Test::Main
 		Output(Env &env, Allocator &alloc, Xml_node const &config)
 		:
 			_env(env), _alloc(alloc),
-			_mode({ .area = _area_from_xml(config, Area { }) })
+			_mode({ .area = _area_from_xml(config, Area { }), .alpha = false })
 		{
 			auto view_rect = [&] (Xml_node node)
 			{
@@ -113,7 +113,7 @@ struct Test::Main
 
 		Capture::Connection _capture { _env, "" };
 
-		bool _capture_buffer_init = ( _capture.buffer(_area), true );
+		bool _capture_buffer_init = ( _capture.buffer({ .px = _area, .mm = { }}), true );
 
 		Attached_dataspace _capture_ds { _env.rm(), _capture.dataspace() };
 
@@ -164,9 +164,7 @@ struct Test::Main
 				});
 
 				affected.for_each_rect([&] (Gui::Rect const rect) {
-					_output->_gui.framebuffer.refresh(rect.x1(), rect.y1(),
-					                                  rect.w(), rect.h());
-				});
+					_output->_gui.framebuffer.refresh(rect); });
 			});
 		});
 

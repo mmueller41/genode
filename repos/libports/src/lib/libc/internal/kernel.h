@@ -17,6 +17,7 @@
 #define _LIBC__INTERNAL__KERNEL_H_
 
 /* base-internal includes */
+#include <util/reconstructible.h>
 #include <internal/call_func.h>
 
 /* libc includes */
@@ -135,6 +136,8 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 		 */
 		Binary_name _binary_name { "binary" };
 
+		File_descriptor_allocator _fd_alloc { _heap };
+
 		/**
 		 * Allocator for application-owned data
 		 *
@@ -172,7 +175,7 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 
 		bool const _update_mtime = _libc_env.libc_config().attribute_value("update_mtime", true);
 
-		Vfs_plugin _vfs { _libc_env, _libc_env.vfs_env(), _heap, *this,
+		Vfs_plugin _vfs { _libc_env, _fd_alloc, _libc_env.vfs_env(), _heap, *this,
 		                  _update_mtime ? Vfs_plugin::Update_mtime::YES
 		                                : Vfs_plugin::Update_mtime::NO,
 		                  *this /* current_real_time */,
@@ -409,6 +412,9 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 
 		~Kernel() { error(__PRETTY_FUNCTION__, " should not be executed!"); }
 
+		/* use placement new instead of 'construct_at' because 'Kernel' is final */
+		void *operator new (size_t, void *ptr) { return ptr; }
+
 		Libc::Env & libc_env() { return _libc_env; }
 
 		/**
@@ -582,6 +588,14 @@ struct Libc::Kernel final : Vfs::Read_ready_response_handler,
 				return job.completed() ? Monitor::Result::COMPLETE
 				                       : Monitor::Result::TIMEOUT;
 			}
+		}
+
+		/**
+		 * Monitor interface
+		 */
+		void monitor_async(Job &job) override
+		{
+			_monitors.monitor_async(job);
 		}
 
 		void _trigger_monitor_examination() override

@@ -18,7 +18,7 @@
 /* core includes */
 #include <kernel/cpu_context.h>
 #include <kernel/pd.h>
-#include <kernel/signal_receiver.h>
+#include <kernel/signal.h>
 
 #include <board.h>
 
@@ -31,7 +31,7 @@ namespace Kernel {
 }
 
 
-class Kernel::Vm : private Kernel::Object, public Cpu_job
+class Kernel::Vm : private Kernel::Object, public Cpu_context
 {
 	public:
 
@@ -66,7 +66,7 @@ class Kernel::Vm : private Kernel::Object, public Cpu_job
 		void _pause_vcpu()
 		{
 			if (_scheduled != INACTIVE)
-				Cpu_job::_deactivate_own_share();
+				Cpu_context::_deactivate();
 
 			_scheduled = INACTIVE;
 		}
@@ -135,7 +135,7 @@ class Kernel::Vm : private Kernel::Object, public Cpu_job
 		void run()
 		{
 			_sync_from_vmm();
-			if (_scheduled != ACTIVE) Cpu_job::_activate_own_share();
+			if (_scheduled != ACTIVE) Cpu_context::_activate();
 			_scheduled = ACTIVE;
 		}
 
@@ -146,13 +146,12 @@ class Kernel::Vm : private Kernel::Object, public Cpu_job
 		}
 
 
-		/*************
-		 ** Cpu_job **
-		 *************/
+		/*****************
+		 ** Cpu_context **
+		 *****************/
 
-		void exception(Cpu & cpu)       override;
-		void proceed(Cpu &  cpu)        override;
-		Cpu_job * helping_destination() override { return this; }
+		void exception() override;
+		void proceed() override;
 };
 
 #endif /* _CORE__KERNEL__VM_H_ */

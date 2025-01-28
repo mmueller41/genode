@@ -77,8 +77,8 @@
 				<resource name="RAM" quantum="33M"/>
 				<resource name="CPU" quantum="20"/>
 				<provides> <service name="Framebuffer"/> <service name="Input"/> </provides>
-				<config/>
 				<route>
+					<service name="ROM" label="config"> <child name="report_rom"/> </service>
 					<service name="Gui"> <child name="fader"/> </service>
 					<any-service> <parent/> </any-service>
 				</route>
@@ -120,6 +120,7 @@
 					<policy label="manager -> window_list"       report="wm -> window_list"/>
 					<policy label="manager -> decorator_margins" report="decorator -> decorator_margins"/>
 					<policy label="nitpicker -> focus"           report="manager -> focus"/>
+					<policy label="gui_fb -> config"             report="manager -> gui_fb_config"/>
 
 					<policy label="runtime -> leitzentrale -> diag_dialog"
 					        report="manager -> diag_dialog"/>
@@ -142,8 +143,8 @@
 				</config>
 			</start>
 
-			<start name="wm" caps="300" priority="-1">
-				<resource name="RAM" quantum="4M"/>
+			<start name="wm" caps="150" priority="-1">
+				<resource name="RAM" quantum="2M"/>
 				<provides>
 					<service name="Gui"/> <service name="Report"/> <service name="ROM"/>
 				</provides>
@@ -160,7 +161,7 @@
 				</route>
 			</start>
 
-			<start name="decorator" caps="400" priority="-1">
+			<start name="decorator" caps="580" priority="-1">
 				<binary name="themed_decorator"/>
 				<resource name="RAM" quantum="20M"/>
 				<resource name="CPU" quantum="20"/>
@@ -178,15 +179,15 @@
 						</dir>
 						<dir name="dev"> <log/> </dir>
 					</vfs>
-					<policy label="log" decoration="yes" motion="20"/>
-					<policy label="runtime -> leitzentrale -> settings_dialog"     decoration="no" motion="20"/>
-					<policy label="runtime -> leitzentrale -> system_dialog"       decoration="no" motion="20"/>
-					<policy label="runtime -> leitzentrale -> file_browser_dialog" decoration="no" motion="30"/>
-					<policy label="runtime -> leitzentrale -> network_dialog"      decoration="no" motion="20"/>
-					<policy label="runtime -> leitzentrale -> runtime_dialog"      decoration="no" motion="30"/>
-					<policy label="runtime -> leitzentrale -> diag_dialog"         decoration="no" motion="30"/>
-					<policy label="runtime -> leitzentrale -> popup_dialog"        decoration="no" motion="20"/>
-					<policy label="runtime -> leitzentrale -> panel_dialog"        decoration="no" motion="20"/>
+					<policy label="log" decoration="yes" motion="40"/>
+					<policy label="runtime -> leitzentrale -> settings_dialog"     decoration="no" motion="40"/>
+					<policy label="runtime -> leitzentrale -> system_dialog"       decoration="no" motion="40"/>
+					<policy label="runtime -> leitzentrale -> file_browser_dialog" decoration="no" motion="60"/>
+					<policy label="runtime -> leitzentrale -> network_dialog"      decoration="no" motion="40"/>
+					<policy label="runtime -> leitzentrale -> runtime_dialog"      decoration="no" motion="60"/>
+					<policy label="runtime -> leitzentrale -> diag_dialog"         decoration="no" motion="60"/>
+					<policy label="runtime -> leitzentrale -> popup_dialog"        decoration="no" motion="40"/>
+					<policy label="runtime -> leitzentrale -> panel_dialog"        decoration="no" motion="40"/>
 					<policy label_prefix="logo" decoration="no"/>
 					<default-policy/>
 				</config>
@@ -231,6 +232,8 @@
 						<child name="config_fs_report" label="managed -> nic_router"/> </service>
 					<service name="Report" label="fb_config">
 						<child name="config_fs_report" label="managed -> fb"/> </service>
+					<service name="Report" label="nitpicker_config">
+						<child name="config_fs_report" label="managed -> nitpicker"/> </service>
 					<service name="Report" label="usb_config">
 						<child name="config_fs_report" label="managed -> usb"/> </service>
 					<service name="Report" label="system_config">
@@ -264,7 +267,7 @@
 				</route>
 			</start>
 
-			<start name="log_terminal" priority="-1">
+			<start name="log_terminal" priority="-1" caps="120">
 				<binary name="terminal"/>
 				<resource name="RAM" quantum="8M"/>
 				<provides> <service name="Terminal"/> </provides>

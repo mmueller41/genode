@@ -67,12 +67,13 @@ namespace Libc {
 	 * Virtual file system
 	 */
 	void init_vfs_plugin(Monitor &, Genode::Region_map &);
-	void init_file_operations(Cwd &, Config_accessor const &);
+	void init_file_operations(Cwd &, File_descriptor_allocator &, Config_accessor const &);
+	void init_pread_pwrite(File_descriptor_allocator &);
 
 	/**
 	 * Poll support
 	 */
-	void init_poll(Signal &, Monitor &);
+	void init_poll(Signal &, Monitor &, File_descriptor_allocator &);
 
 	/**
 	 * Select support
@@ -108,11 +109,13 @@ namespace Libc {
 	 */
 	void init_sleep(Monitor &);
 	void init_time(Current_time &, Current_real_time &);
+	void init_alarm(Timer_accessor &, Signal &);
 
 	/**
 	 * Socket fs
 	 */
-	void init_socket_fs(Suspend &, Monitor &);
+	void init_socket_fs(Suspend &, Monitor &, File_descriptor_allocator &);
+	void init_socket_operations(File_descriptor_allocator &);
 
 	/**
 	 * Pthread/semaphore support
@@ -130,9 +133,10 @@ namespace Libc {
 	/**
 	 * Fork mechanism
 	 */
-	void init_fork(Genode::Env &, Config_accessor const &,
-	               Genode::Allocator &heap, Heap &malloc_heap, int pid,
-	               Monitor &, Signal &, Binary_name const &);
+	void init_fork(Genode::Env &, File_descriptor_allocator &,
+	               Config_accessor const &, Genode::Allocator &heap,
+	               Heap &malloc_heap, int pid, Monitor &, Signal &,
+	               Binary_name const &);
 
 	struct Reset_malloc_heap : Interface
 	{
@@ -155,6 +159,11 @@ namespace Libc {
 	 * Atexit handling
 	 */
 	void init_atexit(Atexit &);
+
+	/**
+	 * Kqueue support
+	 */
+	void init_kqueue(Genode::Allocator &, Monitor &, File_descriptor_allocator &);
 }
 
 #endif /* _LIBC__INTERNAL__INIT_H_ */

@@ -1,30 +1,4 @@
-#
-# Return Bender option that configures Bender's Intel HWP plugin
-#
-# \param --bender-intel-hwp-mode   Run the Intel HWP plugin of Bender in the
-#                                  given mode. Valid argument values are
-#                                     "off",
-#                                     "performance",
-#                                     "balanced", and
-#                                     "power_saving"
-#                                  The argument value defaults to
-#                                  "performance".
-#
-proc bender_intel_hwp_mode_option { } {
-
-	set opt [get_cmd_arg_first --bender-intel-hwp-mode "performance"]
-	if {$opt == "off"} {
-		return "intel_hwp_off"
-	} elseif {$opt == "performance"} {
-		return "intel_hwp_performance"
-	} elseif {$opt == "balanced"} {
-		return "intel_hwp_balanced"
-	} elseif {$opt == "power_saving"} {
-		return "intel_hwp_power_saving"
-	} else {
-		return "intel_hwp_performance"
-	}
-}
+source [genode_dir]/tool/run/bender.inc
 
 proc binary_name_ld_lib_so { } { return "ld-nova.lib.so" }
 proc binary_name_core_a    { } { return "core-nova.a" }
@@ -34,6 +8,8 @@ proc kernel_files { } { return hypervisor }
 proc kernel_output { } { return "serial" }
 
 proc boot_output { } { return "serial" }
+
+proc grub_menuentry { } { return "'Genode on NOVA'" }
 
 proc run_boot_string { } {
 	return "\nHypervisor NOVA "
@@ -122,7 +98,7 @@ proc run_boot_dir {binaries} {
 		#
 		set fh [create_header_grub2_config]
 
-		puts $fh "menuentry 'Genode on NOVA' {"
+		puts $fh "menuentry [grub_menuentry] {"
 		puts $fh " insmod multiboot2"
 		puts $fh " insmod gzio"
 		puts $fh " multiboot2 /boot/bender $options_bender"

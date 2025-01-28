@@ -63,6 +63,8 @@ install_config {
 
 			<policy label_prefix="pointer" domain="pointer"/>
 			<default-policy domain="default"/>
+
+			<global-key name="KEY_SCREEN" label="wm -> wm -> decorator" />
 		</config>
 	</start>
 
@@ -108,7 +110,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="backdrop" priority="-1">
+	<start name="backdrop" priority="-1" caps="120">
 		<resource name="RAM" quantum="24M"/>
 		<config>
 			<libc/>
@@ -127,7 +129,7 @@ install_config {
 		</route>
 	</start>
 
-	<start name="wm_backdrop" priority="-1">
+	<start name="wm_backdrop" priority="-1" caps="120">
 		<binary name="backdrop" />
 		<resource name="RAM" quantum="32M"/>
 		<config>
@@ -154,7 +156,9 @@ set fd [open [run_dir]/genode/focus w]
 puts $fd "<focus label=\"wm -> focus\"/>"
 close $fd
 
-copy_file [genode_dir]/repos/gems/recipes/raw/motif_wm/wm.config [run_dir]/genode/
+copy_file [genode_dir]/repos/gems/recipes/raw/motif_wm/wm.config             [run_dir]/genode/
+copy_file [genode_dir]/repos/gems/recipes/raw/motif_wm/layouter.config       [run_dir]/genode/
+copy_file [genode_dir]/repos/gems/recipes/raw/motif_wm/decorator_init.config [run_dir]/genode/
 
 build { app/window_layouter app/decorator server/nitpicker server/wm test/nitpicker }
 

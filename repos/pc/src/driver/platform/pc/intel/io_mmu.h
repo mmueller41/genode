@@ -31,6 +31,8 @@
 #include <intel/page_table.h>
 #include <intel/domain_allocator.h>
 #include <intel/default_mappings.h>
+#include <intel/invalidator.h>
+#include <intel/irq_remap_table.h>
 #include <expanding_page_table_allocator.h>
 
 namespace Intel {
@@ -38,6 +40,14 @@ namespace Intel {
 	using namespace Driver;
 
 	using Context_table_allocator = Managed_root_table::Allocator;
+
+	/**
+	 * We use a 4KB interrupt remap table since kernels (nova, hw) do not
+	 * support more than 256 interrupts anyway. We can thus reuse the
+	 * context-table allocator.
+	 */
+	using Irq_table = Irq_remap_table<12>;
+	using Irq_allocator = Irq_table::Irq_allocator;
 
 	class Io_mmu;
 	class Io_mmu_factory;
@@ -49,6 +59,8 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
                       private Translation_table_registry
 {
 	public:
+
+		friend class Register_invalidator;
 
 		/* Use derived domain class to store reference to buffer registry */
 		template <typename TABLE>
@@ -68,6 +80,7 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 				Domain_allocator & _domain_allocator;
 				Domain_id          _domain_id         { _domain_allocator.alloc() };
 				bool               _skip_invalidation { false };
+				Irq_allocator    & _irq_allocator;
 
 				addr_t             _translation_table_phys {
 					_table_allocator.construct<TABLE>() };
@@ -92,7 +105,7 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 						_domain._skip_invalidation = false;
 
 						if (_requires_invalidation)
-							_domain._intel_iommu.invalidate_all(_domain._domain_id);
+							_domain._intel_iommu.invalidator().invalidate_all(_domain._domain_id);
 						else
 							_domain._intel_iommu.flush_write_buffer();
 					}
@@ -128,7 +141,8 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 				       Registry<Dma_buffer> const & buffer_registry,
 				       Env                        & env,
 				       Ram_allocator              & ram_alloc,
-				       Domain_allocator           & domain_allocator)
+				       Domain_allocator           & domain_allocator,
+				       Irq_allocator              & irq_allocator)
 				: Driver::Io_mmu::Domain(intel_iommu, md_alloc),
 				  Registered_translation_table(intel_iommu),
 				  _intel_iommu(intel_iommu),
@@ -136,7 +150,8 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 				  _ram_alloc(ram_alloc),
 				  _buffer_registry(buffer_registry),
 				  _table_allocator(_env, md_alloc, ram_alloc, 2),
-				  _domain_allocator(domain_allocator)
+				  _domain_allocator(domain_allocator),
+				  _irq_allocator(irq_allocator)
 				{
 					Invalidation_guard guard { *this, _intel_iommu.caching_mode() };
 
@@ -165,7 +180,39 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 
 	private:
 
-		Env                & _env;
+		static
+		Irq_table & _irq_table_virt(Context_table_allocator & alloc, addr_t phys)
+		{
+			addr_t va { 0 };
+
+			alloc.with_table<Irq_table>(phys,
+				[&] (Irq_table & t) { va = (addr_t)&t; },
+				[&] ()              { /* never reached */ });
+
+				/**
+				 * Dereferencing is save because _irq_table_phys is never 0
+				 * (allocator throws exception) and with_table() thus always sets
+				 * a valid virtual address.
+				 */
+				return *(Irq_table*)va;
+		}
+
+
+		Env                     & _env;
+		bool                      _verbose          { false };
+		Context_table_allocator & _table_allocator;
+
+		const addr_t              _irq_table_phys   {
+			_table_allocator.construct<Irq_table>() };
+
+		Irq_table               & _irq_table        {
+			_irq_table_virt(_table_allocator, _irq_table_phys) };
+
+		Irq_allocator             _irq_allocator    { };
+
+		Report_helper             _report_helper    { *this };
+		Domain_allocator          _domain_allocator;
+		Domain_id                 _default_domain   { _domain_allocator.alloc() };
 
 		/**
 		 * For a start, we keep a distinct root table for every hardware unit.
@@ -181,15 +228,17 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 		 * The default root table holds default mappings (e.g. reserved memory)
 		 * that needs to be accessible even if devices have not been acquired yet.
 		 */
-		bool                          _verbose            { false };
 		Managed_root_table            _managed_root_table;
 		Default_mappings              _default_mappings;
-		Report_helper                 _report_helper      { *this };
-		Domain_allocator              _domain_allocator;
-		Domain_id                     _default_domain     { _domain_allocator.alloc() };
+
+		bool                          _remap_irqs { false };
+
 		Constructible<Irq_connection> _fault_irq          { };
 		Signal_handler<Io_mmu>        _fault_handler      {
 			_env.ep(), *this, &Io_mmu::_handle_faults };
+
+		Constructible<Register_invalidator> _register_invalidator { };
+		Constructible<Queued_invalidator>   _queued_invalidator   { };
 
 		/**
 		 * Registers
@@ -238,6 +287,9 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 			/* interrupt remapping support */
 			struct Ir  : Bitfield<3,1> { };
 
+			/* queued-invalidation support */
+			struct Qi  : Bitfield<1,1> { };
+
 			struct Page_walk_coherency : Bitfield<0,1> { };
 		};
 
@@ -254,8 +306,14 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 			/* queued invalidation enable */
 			struct Qie    : Bitfield<26,1> { };
 
+			/* interrupt remapping enable */
+			struct Ire    : Bitfield<25,1> { };
+
 			/* set interrupt remap table pointer */
 			struct Sirtp  : Bitfield<24,1> { };
+
+			/* compatibility format interrupts */
+			struct Cfi    : Bitfield<23,1> { };
 		};
 
 		struct Global_status : Register<0x1c, 32>
@@ -287,34 +345,24 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 			struct Address : Bitfield<12,52> { };
 		};
 
-		struct Context_command : Register<0x28, 64>
+		struct Irq_table_address : Register<0xB8, 64>
 		{
-			struct Invalidate : Bitfield<63,1> { };
+			struct Size    : Bitfield< 0, 4> { };
+			struct Address : Bitfield<12,52> { };
 
-			/* invalidation request granularity */
-			struct Cirg       : Bitfield<61,2>
-			{
-				enum {
-					GLOBAL = 0x1,
-					DOMAIN = 0x2,
-					DEVICE = 0x3
-				};
-			};
-
-			/* actual invalidation granularity */
-			struct Caig      : Bitfield<59,2> { };
-
-			/* source id */
-			struct Sid       : Bitfield<16,16> { };
-
-			/* domain id */
-			struct Did       : Bitfield<0,16> { };
+			/* not using extended interrupt mode (x2APIC) */
 		};
 
 		struct Fault_status : Register<0x34, 32>
 		{
 			/* fault record index */
 			struct Fri : Bitfield<8,8> { };
+
+			/* invalidation time-out error */
+			struct Ite : Bitfield<6,1> { };
+
+			/* invalidation completion error */
+			struct Ice : Bitfield<5,1> { };
 
 			/* invalidation queue error */
 			struct Iqe : Bitfield<4,1> { };
@@ -383,38 +431,6 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 			struct Info : Bitfield<12,52> { };
 		};
 
-		struct Iotlb : Genode::Register<64>
-		{
-			struct Invalidate : Bitfield<63,1> { };
-
-			/* IOTLB invalidation request granularity */
-			struct Iirg : Bitfield<60,2>
-			{
-				enum {
-					GLOBAL = 0x1,
-					DOMAIN = 0x2,
-					DEVICE = 0x3
-				};
-			};
-
-			/* IOTLB actual invalidation granularity */
-			struct Iaig : Bitfield<57,2> { };
-
-			/* drain reads/writes */
-			struct Dr   : Bitfield<49,1> { };
-			struct Dw   : Bitfield<48,1> { };
-
-			/* domain id */
-			struct Did  : Bitfield<32,16> { };
-
-		};
-
-		/* saved registers during suspend */
-		Fault_event_control::access_t  _s3_fec { };
-		Fault_event_data ::access_t    _s3_fedata { };
-		Fault_event_address ::access_t _s3_feaddr { };
-		Root_table_address::access_t   _s3_rta { };
-		
 		uint32_t _max_domains() {
 			return 1 << (4 + read<Capability::Domains>()*2); }
 
@@ -461,12 +477,6 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 		All_registers::access_t read_offset_register(unsigned index) {
 			return read<All_registers>(_offset<OFFSET_BITFIELD>() + index); }
 
-		void write_iotlb_reg(Iotlb::access_t v) {
-			write_offset_register<Extended_capability::Iro>(1, v); }
-
-		Iotlb::access_t read_iotlb_reg() {
-			return read_offset_register<Extended_capability::Iro>(1); }
-
 		template <typename REG>
 		REG::access_t read_fault_record(unsigned index) {
 			return read_offset_register<Capability::Fro>(index*2 + REG::offset()); }
@@ -477,6 +487,12 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 		}
 
 		void _handle_faults();
+
+		void _enable_irq_remapping();
+
+		/* utility methods used on boot and resume */
+		void _init();
+		void _enable_translation();
 
 		/**
 		 * Io_mmu interface
@@ -539,9 +555,7 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 
 		void generate(Xml_generator &) override;
 
-		void invalidate_iotlb(Domain_id, addr_t, size_t);
-		void invalidate_context(Domain_id domain, Pci::rid_t);
-		void invalidate_all(Domain_id domain = Domain_id { Domain_id::INVALID }, Pci::rid_t = 0);
+		Invalidator & invalidator();
 
 		bool     coherent_page_walk()   const { return read<Extended_capability::Page_walk_coherency>(); }
 		bool     caching_mode()         const { return read<Capability::Caching_mode>(); }
@@ -552,7 +566,6 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 		/**
 		 * Io_mmu suspend/resume interface
 		 */
-		void suspend() override;
 		void resume() override;
 
 		/**
@@ -565,6 +578,33 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 
 		void apply_default_mappings(Pci::Bdf const & bdf) {
 			_default_mappings.copy_stage2(_managed_root_table, bdf); }
+
+		/**
+		 * Io_mmu interface for IRQ remapping
+		 */
+		void unmap_irq(Pci::Bdf const & bdf, unsigned idx) override
+		{
+			if (!_remap_irqs)
+				return;
+
+			if (_irq_table.unmap(_irq_allocator, bdf, idx))
+				invalidator().invalidate_irq(idx, false);
+		}
+
+		Irq_info map_irq(Pci::Bdf   const & bdf,
+		                 Irq_info   const & info,
+		                 Irq_config const & config) override
+		{
+			if (!_remap_irqs)
+				return info;
+
+			return _irq_table.map(_irq_allocator, bdf, info, config, [&] (unsigned idx) {
+				if (caching_mode())
+					invalidator().invalidate_irq(idx, false);
+				else
+					flush_write_buffer();
+			});
+		}
 
 		/**
 		 * Io_mmu interface
@@ -583,7 +623,8 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 					                                                 buffer_registry,
 					                                                 _env,
 					                                                 ram_alloc,
-					                                                 _domain_allocator);
+					                                                 _domain_allocator,
+					                                                 _irq_allocator);
 
 			if (!read<Capability::Sagaw_3_level>() && read<Capability::Sagaw_5_level>())
 				error("IOMMU requires 5-level translation tables (not implemented)");
@@ -594,7 +635,8 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 				                                                 buffer_registry,
 				                                                 _env,
 				                                                 ram_alloc,
-				                                                 _domain_allocator);
+				                                                 _domain_allocator,
+				                                                 _irq_allocator);
 		}
 
 		/**
@@ -611,6 +653,7 @@ class Intel::Io_mmu : private Attached_mmio<0x800>,
 		~Io_mmu()
 		{
 			_domain_allocator.free(_default_domain);
+			_table_allocator.destruct<Irq_table>(_irq_table_phys);
 			_destroy_domains();
 		}
 };
@@ -661,9 +704,13 @@ class Intel::Io_mmu_factory : public Driver::Io_mmu_factory
 
 			device.for_each_io_mem([&] (unsigned idx, Range range, Device::Pci_bar, bool)
 			{
-				if (idx == 0)
-					new (alloc) Intel::Io_mmu(_env, io_mmu_devices, device.name(),
-					                          range, _table_allocator, irq_number);
+				try {
+					if (idx == 0)
+						new (alloc) Intel::Io_mmu(_env, io_mmu_devices, device.name(),
+						                          range, _table_allocator, irq_number);
+				} catch (...) {
+					error("Intel::Io_mmu failed to initialize - ", device.name());
+				}
 			});
 		}
 };

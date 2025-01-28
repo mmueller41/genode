@@ -19,6 +19,7 @@
 #include <base/log.h>
 #include <gui_session/connection.h>
 #include <libc/component.h>
+#include <libc/args.h>
 #include <os/pixel_rgb888.h>
 
 #pragma GCC diagnostic push
@@ -61,7 +62,7 @@ class Viewer
 			_env    { env },
 			_mode   { mode }
 		{
-			_gui.buffer(mode, false);
+			_gui.buffer(mode);
 
 			_fb_ds.construct(_env.rm(), _gui.framebuffer.dataspace());
 			_framebuffer = _fb_ds->local_addr<uint8_t>();
@@ -69,9 +70,7 @@ class Viewer
 
 		uint8_t *framebuffer() { return _framebuffer; }
 
-		void refresh() {
-			_gui.framebuffer.refresh(0, 0, _mode.area.w, _mode.area.h);
-		}
+		void refresh() { _gui.framebuffer.refresh({ { 0, 0 }, _mode.area }); }
 
 		Framebuffer::Mode const &mode() { return _mode; }
 };
@@ -277,10 +276,10 @@ class Main
 			if (_webcam.constructed())
 				_webcam.destruct();
 
+			Framebuffer::Mode mode { .area = { width, height }, .alpha = false };
 			if (enabled) {
 				try {
-					_webcam.construct(_env, Framebuffer::Mode {
-						.area = { width, height } }, frame_format, fps);
+					_webcam.construct(_env, mode, frame_format, fps);
 				}  catch (...) { }
 			}
 		}
@@ -297,7 +296,17 @@ class Main
 };
 
 
+extern char **environ;
+
 void Libc::Component::construct(Libc::Env &env)
 {
+	int argc    = 0;
+	char **argv = nullptr;
+	char **envp = nullptr;
+
+	populate_args_and_env(env, argc, argv, envp);
+
+	environ = envp;
+
 	static Main main(env);
 }

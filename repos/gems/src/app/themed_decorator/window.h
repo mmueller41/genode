@@ -286,8 +286,6 @@ class Decorator::Window : public Window_base, public Animator::Item
 			});
 
 			buffer.flush_surface();
-
-			buffer.gui.framebuffer.refresh(0, 0, buffer.size().w, buffer.size().h);
 		}
 
 		void _repaint_decorations()
@@ -300,17 +298,15 @@ class Decorator::Window : public Window_base, public Animator::Item
 
 		void _reallocate_gui_buffers()
 		{
-			bool const use_alpha = true;
-
 			Area const size_top_bottom = _visible_top_bottom_area(geometry().area);
 
 			if (size_top_bottom.w > _size_top_bottom.w
 			 || size_top_bottom.h > _size_top_bottom.h
 			 || !_buffer_top_bottom.constructed()) {
 
-				_gui_top_bottom.buffer(Framebuffer::Mode { .area = { size_top_bottom.w,
-				                                                     size_top_bottom.h } },
-				                       use_alpha);
+				_gui_top_bottom.buffer({ .area  = { size_top_bottom.w,
+				                                    size_top_bottom.h },
+				                         .alpha = true });
 
 				_buffer_top_bottom.construct(_gui_top_bottom, size_top_bottom,
 				                             _env.ram(), _env.rm());
@@ -324,9 +320,9 @@ class Decorator::Window : public Window_base, public Animator::Item
 			 || size_left_right.h > _size_left_right.h
 			 || !_buffer_left_right.constructed()) {
 
-				_gui_left_right.buffer(Framebuffer::Mode { .area = { size_left_right.w,
-				                                                     size_left_right.h } },
-				                       use_alpha);
+				_gui_left_right.buffer({ .area  = { size_left_right.w,
+				                                    size_left_right.h },
+				                         .alpha = true });
 
 				_buffer_left_right.construct(_gui_left_right, size_left_right,
 				                             _env.ram(), _env.rm());

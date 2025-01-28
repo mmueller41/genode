@@ -41,15 +41,12 @@ Vm::Vm(Irq::Pool              & user_irq_pool,
        Identity               & id)
 :
 	Kernel::Object { *this },
-	Cpu_job(Scheduler::Priority::min(), 0),
+	Cpu_context(cpu, Scheduler::Priority::min(), 0),
 	_user_irq_pool(user_irq_pool),
 	_state(*data.vcpu_state),
 	_context(context),
 	_id(id),
-	_vcpu_context(id.id, data)
-{
-	affinity(cpu);
-}
+	_vcpu_context(id.id, data) { }
 
 
 Vm::~Vm()
@@ -57,10 +54,10 @@ Vm::~Vm()
 }
 
 
-void Vm::proceed(Cpu & cpu)
+void Vm::proceed()
 {
 	using namespace Board;
-	cpu.switch_to(*_vcpu_context.regs);
+	_cpu().switch_to(*_vcpu_context.regs);
 
 	if (_vcpu_context.exit_reason == EXIT_INIT) {
 		_vcpu_context.regs->trapno = TRAP_VMSKIP;
@@ -83,7 +80,7 @@ void Vm::proceed(Cpu & cpu)
 }
 
 
-void Vm::exception(Cpu & cpu)
+void Vm::exception()
 {
 	using namespace Board;
 
@@ -121,18 +118,18 @@ void Vm::exception(Cpu & cpu)
 			 * it needs to handle an exit.
 			 */
 			if (_vcpu_context.exit_reason == EXIT_PAUSED)
-				_interrupt(_user_irq_pool, cpu.id());
+				_interrupt(_user_irq_pool);
 			else
 				pause = true;
 			break;
 		case Cpu_state::INTERRUPTS_START ... Cpu_state::INTERRUPTS_END:
-			_interrupt(_user_irq_pool, cpu.id());
+			_interrupt(_user_irq_pool);
 			break;
 		case TRAP_VMSKIP:
 			/* vCPU is running for the first time */
-			_vcpu_context.initialize(cpu,
+			_vcpu_context.initialize(_cpu(),
 			    reinterpret_cast<addr_t>(_id.table));
-			_vcpu_context.tsc_aux_host = cpu.id();
+			_vcpu_context.tsc_aux_host = _cpu().id();
 			/*
 			 * We set the artificial startup exit code, stop the
 			 * vCPU thread and ask the VMM to handle it.
@@ -222,7 +219,7 @@ void Board::Vcpu_context::read_vcpu_state(Vcpu_state &state)
 	if (state.fpu.charged()) {
 		state.fpu.with_state(
 		    [&](Vcpu_state::Fpu::State const &fpu) {
-			    memcpy((void *) regs->fpu_context(), &fpu, sizeof(fpu));
+			    memcpy((void *) regs->fpu_context(), &fpu, regs->fpu_size());
 		    });
 	}
 }
@@ -233,7 +230,8 @@ void Board::Vcpu_context::write_vcpu_state(Vcpu_state &state)
 	state.exit_reason = (unsigned) exit_reason;
 
 	state.fpu.charge([&](Vcpu_state::Fpu::State &fpu) {
-		memcpy(&fpu, (void *) regs->fpu_context(), sizeof(fpu));
+		memcpy(&fpu, (void *) regs->fpu_context(), regs->fpu_size());
+		return regs->fpu_size();
 	});
 
 	/* SVM will overwrite rax but VMX doesn't. */
@@ -255,7 +253,7 @@ void Board::Vcpu_context::write_vcpu_state(Vcpu_state &state)
 	state.r14.charge(regs->r14);
 	state.r15.charge(regs->r15);
 
-	state.tsc.charge(Hw::Lapic::rdtsc());
+	state.tsc.charge(Hw::Tsc::rdtsc());
 
 	tsc_aux_guest = Cpu::Ia32_tsc_aux::read();
 	state.tsc_aux.charge(tsc_aux_guest);

@@ -18,7 +18,6 @@
 /* core includes */
 #include <platform_thread.h>
 #include <platform.h>
-#include <core_env.h>
 
 /* Fiasco.OC includes */
 #include <foc/syscall.h>
@@ -210,7 +209,7 @@ Foc_thread_state Platform_thread::state()
 		s = _pager_obj->state.state;
 
 	s.kcap = _gate.remote;
-	s.id   = (uint16_t)_gate.local.local_name();
+	s.id   = Cap_index::id_t(_gate.local.local_name());
 	s.utcb = _utcb;
 
 	return s;
@@ -278,7 +277,8 @@ void Platform_thread::_finalize_construction()
 }
 
 
-Platform_thread::Platform_thread(Platform_pd &pd, size_t, const char *name, unsigned prio,
+Platform_thread::Platform_thread(Platform_pd &pd, Rpc_entrypoint &, Ram_allocator &,
+                                 Region_map &, size_t, const char *name, unsigned prio,
                                  Affinity::Location location, addr_t)
 :
 	_name(name),

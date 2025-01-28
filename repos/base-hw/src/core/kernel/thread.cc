@@ -33,45 +33,42 @@ extern "C" void _core_start(void);
 using namespace Kernel;
 
 
-void Thread::_ipc_alloc_recv_caps(unsigned cap_count)
+Thread::Ipc_alloc_result Thread::_ipc_alloc_recv_caps(unsigned cap_count)
 {
 	using Allocator = Genode::Allocator;
+	using Result    = Ipc_alloc_result;
 
 	Allocator &slab = pd().platform_pd().capability_slab();
 	for (unsigned i = 0; i < cap_count; i++) {
 		if (_obj_id_ref_ptr[i] != nullptr)
 			continue;
 
-		slab.try_alloc(sizeof(Object_identity_reference)).with_result(
+		Result const result =
+			slab.try_alloc(sizeof(Object_identity_reference)).convert<Result>(
 
 			[&] (void *ptr) {
-				_obj_id_ref_ptr[i] = ptr; },
+				_obj_id_ref_ptr[i] = ptr;
+				return Result::OK; },
 
 			[&] (Allocator::Alloc_error e) {
 
-				switch (e) {
-				case Allocator::Alloc_error::DENIED:
-
-					/*
-					 * Slab is exhausted, reflect condition to the client.
-					 */
-					throw Genode::Out_of_ram();
-
-				case Allocator::Alloc_error::OUT_OF_CAPS:
-				case Allocator::Alloc_error::OUT_OF_RAM:
-
-					/*
-					 * These conditions cannot happen because the slab
-					 * does not try to grow automatically. It is
-					 * explicitely expanded by the client as response to
-					 * the 'Out_of_ram' condition above.
-					 */
+				/*
+				 * Conditions other than DENIED cannot happen because the slab
+				 * does not try to grow automatically. It is explicitely
+				 * expanded by the client as response to the EXHAUSTED return
+				 * value.
+				 */
+				if (e != Allocator::Alloc_error::DENIED)
 					Genode::raw("unexpected recv_caps allocation failure");
-				}
+
+				return Result::EXHAUSTED;
 			}
 		);
+		if (result == Result::EXHAUSTED)
+			return result;
 	}
 	_ipc_rcv_caps = cap_count;
+	return Result::OK;
 }
 
 
@@ -87,11 +84,20 @@ void Thread::_ipc_free_recv_caps()
 }
 
 
-void Thread::_ipc_init(Genode::Native_utcb &utcb, Thread &starter)
+Thread::Ipc_alloc_result Thread::_ipc_init(Genode::Native_utcb &utcb, Thread &starter)
 {
 	_utcb = &utcb;
-	_ipc_alloc_recv_caps((unsigned)(starter._utcb->cap_cnt()));
-	ipc_copy_msg(starter);
+
+	switch (_ipc_alloc_recv_caps((unsigned)(starter._utcb->cap_cnt()))) {
+
+	case Ipc_alloc_result::OK:
+		ipc_copy_msg(starter);
+		break;
+
+	case Ipc_alloc_result::EXHAUSTED:
+		return Ipc_alloc_result::EXHAUSTED;
+	}
+	return Ipc_alloc_result::OK;
 }
 
 
@@ -163,7 +169,7 @@ Thread::Destroy::Destroy(Thread & caller, Core::Kernel_object<Thread> & to_delet
 :
 	caller(caller), thread_to_destroy(to_delete)
 {
-	thread_to_destroy->_cpu->work_list().insert(&_le);
+	thread_to_destroy->_cpu().work_list().insert(&_le);
 	caller._become_inactive(AWAITS_RESTART);
 }
 
@@ -171,7 +177,7 @@ Thread::Destroy::Destroy(Thread & caller, Core::Kernel_object<Thread> & to_delet
 void
 Thread::Destroy::execute(Cpu &)
 {
-	thread_to_destroy->_cpu->work_list().remove(&_le);
+	thread_to_destroy->_cpu().work_list().remove(&_le);
 	thread_to_destroy.destruct();
 	caller._restart();
 }
@@ -233,7 +239,8 @@ void Thread::ipc_send_request_succeeded()
 	assert(_state == AWAITS_IPC);
 	user_arg_0(0);
 	_state = ACTIVE;
-	if (!Cpu_job::own_share_active()) { _activate_used_shares(); }
+	_activate();
+	helping_finished();
 }
 
 
@@ -242,7 +249,8 @@ void Thread::ipc_send_request_failed()
 	assert(_state == AWAITS_IPC);
 	user_arg_0(-1);
 	_state = ACTIVE;
-	if (!Cpu_job::own_share_active()) { _activate_used_shares(); }
+	_activate();
+	helping_finished();
 }
 
 
@@ -262,41 +270,21 @@ void Thread::ipc_await_request_failed()
 }
 
 
-void Thread::_deactivate_used_shares()
-{
-	Cpu_job::_deactivate_own_share();
-	_ipc_node.for_each_helper([&] (Thread &thread) {
-		thread._deactivate_used_shares(); });
-}
-
-
-void Thread::_activate_used_shares()
-{
-	Cpu_job::_activate_own_share();
-	_ipc_node.for_each_helper([&] (Thread &thread) {
-		thread._activate_used_shares(); });
-}
-
-
 void Thread::_become_active()
 {
-	if (_state != ACTIVE && !_paused) { _activate_used_shares(); }
+	if (_state != ACTIVE && !_paused) Cpu_context::_activate();
 	_state = ACTIVE;
 }
 
 
 void Thread::_become_inactive(State const s)
 {
-	if (_state == ACTIVE && !_paused) { _deactivate_used_shares(); }
+	if (_state == ACTIVE && !_paused) Cpu_context::_deactivate();
 	_state = s;
 }
 
 
 void Thread::_die() { _become_inactive(DEAD); }
-
-
-Cpu_job * Thread::helping_destination() {
-	return &_ipc_node.helping_destination(); }
 
 
 size_t Thread::_core_to_kernel_quota(size_t const quota) const
@@ -305,7 +293,7 @@ size_t Thread::_core_to_kernel_quota(size_t const quota) const
 
 	/* we assert at timer construction that cpu_quota_us in ticks fits size_t */
 	size_t const ticks = (size_t)
-		_cpu->timer().us_to_ticks(Kernel::cpu_quota_us);
+		_cpu().timer().us_to_ticks(Kernel::cpu_quota_us);
 	return Cpu_session::quota_lim_downscale(quota, ticks);
 }
 
@@ -313,24 +301,26 @@ size_t Thread::_core_to_kernel_quota(size_t const quota) const
 void Thread::_call_thread_quota()
 {
 	Thread * const thread = (Thread *)user_arg_1();
-	thread->Cpu_job::quota((unsigned)(_core_to_kernel_quota(user_arg_2())));
+	thread->Cpu_context::quota((unsigned)(_core_to_kernel_quota(user_arg_2())));
 }
 
 
 void Thread::_call_start_thread()
 {
-	/* lookup CPU */
-	Cpu & cpu = _cpu_pool.cpu((unsigned)user_arg_2());
 	user_arg_0(0);
 	Thread &thread = *(Thread*)user_arg_1();
 
 	assert(thread._state == AWAITS_START);
 
-	thread.affinity(cpu);
-
 	/* join protection domain */
-	thread._pd = (Pd *) user_arg_3();
-	thread._ipc_init(*(Native_utcb *)user_arg_4(), *this);
+	thread._pd = (Pd *) user_arg_2();
+	switch (thread._ipc_init(*(Native_utcb *)user_arg_3(), *this)) {
+	case Ipc_alloc_result::OK:
+		break;
+	case Ipc_alloc_result::EXHAUSTED:
+		user_arg_0(-2);
+		return;
+	}
 
 	/*
 	 * Sanity check core threads!
@@ -344,7 +334,8 @@ void Thread::_call_start_thread()
 	 * semantic changes, and additional core threads are started
 	 * across cpu cores.
 	 */
-	if (thread._pd == &_core_pd && cpu.id() != _cpu_pool.primary_cpu().id())
+	if (thread._pd == &_core_pd &&
+	    thread._cpu().id() != _cpu_pool.primary_cpu().id())
 	        Genode::raw("Error: do not start core threads"
 	                    " on CPU cores different than boot cpu");
 
@@ -355,8 +346,8 @@ void Thread::_call_start_thread()
 void Thread::_call_pause_thread()
 {
 	Thread &thread = *reinterpret_cast<Thread*>(user_arg_1());
-	if (thread._state == ACTIVE && !thread._paused) {
-		thread._deactivate_used_shares(); }
+	if (thread._state == ACTIVE && !thread._paused)
+		thread._deactivate();
 
 	thread._paused = true;
 }
@@ -365,8 +356,8 @@ void Thread::_call_pause_thread()
 void Thread::_call_resume_thread()
 {
 	Thread &thread = *reinterpret_cast<Thread*>(user_arg_1());
-	if (thread._state == ACTIVE && thread._paused) {
-		thread._activate_used_shares(); }
+	if (thread._state == ACTIVE && thread._paused)
+		thread._activate();
 
 	thread._paused = false;
 }
@@ -394,6 +385,7 @@ void Thread::_call_restart_thread()
 		_die();
 		return;
 	}
+
 	user_arg_0(thread._restart());
 }
 
@@ -401,7 +393,10 @@ void Thread::_call_restart_thread()
 bool Thread::_restart()
 {
 	assert(_state == ACTIVE || _state == AWAITS_RESTART);
-	if (_state != AWAITS_RESTART) { return false; }
+
+	if (_state == ACTIVE && _exception_state == NO_EXCEPTION)
+		return false;
+
 	_exception_state = NO_EXCEPTION;
 	_become_active();
 	return true;
@@ -439,7 +434,7 @@ void Thread::_cancel_blocking()
 
 void Thread::_call_yield_thread()
 {
-	Cpu_job::_yield();
+	Cpu_context::_yield();
 }
 
 
@@ -449,12 +444,11 @@ void Thread::_call_delete_thread()
 		*(Core::Kernel_object<Thread>*)user_arg_1();
 
 	/**
-	 * Delete a thread immediately if it has no cpu assigned yet,
-	 * or it is assigned to this cpu, or the assigned cpu did not scheduled it.
+	 * Delete a thread immediately if it is assigned to this cpu,
+	 * or the assigned cpu did not scheduled it.
 	 */
-	if (!to_delete->_cpu ||
-	    (to_delete->_cpu->id() == Cpu::executing_id() ||
-	     &to_delete->_cpu->scheduled_job() != &*to_delete)) {
+	if (to_delete->_cpu().id() == Cpu::executing_id() ||
+	    &to_delete->_cpu().current_context() != &*to_delete) {
 		_call_delete<Thread>();
 		return;
 	}
@@ -463,7 +457,7 @@ void Thread::_call_delete_thread()
 	 * Construct a cross-cpu work item and send an IPI
 	 */
 	_destroy.construct(*this, to_delete);
-	to_delete->_cpu->trigger_ip_interrupt();
+	to_delete->_cpu().trigger_ip_interrupt();
 }
 
 
@@ -472,8 +466,8 @@ void Thread::_call_delete_pd()
 	Core::Kernel_object<Pd> & pd =
 		*(Core::Kernel_object<Pd>*)user_arg_1();
 
-	if (_cpu->active(pd->mmu_regs))
-		_cpu->switch_to(_core_pd.mmu_regs);
+	if (_cpu().active(pd->mmu_regs))
+		_cpu().switch_to(_core_pd.mmu_regs);
 
 	_call_delete<Pd>();
 }
@@ -482,7 +476,14 @@ void Thread::_call_delete_pd()
 void Thread::_call_await_request_msg()
 {
 	if (_ipc_node.ready_to_wait()) {
-		_ipc_alloc_recv_caps((unsigned)user_arg_1());
+
+		switch (_ipc_alloc_recv_caps((unsigned)user_arg_1())) {
+		case Ipc_alloc_result::OK:
+			break;
+		case Ipc_alloc_result::EXHAUSTED:
+			user_arg_0(-2);
+			return;
+		}
 		_ipc_node.wait();
 		if (_ipc_node.waiting()) {
 			_become_inactive(AWAITS_IPC);
@@ -498,7 +499,7 @@ void Thread::_call_await_request_msg()
 
 void Thread::_call_timeout()
 {
-	Timer & t = _cpu->timer();
+	Timer & t = _cpu().timer();
 	_timeout_sigid = (Kernel::capid_t)user_arg_2();
 	t.set_timeout(this, t.us_to_ticks(user_arg_1()));
 }
@@ -506,13 +507,13 @@ void Thread::_call_timeout()
 
 void Thread::_call_timeout_max_us()
 {
-	user_ret_time(_cpu->timer().timeout_max_us());
+	user_ret_time(_cpu().timer().timeout_max_us());
 }
 
 
 void Thread::_call_time()
 {
-	Timer & t = _cpu->timer();
+	Timer & t = _cpu().timer();
 	user_ret_time(t.ticks_to_us(t.time()));
 }
 
@@ -521,11 +522,8 @@ void Thread::timeout_triggered()
 {
 	Signal_context * const c =
 		pd().cap_tree().find<Signal_context>(_timeout_sigid);
-	if (!c || !c->can_submit(1)) {
-		Genode::raw(*this, ": failed to submit timeout signal");
-		return;
-	}
-	c->submit(1);
+	if (c) c->submit(1);
+	else Genode::warning(*this, ": failed to submit timeout signal");
 }
 
 
@@ -539,19 +537,26 @@ void Thread::_call_send_request_msg()
 		_become_inactive(DEAD);
 		return;
 	}
-	bool const help = Cpu_job::_helping_possible(*dst);
+	bool const help = Cpu_context::_helping_possible(*dst);
 	oir = oir->find(dst->pd());
 
 	if (!_ipc_node.ready_to_send()) {
 		Genode::raw("IPC send request: bad state");
 	} else {
-		_ipc_alloc_recv_caps((unsigned)user_arg_2());
-		_ipc_capid    = oir ? oir->capid() : cap_id_invalid();
-		_ipc_node.send(dst->_ipc_node, help);
+		switch (_ipc_alloc_recv_caps((unsigned)user_arg_2())) {
+		case Ipc_alloc_result::OK:
+			break;
+		case Ipc_alloc_result::EXHAUSTED:
+			user_arg_0(-2);
+			return;
+		}
+		_ipc_capid = oir ? oir->capid() : cap_id_invalid();
+		_ipc_node.send(dst->_ipc_node);
 	}
 
 	_state = AWAITS_IPC;
-	if (!help || !dst->own_share_active()) { _deactivate_used_shares(); }
+	if (help) Cpu_context::_help(*dst);
+	if (!help || !dst->ready()) _deactivate();
 }
 
 
@@ -568,7 +573,9 @@ void Thread::_call_pager()
 {
 	/* override event route */
 	Thread &thread = *(Thread *)user_arg_1();
-	thread._pager = pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_2());
+	Thread &pager  = *(Thread *)user_arg_2();
+	Signal_context &sc = *pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_3());
+	thread._fault_context.construct(pager, sc);
 }
 
 
@@ -592,12 +599,11 @@ void Thread::_call_await_signal()
 		return;
 	}
 	/* register handler at the receiver */
-	if (!r->can_add_handler(_signal_handler)) {
+	if (!r->add_handler(_signal_handler)) {
 		Genode::raw("failed to register handler at signal receiver");
 		user_arg_0(-1);
 		return;
 	}
-	r->add_handler(_signal_handler);
 	user_arg_0(0);
 }
 
@@ -614,11 +620,10 @@ void Thread::_call_pending_signal()
 	}
 
 	/* register handler at the receiver */
-	if (!r->can_add_handler(_signal_handler)) {
+	if (!r->add_handler(_signal_handler)) {
 		user_arg_0(-1);
 		return;
 	}
-	r->add_handler(_signal_handler);
 
 	if (_state == AWAITS_SIGNAL) {
 		_cancel_blocking();
@@ -653,20 +658,7 @@ void Thread::_call_submit_signal()
 {
 	/* lookup signal context */
 	Signal_context * const c = pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_1());
-	if(!c) {
-		/* cannot submit unknown signal context */
-		user_arg_0(-1);
-		return;
-	}
-
-	/* trigger signal context */
-	if (!c->can_submit((unsigned)user_arg_2())) {
-		Genode::raw("failed to submit signal context");
-		user_arg_0(-1);
-		return;
-	}
-	c->submit((unsigned)user_arg_2());
-	user_arg_0(0);
+	if(c) c->submit((unsigned)user_arg_2());
 }
 
 
@@ -674,13 +666,8 @@ void Thread::_call_ack_signal()
 {
 	/* lookup signal context */
 	Signal_context * const c = pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_1());
-	if (!c) {
-		Genode::raw(*this, ": cannot ack unknown signal context");
-		return;
-	}
-
-	/* acknowledge */
-	c->ack();
+	if (c) c->ack();
+	else Genode::warning(*this, ": cannot ack unknown signal context");
 }
 
 
@@ -688,19 +675,8 @@ void Thread::_call_kill_signal_context()
 {
 	/* lookup signal context */
 	Signal_context * const c = pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_1());
-	if (!c) {
-		Genode::raw(*this, ": cannot kill unknown signal context");
-		user_arg_0(-1);
-		return;
-	}
-
-	/* kill signal context */
-	if (!c->can_kill()) {
-		Genode::raw("failed to kill signal context");
-		user_arg_0(-1);
-		return;
-	}
-	c->kill(_signal_context_killer);
+	if (c) c->kill(_signal_context_killer);
+	else Genode::warning(*this, ": cannot kill unknown signal context");
 }
 
 
@@ -719,7 +695,7 @@ void Thread::_call_new_irq()
 		(Genode::Irq_session::Polarity) (user_arg_3() & 0b11);
 
 	_call_new<User_irq>((unsigned)user_arg_2(), trigger, polarity, *c,
-	                    _cpu->pic(), _user_irq_pool);
+	                    _cpu().pic(), _user_irq_pool);
 }
 
 
@@ -820,10 +796,27 @@ void Thread::_call_single_step() {
 }
 
 
+void Thread::_call_ack_pager_signal()
+{
+	Signal_context * const c = pd().cap_tree().find<Signal_context>((Kernel::capid_t)user_arg_1());
+	if (!c)
+		Genode::raw(*this, ": cannot ack unknown signal context");
+	else
+		c->ack();
+
+	Thread &thread = *(Thread*)user_arg_2();
+	thread.helping_finished();
+
+	bool resolved = user_arg_3() ||
+	                thread._exception_state == NO_EXCEPTION;
+	if (resolved) thread._restart();
+	else          thread._become_inactive(AWAITS_RESTART);
+}
+
+
+
 void Thread::_call()
 {
-	try {
-
 	/* switch over unrestricted kernel calls */
 	unsigned const call_id = (unsigned)user_arg_0();
 	switch (call_id) {
@@ -863,13 +856,15 @@ void Thread::_call()
 	switch (call_id) {
 	case call_id_new_thread():
 		_call_new<Thread>(_addr_space_id_alloc, _user_irq_pool, _cpu_pool,
-		                  _core_pd, (unsigned) user_arg_2(),
-		                  (unsigned) _core_to_kernel_quota(user_arg_3()),
-		                  (char const *) user_arg_4(), USER);
+		                  _cpu_pool.cpu((unsigned)user_arg_2()),
+		                  _core_pd, (unsigned) user_arg_3(),
+		                  (unsigned) _core_to_kernel_quota(user_arg_4()),
+		                  (char const *) user_arg_5(), USER);
 		return;
 	case call_id_new_core_thread():
 		_call_new<Thread>(_addr_space_id_alloc, _user_irq_pool, _cpu_pool,
-		                  _core_pd, (char const *) user_arg_2());
+		                  _cpu_pool.cpu((unsigned)user_arg_2()),
+		                  _core_pd, (char const *) user_arg_3());
 		return;
 	case call_id_thread_quota():           _call_thread_quota(); return;
 	case call_id_delete_thread():          _call_delete_thread(); return;
@@ -902,40 +897,70 @@ void Thread::_call()
 	case call_id_set_cpu_state():          _call_set_cpu_state(); return;
 	case call_id_exception_state():        _call_exception_state(); return;
 	case call_id_single_step():            _call_single_step(); return;
+	case call_id_ack_pager_signal():       _call_ack_pager_signal(); return;
 	default:
 		Genode::raw(*this, ": unknown kernel call");
 		_die();
 		return;
 	}
-	} catch (Genode::Allocator::Out_of_memory &e) { user_arg_0(-2); }
+}
+
+
+void Thread::_signal_to_pager()
+{
+	if (!_fault_context.constructed()) {
+		Genode::warning(*this, " could not send signal to pager");
+		_die();
+		return;
+	}
+
+	/* first signal to pager to wake it up */
+	_fault_context->sc.submit(1);
+
+	/* only help pager thread if runnable and scheduler allows it */
+	bool const help = Cpu_context::_helping_possible(_fault_context->pager)
+	                  && (_fault_context->pager._state == ACTIVE);
+	if (help) Cpu_context::_help(_fault_context->pager);
+	else _become_inactive(AWAITS_RESTART);
 }
 
 
 void Thread::_mmu_exception()
 {
-	_become_inactive(AWAITS_RESTART);
+	using namespace Genode;
+	using Genode::log;
+
 	_exception_state = MMU_FAULT;
 	Cpu::mmu_fault(*regs, _fault);
 	_fault.ip = regs->ip;
 
 	if (_fault.type == Thread_fault::UNKNOWN) {
-		Genode::raw(*this, " raised unhandled MMU fault ", _fault);
+		Genode::warning(*this, " raised unhandled MMU fault ", _fault);
+		_die();
 		return;
 	}
 
-	if (_type != USER)
-		Genode::raw(*this, " raised a fault, which should never happen ",
-		            _fault);
+	if (_type != USER) {
+		error(*this, " raised a fault, which should never happen ",
+		              _fault);
+		log("Register dump: ", *regs);
+		log("Backtrace:");
 
-	if (_pager && _pager->can_submit(1)) {
-		_pager->submit(1);
+		Const_byte_range_ptr const stack {
+			(char const*)Hw::Mm::core_stack_area().base,
+			 Hw::Mm::core_stack_area().size };
+		regs->for_each_return_address(stack, [&] (void **p) {
+			log(*p); });
+		_die();
+		return;
 	}
+
+	_signal_to_pager();
 }
 
 
 void Thread::_exception()
 {
-	_become_inactive(AWAITS_RESTART);
 	_exception_state = EXCEPTION;
 
 	if (_type != USER) {
@@ -943,18 +968,14 @@ void Thread::_exception()
 		_die();
 	}
 
-	if (_pager && _pager->can_submit(1)) {
-		_pager->submit(1);
-	} else {
-		Genode::raw(*this, " could not send signal to pager on exception");
-		_die();
-	}
+	_signal_to_pager();
 }
 
 
 Thread::Thread(Board::Address_space_id_allocator &addr_space_id_alloc,
                Irq::Pool                         &user_irq_pool,
                Cpu_pool                          &cpu_pool,
+               Cpu                               &cpu,
                Pd                                &core_pd,
                unsigned                    const  priority,
                unsigned                    const  quota,
@@ -962,7 +983,7 @@ Thread::Thread(Board::Address_space_id_allocator &addr_space_id_alloc,
                Type                               type)
 :
 	Kernel::Object       { *this },
-	Cpu_job              { priority, quota },
+	Cpu_context          { cpu, priority, quota },
 	_addr_space_id_alloc { addr_space_id_alloc },
 	_user_irq_pool       { user_irq_pool },
 	_cpu_pool            { cpu_pool },
@@ -999,8 +1020,8 @@ Core_main_thread(Board::Address_space_id_allocator &addr_space_id_alloc,
                  Cpu_pool                          &cpu_pool,
                  Pd                                &core_pd)
 :
-	Core_object<Thread>(
-		core_pd, addr_space_id_alloc, user_irq_pool, cpu_pool, core_pd, "core")
+	Core_object<Thread>(core_pd, addr_space_id_alloc, user_irq_pool, cpu_pool,
+	                    cpu_pool.primary_cpu(), core_pd, "core")
 {
 	using namespace Core;
 
@@ -1016,7 +1037,6 @@ Core_main_thread(Board::Address_space_id_allocator &addr_space_id_alloc,
 	regs->sp = (addr_t)&__initial_stack_base[0] + DEFAULT_STACK_SIZE;
 	regs->ip = (addr_t)&_core_start;
 
-	affinity(_cpu_pool.primary_cpu());
 	_utcb       = &_utcb_instance;
 	Thread::_pd = &core_pd;
 	_become_active();

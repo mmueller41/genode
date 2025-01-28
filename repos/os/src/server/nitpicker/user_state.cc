@@ -93,24 +93,27 @@ void User_state::_handle_input_event(Input::Event ev)
 		_last_seq_number.construct(seq); });
 
 	/* transparently convert relative into absolute motion event */
-	ev.handle_relative_motion([&] (int x, int y) {
-
-		int const ox = _pointer_pos.x,
-		          oy = _pointer_pos.y;
-
-		int const ax = max(0, min((int)_view_stack.size().w - 1, ox + x)),
-		          ay = max(0, min((int)_view_stack.size().h - 1, oy + y));
-
-		ev = Absolute_motion{ax, ay};
-	});
+	if (!exclusive_input())
+		ev.handle_relative_motion([&] (int x, int y) {
+			_pointer.with_result(
+				[&] (Point orig_pos) {
+					Point const p = orig_pos + Point { x, y };
+					ev = Absolute_motion { p.x, p.y }; },
+				[&] (Nowhere) { }); });
 
 	/* respond to motion events by updating the pointer position */
 	ev.handle_absolute_motion([&] (int x, int y) {
-		_pointer_pos = Point(x, y); });
+		_try_move_pointer({ x, y });
+
+		/* enforce sanitized position (prevent move to invisible areas) */
+		_pointer.with_result(
+			[&] (Point p) { ev = Absolute_motion { p.x, p.y }; },
+			[&] (Nowhere) { ev = { }; });
+	});
 
 	/* let pointer position correspond to most recent touch position */
 	ev.handle_touch([&] (Input::Touch_id, float x, float y) {
-		_pointer_pos = Point((int)x, (int)y); });
+		_try_move_pointer({ int(x), int(y) }); });
 
 	/* track key states, drop double press/release events */
 	{
@@ -188,9 +191,11 @@ void User_state::_handle_input_event(Input::Event ev)
 				_focused->submit_input_event(Focus_leave());
 
 			if (_hovered) {
-				_hovered->submit_input_event(Absolute_motion{_pointer_pos.x,
-				                                             _pointer_pos.y});
-				_hovered->submit_input_event(Focus_enter());
+				_pointer.with_result(
+					[&] (Point p) {
+						_hovered->submit_input_event(Absolute_motion{p.x, p.y});
+						_hovered->submit_input_event(Focus_enter()); },
+					[&] (Nowhere) { });
 			}
 
 			if (_hovered->has_transient_focusable_domain()) {
@@ -229,8 +234,17 @@ void User_state::_handle_input_event(Input::Event ev)
 			global_receiver = _global_keys.global_receiver(keycode);
 
 		if (global_receiver) {
+			bool const orig_global_key_sequence = _global_key_sequence;
 			_global_key_sequence = true;
 			_input_receiver      = global_receiver;
+
+			/* deliver current pointer position at start of key sequence */
+			if (orig_global_key_sequence != _global_key_sequence)
+				_pointer.with_result(
+					[&] (Point at) {
+						Absolute_motion motion { at.x, at.y };
+						_input_receiver->submit_input_event(motion); },
+					[&] (Nowhere) { });
 		}
 
 		/*
@@ -244,27 +258,37 @@ void User_state::_handle_input_event(Input::Event ev)
 	/*
 	 * Deliver event to session
 	 */
-	bool const forward_to_session = (ev.absolute_motion() || ev.wheel() ||
-	                                 ev.touch() || ev.touch_release() ||
-	                                 ev.seq_number());
+	bool const forward_to_session = ev.absolute_motion() || ev.relative_motion()
+	                             || ev.touch() || ev.touch_release()
+	                             || ev.wheel() || ev.seq_number();
 	if (forward_to_session) {
+
+		View_owner *receiver = _input_receiver;
 
 		if (_key_cnt == 0) {
 
-			if (_hovered) {
+			auto abs_motion_receiver = [&] () -> View_owner *
+			{
+				if (!_hovered)
+					return nullptr;
 
-				/*
-				 * Unless the domain of the pointed session is configured to
-				 * always receive hover events, we deliver motion events only
-				 * to the focused domain.
-				 */
-				if (_hovered->hover_always()
-				 || _hovered->has_same_domain(_focused))
-					_hovered->submit_input_event(ev);
-			}
+				bool const permitted = _hovered->hover_always()
+				                    || _hovered->has_same_domain(_focused);
+				return permitted ? _hovered : nullptr;
+			};
 
-		} else if (_input_receiver)
-			_input_receiver->submit_input_event(ev);
+			if (ev.absolute_motion())
+				receiver = abs_motion_receiver();
+		}
+
+		/*
+		 * Route relative motion (exclusive input) to the focused client
+		 */
+		if (ev.relative_motion() && _focused)
+			receiver = _focused;
+
+		if (receiver)
+			receiver->submit_input_event(ev);
 	}
 
 	/*
@@ -276,7 +300,7 @@ void User_state::_handle_input_event(Input::Event ev)
 		if (!_input_receiver)
 			return;
 
-		if (!_mouse_button(key)
+		if (!_mouse_button(key) || _global_key_sequence
 		 || (_hovered
 		  && (_hovered->has_focusable_domain()
 		   || _hovered->has_same_domain(_focused))))
@@ -295,8 +319,9 @@ void User_state::_handle_input_event(Input::Event ev)
 
 		update_hover();
 
-		if (_drag && _input_receiver && (_input_receiver != _hovered))
-			_input_receiver->submit_input_event(Hover_leave());
+		if (_drag || _global_key_sequence)
+			if (_input_receiver && (_input_receiver != _hovered))
+				_input_receiver->submit_input_event(Hover_leave());
 
 		_drag = false;
 
@@ -311,7 +336,7 @@ void User_state::_handle_input_event(Input::Event ev)
 User_state::Handle_input_result
 User_state::handle_input_events(Input_batch batch)
 {
-	Point              const old_pointer_pos    = _pointer_pos;
+	Pointer            const old_pointer        = _pointer;
 	View_owner       * const old_hovered        = _hovered;
 	View_owner const * const old_focused        = _focused;
 	View_owner const * const old_input_receiver = _input_receiver;
@@ -389,13 +414,23 @@ User_state::handle_input_events(Input_batch batch)
 		_last_clicked_redeliver = false;
 	}
 
+	auto pointer_changed = [&]
+	{
+		return old_pointer.convert<bool>(
+			[&] (Point const old) {
+				return _pointer.convert<bool>(
+					[&] (Point const p) { return p != old; },
+					[&] (Nowhere)       { return true; }); },
+			[&] (Nowhere) { return _pointer.ok(); });
+	};
+
 	return {
 		.hover_changed        = _hovered != old_hovered,
 		.focus_changed        = (_focused != old_focused) ||
 		                        (_input_receiver != old_input_receiver),
 		.key_state_affected   = key_state_affected,
 		.button_activity      = button_activity,
-		.motion_activity      = (_pointer_pos != old_pointer_pos) || touch_occurred,
+		.motion_activity      = pointer_changed() || touch_occurred,
 		.key_pressed          = _key_pressed(),
 		.last_clicked_changed = last_clicked_changed
 	};
@@ -411,8 +446,8 @@ void User_state::report_keystate(Xml_generator &xml) const
 
 void User_state::report_pointer_position(Xml_generator &xml) const
 {
-	xml.attribute("xpos", _pointer_pos.x);
-	xml.attribute("ypos", _pointer_pos.y);
+	_pointer.with_result([&] (Point p) { gen_attr(xml, p); },
+	                     [&] (Nowhere) { });
 }
 
 
@@ -486,9 +521,12 @@ User_state::Update_hover_result User_state::update_hover()
 		return { .hover_changed = false };
 
 	View_owner * const old_hovered  = _hovered;
-	View const * const pointed_view = _view_stack.find_view(_pointer_pos);
 
-	_hovered = pointed_view ? &pointed_view->owner() : nullptr;
+	_hovered = _pointer.convert<View_owner *>(
+		[&] (Point const p) {
+			View const * const pointed_view = _view_stack.find_view(p);
+			return pointed_view ? &pointed_view->owner() : nullptr; },
+		[&] (Nowhere) { return nullptr; });
 
 	/*
 	 * Deliver a leave event if pointed-to session changed, notify newly
@@ -499,8 +537,10 @@ User_state::Update_hover_result User_state::update_hover()
 			old_hovered->submit_input_event(Hover_leave());
 
 		if (_hovered)
-			_hovered->submit_input_event(Absolute_motion{_pointer_pos.x,
-			                                             _pointer_pos.y});
+			_pointer.with_result(
+				[&] (Point p) {
+					_hovered->submit_input_event(Absolute_motion{p.x, p.y}); },
+				[&] (Nowhere) { });
 	}
 
 	return { .hover_changed = (_hovered != old_hovered) };

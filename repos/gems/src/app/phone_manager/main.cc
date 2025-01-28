@@ -210,6 +210,8 @@ struct Sculpt::Main : Input_event_handler,
 		.mmc   = false,
 		.modem = false, /* depends on presence of battery */
 		.nic   = false,
+
+		.fb_on_dedicated_cpu = false
 	};
 
 	Drivers _drivers { _env, _child_states, *this, *this };
@@ -376,10 +378,11 @@ struct Sculpt::Main : Input_event_handler,
 	 */
 	bool ap_list_hovered() const override
 	{
-		return _main_view.if_hovered([&] (Hovered_at const &at) {
-			return _network_widget.if_hovered(at, [&] (Hovered_at const &at) {
-				return _network_widget.hosted.if_hovered(at, [&] (Hovered_at const &at) {
-					return _network_widget.hosted.ap_list_hovered(at); }); }); });
+		/*
+		 * For now always report false so that scan-results
+		 * will always be presented.
+		 */
+		return false;
 	}
 
 	/**
@@ -650,6 +653,8 @@ struct Sculpt::Main : Input_event_handler,
 
 	bool _leitzentrale_visible = false;
 
+	Fb_connectors::Name _hovered_display { };
+
 	Color const _background_color { 62, 62, 67, 255 };
 
 	Affinity::Space _affinity_space { 1, 1 };
@@ -811,8 +816,8 @@ struct Sculpt::Main : Input_event_handler,
 	Conditional_widget<Graph>
 		_graph { Id { "graph" },
 		         _runtime_state, _cached_runtime_config, _storage._storage_devices,
-		         _storage._selected_target, _storage._ram_fs_state,
-		         _popup.state, _deploy._children };
+		         _storage._selected_target, _storage._ram_fs_state, _fb_connectors,
+		         _fb_config, _hovered_display, _popup.state, _deploy._children };
 
 	Conditional_widget<Network_widget>
 		_network_widget { Conditional_widget<Network_widget>::Attr { .centered = true },
@@ -1994,6 +1999,30 @@ struct Sculpt::Main : Input_event_handler,
 	}
 
 
+	/**********************************
+	 ** Display driver configuration **
+	 **********************************/
+
+	Fb_connectors _fb_connectors { };
+
+	Fb_config _fb_config { };
+
+	/**
+	 * Fb_driver::Action interface
+	 */
+	void fb_connectors_changed() override { }
+
+	/**
+	 * Fb_widget::Action interface
+	 */
+	void select_fb_mode          (Fb_connectors::Name const &,
+	                              Fb_connectors::Connector::Mode::Id const &) override { }
+	void disable_fb_connector    (Fb_connectors::Name const &)           override { }
+	void toggle_fb_merge_discrete(Fb_connectors::Name const &)           override { }
+	void swap_fb_connector       (Fb_connectors::Name const &)           override { }
+	void fb_brightness           (Fb_connectors::Name const &, unsigned) override { }
+
+
 	/*******************
 	 ** Runtime graph **
 	 *******************/
@@ -2007,7 +2036,7 @@ struct Sculpt::Main : Input_event_handler,
 		_drivers.update_soc(_soc);
 
 		_gui.input.sigh(_input_handler);
-		_gui.mode_sigh(_gui_mode_handler);
+		_gui.info_sigh(_gui_mode_handler);
 		_handle_gui_mode();
 
 		_system_config.with_manual_config([&] (Xml_node const &system) {
@@ -2078,12 +2107,6 @@ void Sculpt::Main::_update_window_layout(Xml_node const &decorator_margins,
 		return Area(win.attribute_value("width",  0U),
 		            win.attribute_value("height", 0U)); };
 
-	Framebuffer::Mode const mode = _gui.mode();
-
-	/* suppress intermediate boot-time states before the framebuffer driver is up */
-	if (mode.area.count() <= 1)
-		return;
-
 	_window_layout.generate([&] (Xml_generator &xml) {
 
 		auto gen_window = [&] (Xml_node win, Rect rect) {
@@ -2105,8 +2128,8 @@ void Sculpt::Main::_update_window_layout(Xml_node const &decorator_margins,
 
 			Area  const size = win_size(win);
 			Point const pos  = _touch_keyboard.visible
-			                 ? Point(0, int(mode.area.h) - int(size.h))
-			                 : Point(0, int(mode.area.h));
+			                 ? Point(0, int(_screen_size.h) - int(size.h))
+			                 : Point(0, int(_screen_size.h));
 
 			gen_window(win, Rect(pos, size));
 		});
@@ -2122,16 +2145,19 @@ void Sculpt::Main::_update_window_layout(Xml_node const &decorator_margins,
 
 void Sculpt::Main::_handle_gui_mode()
 {
-	Framebuffer::Mode const mode = _gui.mode();
+	auto const panorama = _gui.panorama();
 
-	_screensaver.display_driver_ready(mode.area.count() > 1);
+	_screensaver.display_driver_ready(panorama.ok());
 
-	if (mode.area.count() > 1)
-		_gui_mode_ready = true;
-
-	_screen_size = mode.area;
-	_main_view.min_width  = _screen_size.w;
-	_main_view.min_height = _screen_size.h;
+	panorama.with_result(
+		[&] (Gui::Rect const rect) {
+			_gui_mode_ready = true;
+			_screen_size = rect.area;
+			_main_view.min_width  = _screen_size.w;
+			_main_view.min_height = _screen_size.h;
+		},
+		[&] (Gui::Undefined) { }
+	);
 
 	generate_runtime_config();
 	_update_window_layout();

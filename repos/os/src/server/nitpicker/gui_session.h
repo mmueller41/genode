@@ -20,8 +20,7 @@
 #include <base/heap.h>
 #include <os/session_policy.h>
 #include <os/reporter.h>
-#include <os/pixel_rgb888.h>
-#include <blit/painter.h>
+#include <os/dynamic_rom_session.h>
 #include <gui_session/gui_session.h>
 
 /* local includes */
@@ -44,8 +43,22 @@ namespace Nitpicker {
 class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
                                public  View_owner,
                                public  Buffer_provider,
-                               private Session_list::Element
+                               private Session_list::Element,
+                               private Dynamic_rom_session::Xml_producer,
+                               private Input::Session_component::Action
 {
+	public:
+
+		struct Action : Interface
+		{
+			/*
+			 * \param rect  domain-specific panorama rectangle
+			 */
+			virtual void gen_capture_info(Xml_generator &xml, Rect rect) const = 0;
+
+			virtual void exclusive_input_changed() = 0;
+		};
+
 	private:
 
 		struct View_ref : Gui::View_ref
@@ -87,7 +100,8 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		Gui_session(Gui_session const &);
 		Gui_session &operator = (Gui_session const &);
 
-		Env &_env;
+		Env    &_env;
+		Action &_action;
 
 		Constrained_ram_allocator _ram;
 
@@ -96,19 +110,7 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		Domain_registry::Entry const *_domain     = nullptr;
 		View                         *_background = nullptr;
 
-		/*
-		 * The input mask buffer containing a byte value per texture pixel,
-		 * which describes the policy of handling user input referring to the
-		 * pixel. If set to zero, the input is passed through the view such
-		 * that it can be handled by one of the subsequent views in the view
-		 * stack. If set to one, the input is consumed by the view. If
-		 * 'input_mask' is a null pointer, user input is unconditionally
-		 * consumed by the view.
-		 */
-		unsigned char const *_input_mask = nullptr;
-
-		bool _uses_alpha = false;
-		bool _visible    = true;
+		bool _visible = true;
 
 		Sliced_heap _session_alloc;
 
@@ -117,14 +119,14 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		bool const _input_session_accounted = (
 			withdraw(Ram_quota{Input::Session_component::ev_ds_size()}), true );
 
-		Input::Session_component _input_session_component { _env };
+		Input::Session_component _input_session_component { _env, *this };
 
 		View_stack &_view_stack;
 
 		Focus_updater &_focus_updater;
 		Hover_updater &_hover_updater;
 
-		Signal_context_capability _mode_sigh { };
+		Constructible<Dynamic_rom_session> _info_rom { };
 
 		View &_pointer_origin;
 
@@ -132,13 +134,20 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		List<Session_view_list_elem> _view_list { };
 
-		Tslab<View, 4000> _view_alloc { &_session_alloc };
+		/*
+		 * Slab allocator that includes an initial block as member
+		 */
+		template <size_t BLOCK_SIZE>
+		struct Initial_slab_block { uint8_t buf[BLOCK_SIZE]; };
+		template <typename T, size_t BLOCK_SIZE>
+		struct Slab : private Initial_slab_block<BLOCK_SIZE>, Tslab<T, BLOCK_SIZE>
+		{
+			Slab(Allocator &block_alloc)
+			: Tslab<T, BLOCK_SIZE>(block_alloc, Initial_slab_block<BLOCK_SIZE>::buf) { };
+		};
 
-		Tslab<View_ref, 4000> _view_ref_alloc { &_session_alloc };
-
-		/* capabilities for sub sessions */
-		Framebuffer::Session_capability _framebuffer_session_cap;
-		Input::Session_capability       _input_session_cap;
+		Slab<View,     4000> _view_alloc     { _session_alloc };
+		Slab<View_ref, 4000> _view_ref_alloc { _session_alloc };
 
 		bool const _provides_default_bg;
 
@@ -160,14 +169,14 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		Gui_session *_forwarded_focus = nullptr;
 
 		/**
-		 * Calculate session-local coordinate to physical screen position
+		 * Calculate session-local coordinate to position within panorama
 		 *
-		 * \param pos          coordinate in session-local coordinate system
-		 * \param screen_area  session-local screen size
+		 * \param pos   coordinate in session-local coordinate system
+		 * \param rect  geometry within panorama
 		 */
-		Point _phys_pos(Point pos, Area screen_area) const
+		Point _phys_pos(Point pos, Rect panorama) const
 		{
-			return _domain ? _domain->phys_pos(pos, screen_area) : Point(0, 0);
+			return _domain ? _domain->phys_pos(pos, panorama) : Point(0, 0);
 		}
 
 		void _execute_command(Command const &);
@@ -190,9 +199,28 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 				[&] /* ID does not exist */ { return missing_fn(); });
 		}
 
+		/**
+		 * Dynamic_rom_session::Xml_producer interface
+		 */
+		void produce_xml(Xml_generator &) override;
+
+		bool _exclusive_input_requested = false;
+
+		/**
+		 * Input::Session_component::Action interface
+		 */
+		void exclusive_input_requested(bool const requested) override
+		{
+			bool const orig = _exclusive_input_requested;
+			_exclusive_input_requested = requested;
+			if (orig != requested)
+				_action.exclusive_input_changed();
+		}
+
 	public:
 
 		Gui_session(Env                   &env,
+		            Action                &action,
 		            Resources       const &resources,
 		            Label           const &label,
 		            Diag            const &diag,
@@ -205,25 +233,21 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		            Reporter              &focus_reporter)
 		:
 			Session_object(env.ep(), resources, label, diag),
-			_env(env),
+			Xml_producer("panorama"),
+			_env(env), _action(action),
 			_ram(env.ram(), _ram_quota_guard(), _cap_quota_guard()),
 			_session_alloc(_ram, env.rm()),
-			_framebuffer_session_component(view_stack, *this, *this),
+			_framebuffer_session_component(env.ep(), view_stack, *this, *this),
 			_view_stack(view_stack),
 			_focus_updater(focus_updater), _hover_updater(hover_updater),
 			_pointer_origin(pointer_origin),
 			_builtin_background(builtin_background),
-			_framebuffer_session_cap(_env.ep().manage(_framebuffer_session_component)),
-			_input_session_cap(_env.ep().manage(_input_session_component)),
 			_provides_default_bg(provides_default_bg),
 			_focus_reporter(focus_reporter)
 		{ }
 
 		~Gui_session()
 		{
-			_env.ep().dissolve(_framebuffer_session_component);
-			_env.ep().dissolve(_input_session_component);
-
 			while (_view_ids.apply_any<View_ref>([&] (View_ref &view_ref) {
 				destroy(_view_ref_alloc, &view_ref); }));
 
@@ -284,7 +308,7 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		View const *background() const override { return _background; }
 
-		bool uses_alpha() const override { return _texture.valid() && _uses_alpha; }
+		bool uses_alpha() const override { return _texture.alpha(); }
 
 		unsigned layer() const override { return _domain ? _domain->layer() : ~0U; }
 
@@ -293,19 +317,27 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		/**
 		 * Return input mask value at specified buffer position
 		 */
-		unsigned char input_mask_at(Point p) const override
+		bool input_mask_at(Point const p) const override
 		{
-			if (!_input_mask || !_texture.valid()) return 0;
+			bool result = false;
+			_texture.with_input_mask([&] (Const_byte_range_ptr const &bytes) {
 
-			/* check boundaries */
-			if ((unsigned)p.x >= _texture.size().w
-			 || (unsigned)p.y >= _texture.size().h)
-				return 0;
+				unsigned const x = p.x % _texture.size().w,
+				               y = p.y % _texture.size().h;
 
-			return _input_mask[p.y*_texture.size().w + p.x];
+				size_t const offset = y*_texture.size().w + x;
+				if (offset < bytes.num_bytes)
+					result = bytes.start[offset];
+			});
+			return result;
 		}
 
 		void submit_input_event(Input::Event e) override;
+
+		bool exclusive_input_requested() const override
+		{
+			return _exclusive_input_requested;
+		}
 
 		void report(Xml_generator &xml) const override
 		{
@@ -328,16 +360,6 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		 */
 		void visible(bool visible) { _visible = visible; }
 
-		/**
-		 * Return session-local screen area
-		 *
-		 * \param phys_pos  size of physical screen
-		 */
-		Area screen_area(Area phys_area) const
-		{
-			return _domain ? _domain->screen_area(phys_area) : Area(0, 0);
-		}
-
 		void reset_domain() { _domain = nullptr; }
 
 		/**
@@ -355,8 +377,8 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		 */
 		void notify_mode_change()
 		{
-			if (_mode_sigh.valid())
-				Signal_transmitter(_mode_sigh).submit();
+			if (_info_rom.constructed())
+				_info_rom->trigger_update();
 		}
 
 		/**
@@ -373,16 +395,42 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 				_forwarded_focus = nullptr;
 		}
 
+		Point panning() const { return _texture.panning; }
+
 
 		/***************************
 		 ** GUI session interface **
 		 ***************************/
 
 		Framebuffer::Session_capability framebuffer() override {
-			return _framebuffer_session_cap; }
+			return _framebuffer_session_component.cap(); }
 
 		Input::Session_capability input() override {
-			return _input_session_cap; }
+			return _input_session_component.cap(); }
+
+		Info_result info() override
+		{
+			if (!_info_rom.constructed()) {
+				Cap_quota const needed_caps { 2 };
+				if (!try_withdraw(needed_caps))
+					return Info_error::OUT_OF_CAPS;
+
+				bool out_of_caps = false, out_of_ram = false;
+				try {
+					Dynamic_rom_session::Content_producer &rom_producer = *this;
+					_info_rom.construct(_env.ep(), _ram, _env.rm(), rom_producer);
+				}
+				catch (Out_of_ram)  { out_of_ram  = true; }
+				catch (Out_of_caps) { out_of_caps = true; }
+
+				if (out_of_ram || out_of_ram) {
+					replenish(needed_caps);
+					if (out_of_ram)  return Info_error::OUT_OF_RAM;
+					if (out_of_caps) return Info_error::OUT_OF_CAPS;
+				}
+			}
+			return _info_rom->cap();
+		}
 
 		View_result view(View_id, View_attr const &attr) override;
 
@@ -400,11 +448,7 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 
 		void execute() override;
 
-		Framebuffer::Mode mode() override;
-
-		void mode_sigh(Signal_context_capability sigh) override { _mode_sigh = sigh; }
-
-		Buffer_result buffer(Framebuffer::Mode, bool) override;
+		Buffer_result buffer(Framebuffer::Mode) override;
 
 		void focus(Capability<Gui::Session>) override;
 
@@ -413,7 +457,11 @@ class Nitpicker::Gui_session : public  Session_object<Gui::Session>,
 		 ** Buffer_provider interface **
 		 *******************************/
 
-		Dataspace_capability realloc_buffer(Framebuffer::Mode mode, bool use_alpha) override;
+		Dataspace_capability realloc_buffer(Framebuffer::Mode mode) override;
+
+		void blit(Rect from, Point to) override { _texture.blit(from, to); }
+
+		void panning(Point pos) override { _texture.panning = pos; }
 };
 
 #endif /* _GUI_SESSION_H_ */

@@ -14,6 +14,9 @@
 #ifndef _CHUNKY_TEXTURE_H_
 #define _CHUNKY_TEXTURE_H_
 
+/* Genode includes */
+#include <blit/painter.h>
+
 /* local includes */
 #include <buffer.h>
 
@@ -21,53 +24,80 @@ namespace Nitpicker { template <typename> class Chunky_texture; }
 
 
 template <typename PT>
-class Nitpicker::Chunky_texture : public Buffer, public Texture<PT>
+class Nitpicker::Chunky_texture : Buffer, public Texture<PT>
 {
 	private:
+
+		Framebuffer::Mode const _mode;
 
 		/**
 		 * Return base address of alpha channel or 0 if no alpha channel exists
 		 */
-		unsigned char *_alpha_base(Area size, bool use_alpha)
+		static uint8_t *_alpha_base(Buffer &buffer, Framebuffer::Mode mode)
 		{
-			if (!use_alpha) return 0;
+			uint8_t *result = nullptr;
+			mode.with_alpha_bytes(buffer, [&] (Byte_range_ptr const &bytes) {
+				result = (uint8_t *)bytes.start; });
+			return result;
+		}
 
-			/* alpha values come right after the pixel values */
-			return (unsigned char *)local_addr() + calc_num_bytes(size, false);
+		void _with_alpha_texture(auto const &fn) const
+		{
+			Buffer const &buffer = *this;
+			_mode.with_alpha_bytes(buffer, [&] (Byte_range_ptr const &bytes) {
+				Texture<Pixel_alpha8> texture { (Pixel_alpha8 *)bytes.start, nullptr, _mode.area };
+				fn(texture); });
+		}
+
+		void _with_input_texture(auto const &fn) const
+		{
+			Buffer const &buffer = *this;
+			_mode.with_input_bytes(buffer, [&] (Byte_range_ptr const &bytes) {
+				Texture<Pixel_input8> texture { (Pixel_input8 *)bytes.start, nullptr, _mode.area };
+				fn(texture); });
+		}
+
+		template <typename T>
+		void _blit_channel(Surface<T> &surface, Texture<T> const &texture,
+		                   Rect const from, Point const to)
+		{
+			surface.clip({ to, from.area });
+			Blit_painter::paint(surface, texture, to - from.p1());
 		}
 
 	public:
 
-		/**
-		 * Constructor
-		 */
-		Chunky_texture(Ram_allocator &ram, Region_map &rm, Area size, bool use_alpha)
-		:
-			Buffer(ram, rm, size, calc_num_bytes(size, use_alpha)),
-			Texture<PT>((PT *)local_addr(),
-			            _alpha_base(size, use_alpha), size) { }
+		using Buffer::cap;
 
-		static size_t calc_num_bytes(Area size, bool use_alpha)
+		Chunky_texture(Ram_allocator &ram, Region_map &rm, Framebuffer::Mode mode)
+		:
+			Buffer(ram, rm, mode.num_bytes()),
+			Texture<PT>((PT *)Buffer::bytes().start, _alpha_base(*this, mode), mode.area),
+			_mode(mode)
+		{ }
+
+		void with_input_mask(auto const &fn) const
 		{
-			/*
-			 * If using an alpha channel, the alpha buffer follows the
-			 * pixel buffer. The alpha buffer is followed by an input
-			 * mask buffer. Hence, we have to account one byte per
-			 * alpha value and one byte for the input mask value.
-			 */
-			size_t bytes_per_pixel = sizeof(PT) + (use_alpha ? 2 : 0);
-			return bytes_per_pixel*size.count();
+			Buffer const &buffer = *this;
+			_mode.with_input_bytes(buffer, [&] (Byte_range_ptr const &bytes) {
+				Const_byte_range_ptr const_bytes { bytes.start, bytes.num_bytes };
+				fn(const_bytes); });
 		}
 
-		unsigned char const *input_mask_buffer() const
+		void blit(Rect from, Point to)
 		{
-			if (!Texture<PT>::alpha()) return 0;
+			Buffer &buffer = *this;
 
-			Area const size = Texture<PT>::size();
+			_mode.with_pixel_surface(buffer, [&] (Surface<Pixel_rgb888> &surface) {
+				_blit_channel(surface, *this, from, to); });
 
-			/* input-mask values come right after the alpha values */
-			return (unsigned char const *)local_addr() + calc_num_bytes(size, false)
-			                                           + size.count();
+			_mode.with_alpha_surface(buffer, [&] (Surface<Pixel_alpha8> &surface) {
+				_with_alpha_texture([&] (Texture<Pixel_alpha8> &texture) {
+					_blit_channel(surface, texture, from, to); }); });
+
+			_mode.with_input_surface(buffer, [&] (Surface<Pixel_input8> &surface) {
+				_with_input_texture([&] (Texture<Pixel_input8> &texture) {
+					_blit_channel(surface, texture, from, to); }); });
 		}
 };
 

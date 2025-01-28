@@ -42,12 +42,10 @@ static const bool verbose = false;
  */
 struct Apic_struct
 {
-	enum Types { SRC_OVERRIDE = 2 };
+	enum Types { IOAPIC = 1, SRC_OVERRIDE = 2 };
 
 	uint8_t type;
 	uint8_t length;
-
-	bool is_override() { return type == SRC_OVERRIDE; }
 
 	Apic_struct *next() { return reinterpret_cast<Apic_struct *>((uint8_t *)this + length); }
 } __attribute__((packed));
@@ -73,6 +71,15 @@ struct Apic_override : Apic_struct
 	uint8_t  irq;
 	uint32_t gsi;
 	uint16_t flags;
+} __attribute__((packed));
+
+/* ACPI spec 5.2.12.3 */
+struct Apic_ioapic : Apic_struct
+{
+	uint8_t  id;
+	uint8_t  reserved;
+	uint32_t addr;
+	uint32_t base_irq;
 } __attribute__((packed));
 
 struct Dmar_struct_header;
@@ -169,6 +176,7 @@ struct Device_scope : Genode::Mmio<0x6>
 
 	struct Type   : Register<0x0, 8> { enum { PCI_END_POINT = 0x1 }; };
 	struct Length : Register<0x1, 8> { };
+	struct Id     : Register<0x4, 8> { };
 	struct Bus    : Register<0x5, 8> { };
 
 	struct Path : Genode::Mmio<0x2>
@@ -407,6 +415,34 @@ class Irq_override : public List<Irq_override>::Element
 
 
 /**
+ * List that holds IOAPIC information
+ */
+class Ioapic : public List<Ioapic>::Element
+{
+	private:
+
+		uint8_t  _id;       /* I/O APIC id */
+		uint32_t _addr;     /* physical address */
+		uint32_t _base_irq; /* base irq number */
+
+	public:
+
+		Ioapic(uint8_t id, uint32_t addr, uint32_t base)
+		: _id(id), _addr(addr), _base_irq(base) { }
+
+		static List<Ioapic> *list()
+		{
+			static List<Ioapic> _list;
+			return &_list;
+		}
+
+		uint8_t  id()               const { return _id; }
+		uint32_t addr()             const { return _addr; }
+		uint32_t base_irq()         const { return _base_irq; }
+};
+
+
+/**
  * List that holds the result of the mcfg table parsing which are pointers
  * to the extended pci config space - 4k for each device.
  */
@@ -581,7 +617,7 @@ class Table_wrapper
 			return sum;
 		}
 
-		bool valid() { return !checksum((uint8_t *)_table, _table->size); }
+		bool valid() { return _table && !checksum((uint8_t *)_table, _table->size); }
 
 		bool is_ivrs() const { return _cmp("IVRS");}
 
@@ -611,22 +647,37 @@ class Table_wrapper
 		bool is_dmar() { return _cmp("DMAR"); }
 
 		/**
-		 * Parse override structures
+		 * Parse MADT/APIC table
 		 */
 		void parse_madt(Genode::Allocator &alloc)
 		{
 			Apic_struct *apic = _table->apic_struct();
 			for (; apic < _table->end(); apic = apic->next()) {
-				if (!apic->is_override())
-					continue;
+				Apic_override *o;
+				Apic_ioapic   *ioapic;
 
-				Apic_override *o = static_cast<Apic_override *>(apic);
-				
-				Genode::log("MADT IRQ ", o->irq, " -> GSI ", (unsigned)o->gsi, " "
-				            "flags: ", (unsigned)o->flags);
-				
-				Irq_override::list()->insert(new (&alloc)
+				switch (apic->type) {
+
+				case Apic_struct::Types::SRC_OVERRIDE:
+					o = static_cast<Apic_override *>(apic);
+					
+					Genode::log("MADT IRQ ", o->irq, " -> GSI ", (unsigned)o->gsi, " "
+					            "flags: ", (unsigned)o->flags);
+					
+					Irq_override::list()->insert(new (&alloc)
 					Irq_override(o->irq, o->gsi, o->flags));
+					break;
+
+				case Apic_struct::Types::IOAPIC:
+					ioapic = static_cast<Apic_ioapic *>(apic);
+
+					Ioapic::list()->insert(new (&alloc)
+					Ioapic(ioapic->id, ioapic->addr, ioapic->base_irq));
+					break;
+
+				default:
+					break;
+				}
 			}
 		}
 
@@ -649,7 +700,7 @@ class Table_wrapper
 			}
 		}
 
-		void parse_dmar(Genode::Allocator &alloc) const
+		Dmar_struct_header const & parse_dmar(Genode::Allocator &alloc) const
 		{
 			Dmar_struct_header *head = _table->dmar_header();
 			Genode::log(head->width + 1, " bit DMA physical addressable",
@@ -661,14 +712,21 @@ class Table_wrapper
 			});
 
 			Dmar_entry::list()->insert(new (&alloc) Dmar_entry(head->clone(alloc)));
+
+			return *head;
 		}
 
 		Table_wrapper(Acpi::Memory &memory, addr_t base,
 		              Registry<Info> &registry, Allocator &heap)
 		: _base(base), _table(0)
 		{
-			/* make table header accessible */
-			_table = reinterpret_cast<Generic *>(memory.map_region(base, 8));
+			try {
+				/* make table header accessible */
+				_table = reinterpret_cast<Generic *>(memory.map_region(base, 8));
+			} catch (Service_denied &) {
+				error(__func__, " failed with exception");
+				return;
+			}
 
 			/* table size is known now - make it completely accessible (in place) */
 			memory.map_region(base, _table->size);
@@ -929,7 +987,7 @@ class Element : private List<Element>::Element
 
 				if (_name_len + parent_len > sizeof(_name)) {
 					Genode::error("name is not large enough");
-					throw -1;
+					return;
 				}
 
 				memcpy(_name, parent->_name, parent_len);
@@ -1359,7 +1417,14 @@ class Acpi_table
 			Genode::uint8_t  value;
 		};
 
+		struct Dmar_info
+		{
+			bool            intr_remap;
+			Genode::uint8_t host_address_width;
+		};
+
 		Genode::Constructible<Reset_info> _reset_info { };
+		Genode::Constructible<Dmar_info>  _dmar_info  { };
 		unsigned short                    _sci_int    { };
 		bool                              _sci_int_valid { };
 
@@ -1380,7 +1445,7 @@ class Acpi_table
 				    !Table_wrapper::checksum(area + addr, 20))
 					return area + addr;
 
-			throw -2;
+			return 0;
 		}
 
 		/**
@@ -1394,8 +1459,7 @@ class Acpi_table
 			try {
 				_mmio.construct(_env, BIOS_BASE, BIOS_SIZE);
 				return _search_rsdp(_mmio->local_addr<uint8_t>(), BIOS_SIZE);
-			}
-			catch (...) { }
+			} catch (...) { }
 
 			/* search EBDA (BIOS addr + 0x40e) */
 			try {
@@ -1475,7 +1539,10 @@ class Acpi_table
 					if (table.is_dmar()) {
 						Genode::log("Found DMAR");
 
-						table.parse_dmar(_heap);
+						Dmar_struct_header const & head = table.parse_dmar(_heap);
+						_dmar_info.construct(
+							Dmar_info { (bool)(head.flags & Dmar_struct_header::INTR_REMAP_MASK),
+							            (uint8_t)(head.width + 1) });
 					}
 				} catch (Acpi::Memory::Unsupported_range &) { }
 
@@ -1523,51 +1590,58 @@ class Acpi_table
 			if (!rsdt && !xsdt) {
 				uint8_t * ptr_rsdp = _rsdp();
 
-				struct rsdp {
-					char     signature[8];
-					uint8_t  checksum;
-					char     oemid[6];
-					uint8_t  revision;
-					/* table pointer at 16 byte offset in RSDP structure (5.2.5.3) */
-					uint32_t rsdt;
-					/* With ACPI 2.0 */
-					uint32_t len;
-					uint64_t xsdt;
-					uint8_t  checksum_extended;
-					uint8_t  reserved[3];
-				} __attribute__((packed));
-				struct rsdp * rsdp = reinterpret_cast<struct rsdp *>(ptr_rsdp);
+				if (ptr_rsdp) {
+					struct rsdp {
+						char     signature[8];
+						uint8_t  checksum;
+						char     oemid[6];
+						uint8_t  revision;
+						/* table pointer at 16 byte offset in RSDP structure (5.2.5.3) */
+						uint32_t rsdt;
+						/* With ACPI 2.0 */
+						uint32_t len;
+						uint64_t xsdt;
+						uint8_t  checksum_extended;
+						uint8_t  reserved[3];
+					} __attribute__((packed));
+					struct rsdp * rsdp = reinterpret_cast<struct rsdp *>(ptr_rsdp);
 
-				if (!rsdp) {
-					Genode::error("No valid ACPI RSDP structure found");
-					return;
+					if (rsdp) {
+						rsdt = rsdp->rsdt;
+						xsdt = rsdp->xsdt;
+						acpi_revision = rsdp->revision;
+					} else {
+						Genode::error("No valid ACPI RSDP structure found");
+					}
 				}
 
-				rsdt = rsdp->rsdt;
-				xsdt = rsdp->xsdt;
-				acpi_revision = rsdp->revision;
 				/* drop rsdp io_mem mapping since rsdt/xsdt may overlap */
 				_mmio.destruct();
 			}
 
-			if (acpi_revision != 0 && xsdt && sizeof(addr_t) != sizeof(uint32_t)) {
-				/* running 64bit and xsdt is valid */
-				Table_wrapper table(_memory, xsdt, _table_registry, _heap);
-				if (!table.valid()) throw -1;
+			if (rsdt || xsdt) {
+				if (acpi_revision != 0 && xsdt && sizeof(addr_t) != sizeof(uint32_t)) {
+					/* running 64bit and xsdt is valid */
+					Table_wrapper table(_memory, xsdt, _table_registry, _heap);
+					if (table.valid()) {
+						uint64_t * entries = reinterpret_cast<uint64_t *>(table.table() + 1);
+						_parse_tables(entries, table.entry_count(entries));
 
-				uint64_t * entries = reinterpret_cast<uint64_t *>(table.table() + 1);
-				_parse_tables(entries, table.entry_count(entries));
+						log("XSDT ", *table.table());
+					} else
+						error("XSDT parsing error");
 
-				Genode::log("XSDT ", *table.table());
-			} else {
-				/* running (32bit) or (64bit and xsdt isn't valid) */
-				Table_wrapper table(_memory, rsdt, _table_registry, _heap);
-				if (!table.valid()) throw -1;
+				} else {
+					/* running (32bit) or (64bit and xsdt isn't valid) */
+					Table_wrapper table(_memory, rsdt, _table_registry, _heap);
+					if (table.valid()) {
+						uint32_t * entries = reinterpret_cast<uint32_t *>(table.table() + 1);
+						_parse_tables(entries, table.entry_count(entries));
 
-				uint32_t * entries = reinterpret_cast<uint32_t *>(table.table() + 1);
-				_parse_tables(entries, table.entry_count(entries));
-
-				Genode::log("RSDT ", *table.table());
+						log("RSDT ", *table.table());
+					} else
+						error("RSDT parsing error");
+				}
 			}
 
 			/* free up memory of elements not of any use */
@@ -1588,6 +1662,13 @@ class Acpi_table
 		{
 			if (_sci_int_valid)
 				xml.node("sci_int", [&] () { xml.attribute("irq", _sci_int); });
+
+			if (_dmar_info.constructed())
+				xml.node("dmar", [&] () {
+					xml.attribute("intr_remap",         _dmar_info->intr_remap);
+					xml.attribute("host_address_width", _dmar_info->host_address_width);
+				});
+
 
 			if (!_reset_info.constructed())
 				return;
@@ -1653,11 +1734,21 @@ void Acpi::generate_report(Genode::Env &env, Genode::Allocator &alloc,
 			});
 		}
 
+		for (Ioapic *i = Ioapic::list()->first(); i; i = i->next())
+		{
+			xml.node("ioapic", [&] () {
+				xml.attribute("id",        i->id());
+				xml.attribute("base_irq",  i->base_irq());
+				attribute_hex(xml, "addr", i->addr());
+			});
+		}
+
 		/* lambda definition for scope evaluation in rmrr */
 		auto func_scope = [&] (Device_scope const &scope)
 		{
 			xml.node("scope", [&] () {
 				xml.attribute("bus_start", scope.read<Device_scope::Bus>());
+				xml.attribute("id",   scope.read<Device_scope::Id>());
 				xml.attribute("type", scope.read<Device_scope::Type>());
 
 				scope.for_each_path([&](auto const &path) {
@@ -1733,6 +1824,10 @@ void Acpi::generate_report(Genode::Env &env, Genode::Allocator &alloc,
 		 * Intel opregion lookup & parsing must be finished before acpi
 		 * report is sent, therefore the invocation is placed exactly here.
 		 */
-		Pci_config_space::intel_opregion(env);
+		try {
+			Pci_config_space::intel_opregion(env);
+		} catch (...) {
+			error("Intel opregion handling failed");
+		}
 	});
 }

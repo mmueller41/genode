@@ -20,18 +20,18 @@
 #include <base/attached_rom_dataspace.h>
 #include <base/component.h>
 
-namespace Nit_fb {
+namespace Gui_fb {
 
+	using namespace Genode;
+
+	struct View_updater;
 	struct Main;
 
-	using Genode::Static_root;
-	using Genode::Signal_handler;
-	using Genode::Xml_node;
-	using Genode::size_t;
+	using Point = Gui::Point;
+	using Area  = Gui::Area;
+	using Rect  = Gui::Rect;
 
-	using Point = Genode::Surface_base::Point;
-	using Area  = Genode::Surface_base::Area;
-	using Rect  = Genode::Surface_base::Rect;
+	static ::Input::Event translate_event(::Input::Event, Point, Area);
 }
 
 
@@ -42,16 +42,14 @@ namespace Nit_fb {
 /**
  * Translate input event
  */
-static Input::Event translate_event(Input::Event        ev,
-                                    Nit_fb::Point const input_origin,
-                                    Nit_fb::Area  const boundary)
+static Input::Event Gui_fb::translate_event(Input::Event ev,
+                                            Point const input_origin,
+                                            Area  const boundary)
 {
-	using Nit_fb::Point;
-
 	/* function to clamp point to bounday */
 	auto clamp = [boundary] (Point p) {
-		return Point(Genode::min((int)boundary.w - 1, Genode::max(0, p.x)),
-		             Genode::min((int)boundary.h - 1, Genode::max(0, p.y))); };
+		return Point(min((int)boundary.w - 1, max(0, p.x)),
+		             min((int)boundary.h - 1, max(0, p.y))); };
 
 	/* function to translate point to 'input_origin' */
 	auto translate = [input_origin] (Point p) { return p - input_origin; };
@@ -70,7 +68,7 @@ static Input::Event translate_event(Input::Event        ev,
 }
 
 
-struct View_updater : Genode::Interface
+struct Gui_fb::View_updater : Genode::Interface
 {
 	virtual void update_view() = 0;
 };
@@ -80,18 +78,23 @@ struct View_updater : Genode::Interface
  ** Virtualized framebuffer **
  *****************************/
 
-namespace Framebuffer { struct Session_component; }
+namespace Framebuffer {
+
+	using namespace Gui_fb;
+
+	struct Session_component;
+}
 
 
 struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 {
-	Genode::Pd_session const &_pd;
+	Pd_session const &_pd;
 
 	Gui::Connection &_gui;
 
-	Genode::Signal_context_capability _mode_sigh { };
+	Signal_context_capability _mode_sigh { };
 
-	Genode::Signal_context_capability _sync_sigh { };
+	Signal_context_capability _sync_sigh { };
 
 	View_updater &_view_updater;
 
@@ -101,7 +104,7 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 	 */
 	Framebuffer::Mode _next_mode;
 
-	using size_t = Genode::size_t;
+	bool _mode_sigh_pending = false;
 
 	/*
 	 * Number of bytes used for backing the current virtual framebuffer at
@@ -123,18 +126,25 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 	{
 		/* calculation in bytes */
 		size_t const used      = _buffer_num_bytes,
-		             needed    = Gui::Session::ram_quota(mode, false),
+		             needed    = Gui::Session::ram_quota(mode),
 		             usable    = _pd.avail_ram().value,
 		             preserved = 64*1024;
 
 		return used + usable > needed + preserved;
 	}
 
+	void _update_view()
+	{
+		if (_dataspace_is_new) {
+			_view_updater.update_view();
+			_dataspace_is_new = false;
+		}
+	}
 
 	/**
 	 * Constructor
 	 */
-	Session_component(Genode::Pd_session const &pd,
+	Session_component(Pd_session const &pd,
 	                  Gui::Connection &gui,
 	                  View_updater &view_updater,
 	                  Framebuffer::Mode initial_mode)
@@ -149,17 +159,19 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 		if (Gui::Area(_next_mode.area.w, _next_mode.area.h) == size)
 			return;
 
-		Framebuffer::Mode const mode { .area = size };
+		Framebuffer::Mode const mode { .area = size, .alpha = false };
 
 		if (!_ram_suffices_for_mode(mode)) {
-			Genode::warning("insufficient RAM for mode ", mode);
+			warning("insufficient RAM for mode ", mode);
 			return;
 		}
 
 		_next_mode = mode;
 
 		if (_mode_sigh.valid())
-			Genode::Signal_transmitter(_mode_sigh).submit();
+			Signal_transmitter(_mode_sigh).submit();
+		else
+			_mode_sigh_pending = true;
 	}
 
 	Gui::Area size() const
@@ -172,13 +184,12 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 	 ** Framebuffer::Session interface **
 	 ************************************/
 
-	Genode::Dataspace_capability dataspace() override
+	Dataspace_capability dataspace() override
 	{
-		_gui.buffer(_active_mode, false);
+		_gui.buffer(_active_mode);
 
 		_buffer_num_bytes =
-			Genode::max(_buffer_num_bytes,
-			            Gui::Session::ram_quota(_active_mode, false));
+			max(_buffer_num_bytes, Gui::Session::ram_quota(_active_mode));
 
 		/*
 		 * We defer the update of the view until the client calls refresh the
@@ -196,22 +207,36 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 		return _active_mode;
 	}
 
-	void mode_sigh(Genode::Signal_context_capability sigh) override
+	void mode_sigh(Signal_context_capability sigh) override
 	{
 		_mode_sigh = sigh;
-	}
 
-	void refresh(int x, int y, int w, int h) override
-	{
-		if (_dataspace_is_new) {
-			_view_updater.update_view();
-			_dataspace_is_new = false;
+		/* notify mode change that happened just before 'mode_sigh' */
+		if (_mode_sigh.valid() && _mode_sigh_pending) {
+			Signal_transmitter(_mode_sigh).submit();
+			_mode_sigh_pending = false;
 		}
-
-		_gui.framebuffer.refresh(x, y, w, h);
 	}
 
-	void sync_sigh(Genode::Signal_context_capability sigh) override
+	void refresh(Rect rect) override
+	{
+		_update_view();
+		_gui.framebuffer.refresh(rect);
+	}
+
+	Blit_result blit(Blit_batch const &batch) override
+	{
+		_update_view();
+		return _gui.framebuffer.blit(batch);
+	}
+
+	void panning(Point pos) override
+	{
+		_update_view();
+		_gui.framebuffer.panning(pos);
+	}
+
+	void sync_sigh(Signal_context_capability sigh) override
 	{
 		/*
 		 * Keep a component-local copy of the signal capability. Otherwise,
@@ -223,6 +248,8 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
 
 		_gui.framebuffer.sync_sigh(sigh);
 	}
+
+	void sync_source(Session_label const &) override { }
 };
 
 
@@ -230,21 +257,30 @@ struct Framebuffer::Session_component : Genode::Rpc_object<Framebuffer::Session>
  ** Main program **
  ******************/
 
-struct Nit_fb::Main : View_updater
+struct Gui_fb::Main : View_updater, Input::Session_component::Action
 {
-	Genode::Env &env;
+	Env &_env;
 
-	Genode::Attached_rom_dataspace config_rom { env, "config" };
+	Attached_rom_dataspace _config_rom { _env, "config" };
 
-	Gui::Connection gui { env };
+	Gui::Connection _gui { _env };
 
-	Point position { 0, 0 };
+	Point _position { 0, 0 };
 
-	unsigned refresh_rate = 0;
+	unsigned _refresh_rate = 0;
 
-	Gui::Top_level_view const view { gui };
+	Gui::Top_level_view const _view { _gui };
 
-	Genode::Attached_dataspace input_ds { env.rm(), gui.input.dataspace() };
+	Attached_dataspace _input_ds { _env.rm(), _gui.input.dataspace() };
+
+	Gui::Rect _gui_window()
+	{
+		return _gui.window().convert<Gui::Rect>(
+			[&] (Gui::Rect rect) { return rect; },
+			[&] (Gui::Undefined) { return _gui.panorama().convert<Gui::Rect>(
+				[&] (Gui::Rect rect) { return rect; },
+				[&] (Gui::Undefined) { return Gui::Rect { { }, { 1, 1 } }; }); });
+	}
 
 	struct Initial_size
 	{
@@ -253,47 +289,95 @@ struct Nit_fb::Main : View_updater
 
 		bool set { false };
 
-		Initial_size(Genode::Xml_node config)
+		Initial_size(Xml_node config)
 		:
 			_width (config.attribute_value("initial_width",  0L)),
 			_height(config.attribute_value("initial_height", 0L))
 		{ }
 
-		unsigned width(Framebuffer::Mode const &mode) const
+		unsigned width(Gui::Area const &gui_area) const
 		{
 			if (_width > 0) return (unsigned)_width;
-			if (_width < 0) return (unsigned)(mode.area.w + _width);
-			return mode.area.w;
+			if (_width < 0) return (unsigned)(gui_area.w + _width);
+			return gui_area.w;
 		}
 
-		unsigned height(Framebuffer::Mode const &mode) const
+		unsigned height(Gui::Area const &gui_area) const
 		{
 			if (_height > 0) return (unsigned)_height;
-			if (_height < 0) return (unsigned)(mode.area.h + _height);
-			return mode.area.h;
+			if (_height < 0) return (unsigned)(gui_area.h + _height);
+			return gui_area.h;
 		}
 
 		bool valid() const { return _width != 0 && _height != 0; }
 
-	} _initial_size { config_rom.xml() };
+	} _initial_size { _config_rom.xml() };
 
 	Framebuffer::Mode _initial_mode()
 	{
-		return Framebuffer::Mode { .area = { _initial_size.width (gui.mode()),
-		                                     _initial_size.height(gui.mode()) } };
+		Gui::Area const gui_area = _gui_window().area;
+		return {
+			.area = { _initial_size.width (gui_area),
+			          _initial_size.height(gui_area) },
+			.alpha = false
+		};
 	}
 
 	/*
 	 * Input and framebuffer sessions provided to our client
 	 */
-	Input::Session_component       input_session { env, env.ram() };
-	Framebuffer::Session_component fb_session { env.pd(), gui, *this, _initial_mode() };
+	Input::Session_component _input_session { _env.ep(), _env.ram(), _env.rm(), *this };
+
+	/**
+	 * Input::Session_component::Action interface
+	 */
+	void exclusive_input_requested(bool enabled) override
+	{
+		_gui.input.exclusive(enabled);
+	}
+
+	Framebuffer::Session_component _fb_session { _env.pd(), _gui, *this, _initial_mode() };
+
+	struct Input_root : Static_root<Input::Session>
+	{
+		Main &_main;
+
+		Input_root(Main &main)
+		:
+			Static_root<Input::Session>(main._input_session.cap()),
+			_main(main)
+		{ }
+
+		void close(Capability<Session>) override
+		{
+			_main._input_session.sigh(Signal_context_capability());
+		}
+	};
+
+	Input_root _input_root { *this };
 
 	/*
 	 * Attach root interfaces to the entry point
 	 */
-	Static_root<Input::Session>       input_root { env.ep().manage(input_session) };
-	Static_root<Framebuffer::Session> fb_root    { env.ep().manage(fb_session) };
+
+	struct Fb_root : Static_root<Framebuffer::Session>
+	{
+		Main &_main;
+
+		Fb_root(Main &main)
+		:
+			Static_root<Framebuffer::Session>(main._env.ep().manage(main._fb_session)),
+			_main(main)
+		{ }
+
+		void close(Capability<Session>) override
+		{
+			_main._fb_session.sync_sigh(Signal_context_capability());
+			_main._fb_session.mode_sigh(Signal_context_capability());
+		}
+	};
+
+	Fb_root _fb_root { *this };
 
 	/**
 	 * View_updater interface
@@ -301,28 +385,28 @@ struct Nit_fb::Main : View_updater
 	void update_view() override
 	{
 		using Command = Gui::Session::Command;
-		gui.enqueue<Command::Geometry>(view.id(), Rect(position, fb_session.size()));
-		gui.enqueue<Command::Front>(view.id());
-		gui.execute();
+		_gui.enqueue<Command::Geometry>(_view.id(), Rect(_position, _fb_session.size()));
+		_gui.enqueue<Command::Front>(_view.id());
+		_gui.execute();
 	}
 
 	/**
 	 * Return screen-coordinate origin, depening on the config and screen mode
 	 */
-	static Point _coordinate_origin(Framebuffer::Mode mode, Xml_node config)
+	static Point _coordinate_origin(Gui::Area gui_area, Xml_node config)
 	{
 		char const * const attr = "origin";
 
 		if (!config.has_attribute(attr))
 			return Point(0, 0);
 
-		using Value = Genode::String<32>;
+		using Value = String<32>;
 		Value const value = config.attribute_value(attr, Value());
 
 		if (value == "top_left")     return Point(0, 0);
-		if (value == "top_right")    return Point(mode.area.w, 0);
-		if (value == "bottom_left")  return Point(0, mode.area.h);
-		if (value == "bottom_right") return Point(mode.area.w, mode.area.h);
+		if (value == "top_right")    return Point(gui_area.w, 0);
+		if (value == "bottom_left")  return Point(0, gui_area.h);
+		if (value == "bottom_right") return Point(gui_area.w, gui_area.h);
 
 		warning("unsupported ", attr, " attribute value '", value, "'");
 		return Point(0, 0);
@@ -330,30 +414,27 @@ struct Nit_fb::Main : View_updater
 
 	void _update_size()
 	{
-		Xml_node const config = config_rom.xml();
+		Xml_node const config = _config_rom.xml();
 
-		Framebuffer::Mode const gui_mode = gui.mode();
+		Gui::Area const gui_area = _gui_window().area;
 
-		position = _coordinate_origin(gui_mode, config) + Point::from_xml(config);
+		_position = _coordinate_origin(gui_area, config) + Point::from_xml(config);
 
 		bool const attr = config.has_attribute("width") ||
 		                  config.has_attribute("height");
 		if (_initial_size.valid() && attr) {
-			Genode::warning("setting both inital and normal attributes not "
-			                " supported, ignore initial size");
+			warning("setting both inital and normal attributes not "
+			        " supported, ignore initial size");
 			/* force initial to disable check below */
 			_initial_size.set = true;
 		}
 
-		unsigned const gui_width  = gui_mode.area.w;
-		unsigned const gui_height = gui_mode.area.h;
-
-		long width  = config.attribute_value("width",  (long)gui_mode.area.w),
-		     height = config.attribute_value("height", (long)gui_mode.area.h);
+		long width  = config.attribute_value("width",  long(gui_area.w)),
+		     height = config.attribute_value("height", long(gui_area.h));
 
 		if (!_initial_size.set && _initial_size.valid()) {
-			width  = _initial_size.width (gui_mode);
-			height = _initial_size.height(gui_mode);
+			width  = _initial_size.width (gui_area);
+			height = _initial_size.height(gui_area);
 
 			_initial_size.set = true;
 		} else {
@@ -362,43 +443,40 @@ struct Nit_fb::Main : View_updater
 			 * If configured width / height values are negative, the effective
 			 * width / height is deduced from the screen size.
 			 */
-			if (width  < 0) width  = gui_width  + width;
-			if (height < 0) height = gui_height + height;
+			if (width  < 0) width  = gui_area.w + width;
+			if (height < 0) height = gui_area.h + height;
 		}
 
-		fb_session.size(Area((unsigned)width, (unsigned)height));
+		_fb_session.size(Area((unsigned)width, (unsigned)height));
 	}
 
-	void handle_config_update()
+	void _handle_config_update()
 	{
-		config_rom.update();
+		_config_rom.update();
 
 		_update_size();
 
 		update_view();
 	}
 
-	Signal_handler<Main> config_update_handler =
-		{ env.ep(), *this, &Main::handle_config_update };
+	Signal_handler<Main> _config_update_handler =
+		{ _env.ep(), *this, &Main::_handle_config_update };
 
-	void handle_mode_update()
+	void _handle_mode_update() { _update_size(); }
+
+	Signal_handler<Main> _mode_update_handler =
+		{ _env.ep(), *this, &Main::_handle_mode_update };
+
+	void _handle_input()
 	{
-		_update_size();
-	}
+		Input::Event const * const events = _input_ds.local_addr<Input::Event>();
 
-	Signal_handler<Main> mode_update_handler =
-		{ env.ep(), *this, &Main::handle_mode_update };
-
-	void handle_input()
-	{
-		Input::Event const * const events = input_ds.local_addr<Input::Event>();
-
-		unsigned const num = gui.input.flush();
+		unsigned const num = _gui.input.flush();
 		bool update = false;
 
 		for (unsigned i = 0; i < num; i++) {
 			update |= events[i].focus_enter();
-			input_session.submit(translate_event(events[i], position, fb_session.size()));
+			_input_session.submit(translate_event(events[i], _position, _fb_session.size()));
 		}
 
 		/* get to front if we got input focus */
@@ -406,36 +484,35 @@ struct Nit_fb::Main : View_updater
 			update_view();
 	}
 
-	Signal_handler<Main> input_handler =
-		{ env.ep(), *this, &Main::handle_input };
+	Signal_handler<Main> _input_handler { _env.ep(), *this, &Main::_handle_input };
 
 	/**
 	 * Constructor
 	 */
-	Main(Genode::Env &env) : env(env)
+	Main(Env &env) : _env(env)
 	{
-		input_session.event_queue().enabled(true);
+		_input_session.event_queue().enabled(true);
 
 		/*
 		 * Announce services
 		 */
-		env.parent().announce(env.ep().manage(fb_root));
-		env.parent().announce(env.ep().manage(input_root));
+		_env.parent().announce(_env.ep().manage(_fb_root));
+		_env.parent().announce(_env.ep().manage(_input_root));
 
 		/*
 		 * Apply initial configuration
 		 */
-		handle_config_update();
+		_handle_config_update();
 
 		/*
 		 * Register signal handlers
 		 */
-		config_rom.sigh(config_update_handler);
-		gui.mode_sigh(mode_update_handler);
-		gui.input.sigh(input_handler);
+		_config_rom.sigh(_config_update_handler);
+		_gui.info_sigh(_mode_update_handler);
+		_gui.input.sigh(_input_handler);
 	}
 };
 
 
-void Component::construct(Genode::Env &env) { static Nit_fb::Main inst(env); }
+void Component::construct(Genode::Env &env) { static Gui_fb::Main inst(env); }
 

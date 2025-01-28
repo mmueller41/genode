@@ -18,10 +18,12 @@
 #include <platform.h>
 #include <multiboot.h>
 #include <multiboot2.h>
+#include <port_io.h>
 
 #include <hw/memory_consts.h>
 #include <hw/spec/x86_64/acpi.h>
 #include <hw/spec/x86_64/apic.h>
+#include <hw/spec/x86_64/x86_64.h>
 
 using namespace Genode;
 
@@ -61,8 +63,110 @@ static Hw::Acpi_rsdp search_rsdp(addr_t area, addr_t area_size)
 		}
 	}
 
-	Hw::Acpi_rsdp invalid;
+	Hw::Acpi_rsdp invalid { };
 	return invalid;
+}
+
+
+static uint32_t calibrate_tsc_frequency(addr_t fadt_addr)
+{
+	uint32_t const default_freq = 2'400'000;
+
+	if (!fadt_addr) {
+		warning("FADT not found, returning fixed TSC frequency of ", default_freq, "kHz");
+		return default_freq;
+	}
+
+	uint32_t const sleep_ms = 10;
+
+	Hw::Acpi_fadt fadt(reinterpret_cast<Hw::Acpi_generic *>(fadt_addr));
+
+	uint32_t const freq = fadt.calibrate_freq_khz(sleep_ms, []() { return Hw::Tsc::rdtsc(); });
+
+	if (!freq) {
+		warning("Unable to calibrate TSC, returning fixed TSC frequency of ", default_freq, "kHz");
+		return default_freq;
+	}
+
+	return freq;
+}
+
+
+static Hw::Local_apic::Calibration calibrate_lapic_frequency(addr_t fadt_addr)
+{
+	uint32_t const default_freq = TIMER_MIN_TICKS_PER_MS;
+
+	if (!fadt_addr) {
+		warning("FADT not found, setting minimum Local APIC frequency of ", default_freq, "kHz");
+		return { default_freq, 1 };
+	}
+
+	uint32_t const sleep_ms = 10;
+
+	Hw::Acpi_fadt fadt(reinterpret_cast<Hw::Acpi_generic *>(fadt_addr));
+
+	Hw::Local_apic lapic(Hw::Cpu_memory_map::lapic_phys_base());
+
+	auto const result =
+		lapic.calibrate_divider([&] {
+			return fadt.calibrate_freq_khz(sleep_ms, [&] {
+				return lapic.read<Hw::Local_apic::Tmr_current>(); }, true); });
+
+	if (!result.freq_khz) {
+		warning("FADT not found, setting minimum Local APIC frequency of ", default_freq, "kHz");
+		return { default_freq, 1 };
+	}
+
+	return result;
+}
+
+
+static void disable_pit()
+{
+	using Hw::outb;
+
+	enum {
+		/* PIT constants */
+		PIT_CH0_DATA   = 0x40,
+		PIT_MODE       = 0x43,
+	};
+
+	/*
+	 * Disable PIT timer channel. This is necessary since BIOS sets up
+	 * channel 0 to fire periodically.
+	 */
+	outb(PIT_MODE, 0x30);
+	outb(PIT_CH0_DATA, 0);
+	outb(PIT_CH0_DATA, 0);
+}
+
+
+/*
+ * Enable dispatch serializing lfence instruction on AMD processors
+ *
+ * See Software techniques for managing speculation on AMD processors
+ *     Revision 5.09.23
+ *     Mitigation G-2
+ */
+static void amd_enable_serializing_lfence()
+{
+	using Cpu = Hw::X86_64_cpu;
+
+	if (Hw::Vendor::get_vendor_id() != Hw::Vendor::Vendor_id::AMD)
+		return;
+
+	unsigned const family = Hw::Vendor::get_family();
+
+	/*
+	 * In family 0Fh and 11h, lfence is always dispatch serializing and
+	 * "AMD plans support for this MSR and access to this bit for all future
+	 * processors." from family 14h on.
+	 */
+	if ((family == 0x10) || (family == 0x12) || (family >= 0x14)) {
+		Cpu::Amd_lfence::access_t amd_lfence = Cpu::Amd_lfence::read();
+		Cpu::Amd_lfence::Enable_dispatch_serializing::set(amd_lfence);
+		Cpu::Amd_lfence::write(amd_lfence);
+	}
 }
 
 
@@ -143,10 +247,14 @@ Bootstrap::Platform::Board::Board()
 
 			lambda(base, size);
 		},
-		[&] (Hw::Acpi_rsdp const &rsdp) {
-			/* prefer higher acpi revisions */
-			if (!acpi_rsdp.valid() || acpi_rsdp.revision < rsdp.revision)
-				acpi_rsdp = rsdp;
+		[&] (Hw::Acpi_rsdp const &rsdp_v1) {
+			/* only use ACPI RSDP v1 if nothing available/valid by now */
+			if (!acpi_rsdp.valid())
+				acpi_rsdp = rsdp_v1;
+		},
+		[&] (Hw::Acpi_rsdp const &rsdp_v2) {
+			/* prefer v2 ever, override stored previous rsdp v1 potentially */
+			acpi_rsdp = rsdp_v2;
 		},
 		[&] (Hw::Framebuffer const &fb) {
 			info.framebuffer = fb;
@@ -246,6 +354,21 @@ Bootstrap::Platform::Board::Board()
 		cpus = !cpus ? 1 : max_cpus;
 	}
 
+	/*
+	 * Enable serializing lfence on supported AMD processors
+	 *
+	 * For APs this will be set up later, but we need it already to obtain
+	 * the most acurate results when calibrating the TSC frequency.
+	 */
+	amd_enable_serializing_lfence();
+
+	auto r = calibrate_lapic_frequency(info.acpi_fadt);
+	info.lapic_freq_khz = r.freq_khz;
+	info.lapic_div      = r.div;
+	info.tsc_freq_khz   = calibrate_tsc_frequency(info.acpi_fadt);
+
+	disable_pit();
+
 	/* copy 16 bit boot code for AP CPUs and for ACPI resume */
 	addr_t ap_code_size = (addr_t)&_start - (addr_t)&_ap;
 	memcpy((void *)AP_BOOT_CODE_PAGE, &_ap, ap_code_size);
@@ -315,9 +438,12 @@ unsigned Bootstrap::Platform::enable_mmu()
 	if (board.cpus <= 1)
 		return (unsigned)cpu_id;
 
-	if (!Cpu::IA32_apic_base::Bsp::get(lapic_msr))
+	if (!Cpu::IA32_apic_base::Bsp::get(lapic_msr)) {
 		/* AP - done */
+		/* enable serializing lfence on supported AMD processors. */
+		amd_enable_serializing_lfence();
 		return (unsigned)cpu_id;
+	}
 
 	/* BSP - we're primary CPU - wake now all other CPUs */
 

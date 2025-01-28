@@ -302,7 +302,7 @@ struct Main : Event_handler
 			Gui::Connection &gui = *new Registered<Gui::Connection>(_gui_connections, _env, label.string());
 
 			gui.input.sigh(_input_handler);
-			gui.mode_sigh(_fb_mode_handler);
+			gui.info_sigh(_fb_mode_handler);
 
 			Genodefb *fb = new Genodefb(_env, gui, _idisplay);
 
@@ -411,7 +411,7 @@ void Main::_sync_capslock()
 void Main::_handle_input()
 {
 	auto handle_one_event = [&] (Input::Event const &ev) {
-		/* don't confuse guests and drop CapsLock events in ROM mode  */
+		/* don't confuse guests and drop CapsLock events in ROM mode */
 		if (_capslock.mode == Capslock::Mode::ROM) {
 			if (ev.key_press(Input::KEY_CAPSLOCK)
 			 || ev.key_release(Input::KEY_CAPSLOCK))
@@ -438,7 +438,11 @@ void Main::_handle_fb_mode()
 
 			Genodefb *fb = dynamic_cast<Genodefb *>(pFramebuffer);
 
-			fb->update_mode(gui.mode());
+			Gui::Rect const gui_win = gui.window().convert<Gui::Rect>(
+				[&] (Gui::Rect rect) { return rect; },
+				[&] (Gui::Undefined) { return Gui::Rect { { }, { 1024, 768 } }; });
+
+			fb->update_mode(gui_win);
 
 			if ((fb->w() <= 1) && (fb->h() <= 1)) {
 				/* interpret a size of 0x0 as indication to quit VirtualBox */

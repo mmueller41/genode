@@ -30,19 +30,22 @@ struct Gui::Session_client : Rpc_client<Session>
 	Input::Session_capability input() override {
 		return call<Rpc_input>(); }
 
-	View_result view(View_id id, View_attr const &attr) override {
+	Info_result info() override {
+		return call<Rpc_info>(); }
+
+	[[nodiscard]] View_result view(View_id id, View_attr const &attr) override {
 		return call<Rpc_view>(id, attr); }
 
-	Child_view_result child_view(View_id id, View_id parent, View_attr const &attr) override {
+	[[nodiscard]] Child_view_result child_view(View_id id, View_id parent, View_attr const &attr) override {
 		return call<Rpc_child_view>(id, parent, attr); }
 
 	void destroy_view(View_id view) override {
 		call<Rpc_destroy_view>(view); }
 
-	Associate_result associate(View_id id, View_capability view) override {
+	[[nodiscard]] Associate_result associate(View_id id, View_capability view) override {
 		return call<Rpc_associate>(id, view); }
 
-	View_capability_result view_capability(View_id id) override {
+	[[nodiscard]] View_capability_result view_capability(View_id id) override {
 		return call<Rpc_view_capability>(id); }
 
 	void release_view_id(View_id id) override {
@@ -53,14 +56,8 @@ struct Gui::Session_client : Rpc_client<Session>
 
 	void execute() override { call<Rpc_execute>(); }
 
-	Framebuffer::Mode mode() override {
-		return call<Rpc_mode>(); }
-
-	void mode_sigh(Signal_context_capability sigh) override {
-		call<Rpc_mode_sigh>(sigh); }
-
-	Buffer_result buffer(Framebuffer::Mode mode, bool alpha) override {
-		return call<Rpc_buffer>(mode, alpha); }
+	[[nodiscard]] Buffer_result buffer(Framebuffer::Mode mode) override {
+		return call<Rpc_buffer>(mode); }
 
 	void focus(Gui::Session_capability session) override {
 		call<Rpc_focus>(session); }

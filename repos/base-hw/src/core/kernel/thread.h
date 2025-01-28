@@ -20,7 +20,7 @@
 /* base-hw core includes */
 #include <kernel/cpu_context.h>
 #include <kernel/inter_processor_work.h>
-#include <kernel/signal_receiver.h>
+#include <kernel/signal.h>
 #include <kernel/ipc_node.h>
 #include <object.h>
 #include <kernel/interface.h>
@@ -53,7 +53,7 @@ struct Kernel::Thread_fault
 /**
  * Kernel back-end for userland execution-contexts
  */
-class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
+class Kernel::Thread : private Kernel::Object, public Cpu_context, private Timeout
 {
 	public:
 
@@ -173,7 +173,15 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		size_t                             _ipc_rcv_caps             { 0 };
 		Genode::Native_utcb               *_utcb                     { nullptr };
 		Pd                                *_pd                       { nullptr };
-		Signal_context                    *_pager                    { nullptr };
+
+		struct Fault_context
+		{
+			Thread         &pager;
+			Signal_context &sc;
+		};
+
+		Genode::Constructible<Fault_context> _fault_context {};
+
 		Thread_fault                       _fault                    { };
 		State                              _state;
 		Signal_handler                     _signal_handler           { *this };
@@ -217,19 +225,14 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void _become_inactive(State const s);
 
 		/**
-		 * Activate our CPU-share and those of our helpers
-		 */
-		void _activate_used_shares();
-
-		/**
-		 * Deactivate our CPU-share and those of our helpers
-		 */
-		void _deactivate_used_shares();
-
-		/**
 		 * Suspend unrecoverably from execution
 		 */
 		void _die();
+
+		/**
+		 * In case of fault, signal to pager, and help or block
+		 */
+		void _signal_to_pager();
 
 		/**
 		 * Handle an exception thrown by the memory management unit
@@ -306,6 +309,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void _call_set_cpu_state();
 		void _call_exception_state();
 		void _call_single_step();
+		void _call_ack_pager_signal();
 
 		template <typename T>
 		void _call_new(auto &&... args)
@@ -322,9 +326,13 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 			kobj.destruct();
 		}
 
-		void _ipc_alloc_recv_caps(unsigned rcv_cap_count);
+		enum Ipc_alloc_result { OK, EXHAUSTED };
+
+		[[nodiscard]] Ipc_alloc_result _ipc_alloc_recv_caps(unsigned rcv_cap_count);
+
 		void _ipc_free_recv_caps();
-		void _ipc_init(Genode::Native_utcb &utcb, Thread &callee);
+
+		[[nodiscard]] Ipc_alloc_result _ipc_init(Genode::Native_utcb &utcb, Thread &callee);
 
 	public:
 
@@ -341,6 +349,7 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		Thread(Board::Address_space_id_allocator &addr_space_id_alloc,
 		       Irq::Pool                         &user_irq_pool,
 		       Cpu_pool                          &cpu_pool,
+		       Cpu                               &cpu,
 		       Pd                                &core_pd,
 		       unsigned                    const  priority,
 		       unsigned                    const  quota,
@@ -355,11 +364,12 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		Thread(Board::Address_space_id_allocator &addr_space_id_alloc,
 		       Irq::Pool                         &user_irq_pool,
 		       Cpu_pool                          &cpu_pool,
+		       Cpu                               &cpu,
 		       Pd                                &core_pd,
 		       char                 const *const  label)
 		:
-			Thread(addr_space_id_alloc, user_irq_pool, cpu_pool, core_pd,
-			       Scheduler::Priority::min(), 0, label, CORE)
+			Thread(addr_space_id_alloc, user_irq_pool, cpu_pool, cpu,
+			       core_pd, Scheduler::Priority::min(), 0, label, CORE)
 		{ }
 
 		~Thread();
@@ -396,13 +406,14 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 * \retval capability id of the new kernel object
 		 */
 		static capid_t syscall_create(Core::Kernel_object<Thread> &t,
+		                              unsigned const               cpu_id,
 		                              unsigned const               priority,
 		                              size_t const                 quota,
 		                              char const * const           label)
 		{
 			return (capid_t)call(call_id_new_thread(), (Call_arg)&t,
-			                     (Call_arg)priority, (Call_arg)quota,
-			                     (Call_arg)label);
+			                     (Call_arg)cpu_id, (Call_arg)priority,
+			                     (Call_arg)quota, (Call_arg)label);
 		}
 
 		/**
@@ -414,10 +425,11 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		 * \retval capability id of the new kernel object
 		 */
 		static capid_t syscall_create(Core::Kernel_object<Thread> &t,
+		                              unsigned const               cpu_id,
 		                              char const * const           label)
 		{
 			return (capid_t)call(call_id_new_core_thread(), (Call_arg)&t,
-			                     (Call_arg)label);
+			                     (Call_arg)cpu_id, (Call_arg)label);
 		}
 
 		/**
@@ -454,13 +466,12 @@ class Kernel::Thread : private Kernel::Object, public Cpu_job, private Timeout
 		void signal_receive_signal(void * const base, size_t const size);
 
 
-		/*************
-		 ** Cpu_job **
-		 *************/
+		/*****************
+		 ** Cpu_context **
+		 *****************/
 
-		void exception(Cpu & cpu)       override;
-		void proceed(Cpu & cpu)         override;
-		Cpu_job * helping_destination() override;
+		void exception() override;
+		void proceed() override;
 
 
 		/*************

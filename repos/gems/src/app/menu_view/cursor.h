@@ -70,7 +70,7 @@ class Menu_view::Cursor : List_model<Cursor>::Element
 
 		void _move_to(int position, Steps steps)
 		{
-			_position.move_to(Rect::compound(Point(position, 0), Point()), steps);
+			_position.move_to(Rect { { position, 0 }, { 1, 1 } }, steps);
 		}
 
 		/*
@@ -122,7 +122,7 @@ class Menu_view::Cursor : List_model<Cursor>::Element
 
 		void update(Xml_node const &node)
 		{
-			_move_to(_position_from_xml_node(node), Steps{12});
+			_move_to(_position_from_xml_node(node), Steps{6});
 		}
 };
 

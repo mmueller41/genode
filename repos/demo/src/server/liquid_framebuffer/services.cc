@@ -239,10 +239,10 @@ class Framebuffer::Session_component : public Genode::Rpc_object<Session>
 
 	public:
 
-		Session_component(Genode::Env &env, Window_content &window_content)
+		Session_component(Env &env, Window_content &window_content)
 		: _timer(env), _window_content(window_content) { }
 
-		Genode::Dataspace_capability dataspace() override
+		Dataspace_capability dataspace() override
 		{
 			_window_content.realloc_framebuffer();
 			return _window_content.fb_ds_cap();
@@ -250,21 +250,36 @@ class Framebuffer::Session_component : public Genode::Rpc_object<Session>
 
 		Mode mode() const override
 		{
-			return Mode { .area = _window_content.mode_size() };
+			return { .area = _window_content.mode_size(), .alpha = false };
 		}
 
-		void mode_sigh(Genode::Signal_context_capability sigh) override {
-			_window_content.mode_sigh(sigh); }
+		void mode_sigh(Signal_context_capability sigh) override
+		{
+			_window_content.mode_sigh(sigh);
+		}
 
-		void sync_sigh(Genode::Signal_context_capability sigh) override
+		void sync_sigh(Signal_context_capability sigh) override
 		{
 			_timer.sigh(sigh);
 			_timer.trigger_periodic(10*1000);
 		}
 
-		void refresh(int x, int y, int w, int h) override
+		void sync_source(Session_label const &) override { }
+
+		void refresh(Rect rect) override
 		{
-			_window_content.redraw_area(x, y, w, h);
+			_window_content.redraw_area(rect.x1(), rect.y1(), rect.w(), rect.h());
+		}
+
+		Blit_result blit(Blit_batch const &) override
+		{
+			warning("Framebuffer::Session::blit not supported");
+			return Blit_result::OK;
+		}
+
+		void panning(Point) override
+		{
+			warning("Framebuffer::Session::panning not supported");
 		}
 };
 
@@ -285,7 +300,27 @@ void init_services(Genode::Env &env, Input::Session_component &input_component)
 	using namespace Genode;
 
 	static Framebuffer::Session_component fb_session(env, *_window_content);
-	static Static_root<Framebuffer::Session> fb_root(env.ep().manage(fb_session));
+
+	env.ep().manage(fb_session);
+
+	struct Fb_root : Static_root<Framebuffer::Session>
+	{
+		Framebuffer::Session_component &_fb_session;
+
+		Fb_root(Framebuffer::Session_component &fb_session)
+		:
+			Static_root<Framebuffer::Session>(fb_session.cap()),
+			_fb_session(fb_session)
+		{ }
+
+		void close(Genode::Capability<Genode::Session>) override
+		{
+			_fb_session.sync_sigh(Genode::Signal_context_capability());
+			_fb_session.mode_sigh(Genode::Signal_context_capability());
+		}
+	};
+
+	static Fb_root fb_root { fb_session };
 
 	static Input::Root_component input_root(env.ep().rpc_ep(), input_component);
 

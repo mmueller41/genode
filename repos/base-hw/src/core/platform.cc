@@ -19,6 +19,7 @@
 
 /* base-hw core includes */
 #include <map_local.h>
+#include <pager.h>
 #include <platform.h>
 #include <platform_pd.h>
 #include <kernel/main.h>
@@ -31,7 +32,6 @@
 /* base internal includes */
 #include <base/internal/crt0.h>
 #include <base/internal/stack_area.h>
-#include <base/internal/unmanaged_singleton.h>
 
 /* base includes */
 #include <trace/source_registry.h>
@@ -60,8 +60,9 @@ Hw::Page_table::Allocator & Platform::core_page_table_allocator()
 	using Allocator  = Hw::Page_table::Allocator;
 	using Array      = Allocator::Array<Hw::Page_table::CORE_TRANS_TABLE_COUNT>;
 	addr_t virt_addr = Hw::Mm::core_page_tables().base + sizeof(Hw::Page_table);
-	return *unmanaged_singleton<Array::Allocator>(_boot_info().table_allocator,
-	                                              virt_addr);
+
+	static Array::Allocator alloc { _boot_info().table_allocator, virt_addr };
+	return alloc;
 }
 
 
@@ -69,6 +70,7 @@ addr_t Platform::core_main_thread_phys_utcb()
 {
 	return core_phys_addr(_boot_info().core_main_thread_utcb);
 }
+
 
 void Platform::_init_io_mem_alloc()
 {
@@ -81,8 +83,9 @@ void Platform::_init_io_mem_alloc()
 
 Hw::Memory_region_array const & Platform::_core_virt_regions()
 {
-	return *unmanaged_singleton<Hw::Memory_region_array>(
-	Hw::Memory_region(stack_area_virtual_base(), stack_area_virtual_size()));
+	static Hw::Memory_region_array array {
+		Hw::Memory_region(stack_area_virtual_base(), stack_area_virtual_size()) };
+	return array;
 }
 
 
@@ -160,6 +163,9 @@ void Platform::_init_platform_info()
 			xml.attribute("name", "hw");
 			xml.attribute("acpi", true);
 			xml.attribute("msi",  true);
+		});
+		xml.node("board", [&] {
+			xml.attribute("name", BOARD_NAME);
 		});
 		_init_additional_platform_info(xml);
 		xml.node("affinity-space", [&] {
@@ -247,6 +253,10 @@ Platform::Platform()
 			[&] (Range_allocator::Alloc_error) { }
 		);
 	}
+
+	unsigned const cpus = _boot_info().cpus;
+	size_t size = cpus * sizeof(Pager_entrypoint::Thread);
+	init_pager_thread_per_cpu_memory(cpus, _core_mem_alloc.alloc(size));
 
 	class Idle_thread_trace_source : public  Trace::Source::Info_accessor,
 	                                 private Trace::Control,

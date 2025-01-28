@@ -66,7 +66,14 @@ struct Sandboxed_runtime::Gui_session : Session_object<Gui::Session>
 
 	Input::Session_client _gui_input { _env.rm(), _gui_session.input() };
 
-	Input::Session_component _input_component { _env, _env.ram() };
+	struct Input_action : Input::Session_component::Action
+	{
+		void exclusive_input_requested(bool) override { };
+
+	} _input_action { };
+
+	Input::Session_component _input_component {
+		_env.ep(), _env.ram(), _env.rm(), _input_action };
 
 	Signal_handler<Gui_session> _input_handler {
 		_env.ep(), *this, &Gui_session::_handle_input };
@@ -109,11 +116,8 @@ struct Sandboxed_runtime::Gui_session : Session_object<Gui::Session>
 		_connection(env, _label, Ram_quota { 36*1024 }, { })
 	{
 		_gui_input.sigh(_input_handler);
-		_env.ep().manage(_input_component);
 		_input_component.event_queue().enabled(true);
 	}
-
-	~Gui_session() { _env.ep().dissolve(_input_component); }
 
 	void upgrade(Session::Resources const &resources)
 	{
@@ -150,14 +154,11 @@ struct Sandboxed_runtime::Gui_session : Session_object<Gui::Session>
 	void execute() override {
 		_gui_session.execute(); }
 
-	Framebuffer::Mode mode() override {
-		return _gui_session.mode(); }
+	Info_result info() override {
+		return _gui_session.info(); }
 
-	void mode_sigh(Signal_context_capability sigh) override {
-		_gui_session.mode_sigh(sigh); }
-
-	Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) override {
-		return _gui_session.buffer(mode, use_alpha); }
+	Buffer_result buffer(Framebuffer::Mode mode) override {
+		return _gui_session.buffer(mode); }
 
 	void focus(Capability<Gui::Session> session) override {
 		_gui_session.focus(session); }

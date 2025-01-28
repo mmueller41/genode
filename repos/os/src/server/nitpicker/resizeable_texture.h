@@ -14,10 +14,6 @@
 #ifndef _RESIZEABLE_TEXTURE_H_
 #define _RESIZEABLE_TEXTURE_H_
 
-/* Genode includes */
-#include <blit/painter.h>
-#include <os/pixel_alpha8.h>
-
 /* local includes */
 #include <chunky_texture.h>
 
@@ -31,16 +27,17 @@ class Nitpicker::Resizeable_texture
 
 		unsigned _current = 0;
 
-		using Constructible_texture = Constructible<Chunky_texture<PT>>;
+		Constructible<Chunky_texture<PT>> _textures[2] { };
 
-		struct Element : Constructible_texture
+		static void _with_texture(auto &obj, auto const &fn)
 		{
-			Element() : Constructible_texture() { }
-		};
-
-		Element _textures[2];
+			if (obj.valid())
+				fn(*obj._textures[obj._current]);
+		}
 
 	public:
+
+		Point panning { 0, 0 };
 
 		bool valid() const { return _textures[_current].constructed(); }
 
@@ -50,14 +47,15 @@ class Nitpicker::Resizeable_texture
 			               : Area { };
 		}
 
+		bool alpha() const { return valid() && _textures[_current]->alpha(); }
+
 		void release_current() { _textures[_current].destruct(); }
 
-		bool try_construct_next(Ram_allocator &ram, Region_map &rm,
-		                        Area size, bool use_alpha)
+		bool try_construct_next(Ram_allocator &ram, Region_map &rm, Framebuffer::Mode mode)
 		{
 			try {
 				unsigned const next = !_current;
-				_textures[next].construct(ram, rm, size, use_alpha);
+				_textures[next].construct(ram, rm, mode);
 				return true;
 			} catch (...) { }
 			return false;
@@ -102,22 +100,24 @@ class Nitpicker::Resizeable_texture
 			_current = next;
 		}
 
-		template <typename FN>
-		void with_texture(FN const &fn) const
-		{
-			if (valid())
-				fn(*_textures[_current]);
-		}
+		void with_texture(auto const &fn) const { _with_texture(*this, fn); }
+		void with_texture(auto const &fn)       { _with_texture(*this, fn); }
 
 		Dataspace_capability dataspace()
 		{
-			return valid() ? _textures[_current]->ds_cap() : Ram_dataspace_capability();
+			return valid() ? _textures[_current]->cap() : Ram_dataspace_capability();
 		}
 
-		unsigned char const *input_mask_buffer() const
+		void with_input_mask(auto const &fn) const
 		{
-			return valid() ? _textures[_current]->input_mask_buffer()
-			               : nullptr;
+			if (valid())
+				_textures[_current]->with_input_mask(fn);
+		}
+
+		void blit(Rect from, Point to)
+		{
+			with_texture([&] (Chunky_texture<PT> &texture) {
+				texture.blit(from, to); });
 		}
 };
 

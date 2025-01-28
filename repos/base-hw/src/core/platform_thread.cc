@@ -15,7 +15,6 @@
 /* core includes */
 #include <platform_thread.h>
 #include <platform_pd.h>
-#include <core_env.h>
 #include <rm_session_component.h>
 #include <map_local.h>
 
@@ -30,26 +29,53 @@
 using namespace Core;
 
 
+addr_t Platform_thread::Utcb::_attach(Region_map &core_rm)
+{
+	Region_map::Attr attr { };
+	attr.writeable = true;
+	return core_rm.attach(_ds, attr).convert<addr_t>(
+		[&] (Region_map::Range range) { return range.start; },
+		[&] (Region_map::Attach_error) {
+			error("failed to attach UTCB of new thread within core");
+			return 0ul; });
+}
+
+
+static addr_t _alloc_core_local_utcb(addr_t core_addr)
+{
+	/*
+	 * All non-core threads use the typical dataspace/rm_session
+	 * mechanisms to allocate and attach its UTCB.
+	 * But for the very first core threads, we need to use plain
+	 * physical and virtual memory allocators to create/attach its
+	 * UTCBs. Therefore, we've to allocate and map those here.
+	 */
+	return platform().ram_alloc().try_alloc(sizeof(Native_utcb)).convert<addr_t>(
+
+		[&] (void *utcb_phys) {
+			map_local((addr_t)utcb_phys, core_addr,
+			          sizeof(Native_utcb) / get_page_size());
+			return addr_t(utcb_phys);
+		},
+		[&] (Range_allocator::Alloc_error) {
+			error("failed to allocate UTCB for core/kernel thread!");
+			return 0ul;
+		});
+}
+
+
+Platform_thread::Utcb::Utcb(addr_t core_addr)
+:
+	core_addr(core_addr),
+	phys_addr(_alloc_core_local_utcb(core_addr))
+{ }
+
+
 void Platform_thread::_init() { }
 
 
 Weak_ptr<Address_space>& Platform_thread::address_space() {
 	return _address_space; }
-
-
-Platform_thread::~Platform_thread()
-{
-	/* detach UTCB of main threads */
-	if (_main_thread) {
-		Locked_ptr<Address_space> locked_ptr(_address_space);
-		if (locked_ptr.valid())
-			locked_ptr->flush((addr_t)_utcb_pd_addr, sizeof(Native_utcb),
-			                  Address_space::Core_local_addr{0});
-	}
-
-	/* free UTCB */
-	core_env().pd_session()->free(_utcb);
-}
 
 
 void Platform_thread::quota(size_t const quota)
@@ -64,62 +90,54 @@ Platform_thread::Platform_thread(Label const &label, Native_utcb &utcb)
 	_label(label),
 	_pd(_kernel_main_get_core_platform_pd()),
 	_pager(nullptr),
-	_utcb_core_addr(&utcb),
-	_utcb_pd_addr(&utcb),
+	_utcb((addr_t)&utcb),
 	_main_thread(false),
 	_location(Affinity::Location()),
-	_kobj(_kobj.CALLED_FROM_CORE, _label.string())
-{
-	/* create UTCB for a core thread */
-	platform().ram_alloc().try_alloc(sizeof(Native_utcb)).with_result(
-
-		[&] (void *utcb_phys) {
-			map_local((addr_t)utcb_phys, (addr_t)_utcb_core_addr,
-			          sizeof(Native_utcb) / get_page_size());
-		},
-		[&] (Range_allocator::Alloc_error) {
-			error("failed to allocate UTCB");
-			/* XXX distinguish error conditions */
-			throw Out_of_ram();
-		}
-	);
-}
+	_kobj(_kobj.CALLED_FROM_CORE, _location.xpos(), _label.string())
+{ }
 
 
 Platform_thread::Platform_thread(Platform_pd              &pd,
+                                 Rpc_entrypoint           &ep,
+                                 Ram_allocator            &ram,
+                                 Region_map               &core_rm,
                                  size_t             const  quota,
                                  Label              const &label,
                                  unsigned           const  virt_prio,
                                  Affinity::Location const  location,
-                                 addr_t             const  utcb)
+                                 addr_t                 /* utcb */)
 :
 	_label(label),
 	_pd(pd),
 	_pager(nullptr),
-	_utcb_pd_addr((Native_utcb *)utcb),
+	_utcb(ep, ram, core_rm),
 	_priority(_scale_priority(virt_prio)),
 	_quota((unsigned)quota),
 	_main_thread(!pd.has_any_thread),
 	_location(location),
-	_kobj(_kobj.CALLED_FROM_CORE, _priority, _quota, _label.string())
+	_kobj(_kobj.CALLED_FROM_CORE, _location.xpos(),
+	      _priority, _quota, _label.string())
 {
-	try {
-		_utcb = core_env().pd_session()->alloc(sizeof(Native_utcb), CACHED);
-	} catch (...) {
-		error("failed to allocate UTCB");
-		throw Out_of_ram();
-	}
-
-	Region_map::Attr attr { };
-	attr.writeable = true;
-	core_env().rm_session()->attach(_utcb, attr).with_result(
-		[&] (Region_map::Range range) {
-			_utcb_core_addr = (Native_utcb *)range.start; },
-		[&] (Region_map::Attach_error) {
-			error("failed to attach UTCB of new thread within core"); });
-
 	_address_space = pd.weak_ptr();
 	pd.has_any_thread = true;
+}
+
+
+Platform_thread::~Platform_thread()
+{
+	/* core/kernel threads have no dataspace, but plain memory as UTCB */
+	if (!_utcb._ds.valid()) {
+		error("UTCB of core/kernel thread gets destructed!");
+		return;
+	}
+
+	/* detach UTCB of main threads */
+	if (_main_thread) {
+		Locked_ptr<Address_space> locked_ptr(_address_space);
+		if (locked_ptr.valid())
+			locked_ptr->flush(user_utcb_main_thread(), sizeof(Native_utcb),
+			                  Address_space::Core_local_addr{0});
+	}
 }
 
 
@@ -137,35 +155,22 @@ void Platform_thread::start(void * const ip, void * const sp)
 	/* attach UTCB in case of a main thread */
 	if (_main_thread) {
 
-		/* lookup dataspace component for physical address */
-		auto lambda = [&] (Dataspace_component *dsc) {
-			if (!dsc) return -1;
-
-			/* lock the address space */
-			Locked_ptr<Address_space> locked_ptr(_address_space);
-			if (!locked_ptr.valid()) {
-				error("invalid RM client");
-				return -1;
-			};
-			_utcb_pd_addr = (Native_utcb *)user_utcb_main_thread();
-			Hw::Address_space * as = static_cast<Hw::Address_space*>(&*locked_ptr);
-			if (!as->insert_translation((addr_t)_utcb_pd_addr, dsc->phys_addr(),
-			                            sizeof(Native_utcb), Hw::PAGE_FLAGS_UTCB)) {
-				error("failed to attach UTCB");
-				return -1;
-			}
-			return 0;
-		};
-		if (core_env().entrypoint().apply(_utcb, lambda))
+		Locked_ptr<Address_space> locked_ptr(_address_space);
+		if (!locked_ptr.valid()) {
+			error("unable to start thread in invalid address space");
 			return;
+		};
+		Hw::Address_space * as = static_cast<Hw::Address_space*>(&*locked_ptr);
+		if (!as->insert_translation(user_utcb_main_thread(), _utcb.phys_addr,
+		                            sizeof(Native_utcb), Hw::PAGE_FLAGS_UTCB)) {
+			error("failed to attach UTCB");
+			return;
+		}
 	}
 
 	/* initialize thread registers */
 	_kobj->regs->ip = reinterpret_cast<addr_t>(ip);
 	_kobj->regs->sp = reinterpret_cast<addr_t>(sp);
-
-	/* start executing new thread */
-	unsigned const cpu = _location.xpos();
 
 	Native_utcb &utcb = *Thread::myself()->utcb();
 
@@ -174,18 +179,22 @@ void Platform_thread::start(void * const ip, void * const sp)
 	utcb.cap_add(Capability_space::capid(_kobj.cap()));
 	if (_main_thread) {
 		utcb.cap_add(Capability_space::capid(_pd.parent()));
-		utcb.cap_add(Capability_space::capid(_utcb));
+		utcb.cap_add(Capability_space::capid(_utcb._ds));
 	}
-	Kernel::start_thread(*_kobj, cpu, _pd.kernel_pd(), *_utcb_core_addr);
+
+	Kernel::start_thread(*_kobj, _pd.kernel_pd(),
+	                     *(Native_utcb*)_utcb.core_addr);
 }
 
 
-void Platform_thread::pager(Pager_object &pager)
+void Platform_thread::pager(Pager_object &po)
 {
 	using namespace Kernel;
 
-	thread_pager(*_kobj, Capability_space::capid(pager.cap()));
-	_pager = &pager;
+	po.with_pager([&] (Platform_thread &pt) {
+		thread_pager(*_kobj, *pt._kobj,
+		             Capability_space::capid(po.cap())); });
+	_pager = &po;
 }
 
 
@@ -230,4 +239,10 @@ void Platform_thread::state(Thread_state thread_state)
 void Platform_thread::restart()
 {
 	Kernel::restart_thread(Capability_space::capid(_kobj.cap()));
+}
+
+
+void Platform_thread::fault_resolved(Untyped_capability cap, bool resolved)
+{
+	Kernel::ack_pager_signal(Capability_space::capid(cap), *_kobj, resolved);
 }

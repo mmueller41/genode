@@ -133,9 +133,7 @@ void Pointer::Main::_resize_gui_buffer_if_needed(Gui::Area pointer_size)
 	if (pointer_size == _current_pointer_size)
 		return;
 
-	Framebuffer::Mode const mode { .area = pointer_size };
-
-	_gui.buffer(mode, true /* use alpha */);
+	_gui.buffer({ .area = pointer_size, .alpha = true });
 
 	_pointer_ds = _gui.framebuffer.dataspace();
 
@@ -163,7 +161,7 @@ void Pointer::Main::_show_default_pointer()
 
 	convert_default_pointer_data_to_pixels(ds.local_addr<Genode::Pixel_rgb888>(),
 	                                       pointer_size);
-	_gui.framebuffer.refresh(0, 0, pointer_size.w, pointer_size.h);
+	_gui.framebuffer.refresh({ { 0, 0 }, pointer_size });
 
 	Gui::Rect geometry(Gui::Point(0, 0), pointer_size);
 	_gui.enqueue<Gui::Session::Command::Geometry>(_view.id(), geometry);
@@ -224,7 +222,7 @@ void Pointer::Main::_show_shape_pointer(Shape_report &shape_report)
 		Dither_painter::paint(alpha_surface, texture);
 	}
 
-	_gui.framebuffer.refresh(0, 0, shape_size.w, shape_size.h);
+	_gui.framebuffer.refresh({ { 0, 0 }, shape_size });
 
 	Gui::Rect geometry(shape_hot, shape_size);
 	_gui.enqueue<Gui::Session::Command::Geometry>(_view.id(), geometry);
@@ -333,9 +331,9 @@ Pointer::Main::Main(Genode::Env &env) : _env(env)
 	 * pointer size to let the user know right from the start if the
 	 * RAM quota is too low.
 	 */
-	Framebuffer::Mode const mode { .area = { Pointer::MAX_WIDTH, Pointer::MAX_HEIGHT } };
 
-	_gui.buffer(mode, true /* use alpha */);
+	_gui.buffer({ .area  = { Pointer::MAX_WIDTH, Pointer::MAX_HEIGHT },
+	              .alpha = true });
 
 	if (_shapes_enabled) {
 		try {

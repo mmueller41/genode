@@ -139,6 +139,8 @@ class Genode::Attached_ram_dataspace
 		 */
 		size_t size() const { return _size; }
 
+		void clear() { if (_at) memset((void *)_at, 0, _size); }
+
 		void swap(Attached_ram_dataspace &other)
 		{
 			_swap(_size, other._size);
@@ -163,6 +165,11 @@ class Genode::Attached_ram_dataspace
 
 			_alloc_and_attach();
 		}
+
+		/**
+		 * Return byte range of locally mapped dataspace
+		 */
+		Byte_range_ptr bytes() const { return { local_addr<char>(), size() }; }
 };
 
 #endif /* _INCLUDE__BASE__ATTACHED_RAM_DATASPACE_H_ */

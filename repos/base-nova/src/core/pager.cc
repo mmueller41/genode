@@ -25,7 +25,6 @@
 #include <platform_thread.h>
 #include <imprint_badge.h>
 #include <cpu_thread_component.h>
-#include <core_env.h>
 
 /* NOVA includes */
 #include <nova/syscalls.h>
@@ -36,6 +35,11 @@ static bool verbose_oom = false;
 
 using namespace Core;
 using namespace Nova;
+
+
+static Rpc_entrypoint *_core_ep_ptr;
+
+void Core::init_page_fault_handling(Rpc_entrypoint &ep) { _core_ep_ptr = &ep; }
 
 
 /**
@@ -397,9 +401,8 @@ void Pager_object::_invoke_handler(Pager_object &obj)
 		Nova::Crd const cap(item.crd);
 
 		/* valid item which got translated ? */
-		if (!cap.is_null() && !item.is_del()) {
-			Rpc_entrypoint &e = core_env().entrypoint();
-			e.apply(cap.base(),
+		if (!cap.is_null() && !item.is_del() && _core_ep_ptr) {
+			_core_ep_ptr->apply(cap.base(),
 				[&] (Cpu_thread_component *source) {
 					if (!source)
 						return;
@@ -523,8 +526,6 @@ uint8_t Pager_object::_unsynchronized_client_recall(bool get_state_and_block)
 
 void Pager_object::cleanup_call()
 {
-	_state.mark_dissolved();
-
 	/* revoke ec and sc cap of client before the sm cap */
 	if (_state.sel_client_ec != Native_thread::INVALID_INDEX)
 		revoke(Obj_crd(_state.sel_client_ec, 2));
@@ -750,10 +751,6 @@ void Pager_object::migrate(Affinity::Location location)
 
 Pager_object::~Pager_object()
 {
-	/* sanity check that object got dissolved already - otherwise bug */
-	if (!_state.dissolved())
-		nova_die();
-
 	/* revoke portal used for the cleanup call and sm cap for blocking state */
 	revoke(Obj_crd(_selectors, 2));
 	cap_map().remove(_selectors, 2, false);
@@ -993,13 +990,6 @@ const char * Pager_object::client_pd() const
 
 Pager_entrypoint::Pager_entrypoint(Rpc_cap_factory &)
 {
-	/* sanity check for pager threads */
-	if (kernel_hip().cpu_max() > PAGER_CPUS) {
-		error("kernel supports more CPUs (", kernel_hip().cpu_max(), ") "
-		      "than Genode (", (unsigned)PAGER_CPUS, ")");
-		nova_die();
-	}
-
 	/* detect enabled CPUs and create per CPU a pager thread */
 	platform_specific().for_each_location([&](Affinity::Location &location) {
 		unsigned const pager_index = platform_specific().pager_index(location);
@@ -1007,6 +997,12 @@ Pager_entrypoint::Pager_entrypoint(Rpc_cap_factory &)
 
 		if (!kernel_hip().is_cpu_enabled(kernel_cpu_id))
 			return;
+
+		/* sanity check for pager threads */
+		if (pager_index >= PAGER_CPUS) {
+			error("too many CPUs for pager");
+			return;
+		}
 
 		pager_threads[pager_index].construct(location);
 	});

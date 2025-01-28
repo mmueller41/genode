@@ -50,8 +50,22 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		 */
 		struct Id { unsigned value; };
 
-		struct Default_route_accessor : Interface { virtual Xml_node default_route() = 0; };
-		struct Default_caps_accessor  : Interface { virtual Cap_quota default_caps() = 0; };
+		using With_xml = Callable<void, Xml_node const &>;
+
+		struct Default_route_accessor : Interface
+		{
+			virtual void _with_default_route(With_xml::Ft const &) = 0;
+
+			void with_default_route(auto const &fn)
+			{
+				_with_default_route(With_xml::Fn { fn });
+			}
+		};
+
+		struct Default_caps_accessor : Interface
+		{
+			virtual Cap_quota default_caps() = 0;
+		};
 
 		template <typename QUOTA>
 		struct Resource_limit_accessor : Interface
@@ -74,27 +88,14 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		enum class Sample_state_result { CHANGED, UNCHANGED };
 
-		/*
-		 * Helper for passing lambda functions as 'Pd_intrinsics::Fn'
-		 */
-
 		using Pd_intrinsics = Genode::Sandbox::Pd_intrinsics;
 
-		template <typename PD_SESSION, typename FN>
+		template <typename PD_SESSION>
 		static void with_pd_intrinsics(Pd_intrinsics &pd_intrinsics,
 		                               Capability<Pd_session> cap, PD_SESSION &pd,
-		                               FN const &fn)
+		                               auto const &fn)
 		{
-			struct Impl : Pd_intrinsics::Fn
-			{
-				using Intrinsics = Pd_intrinsics::Intrinsics;
-
-				FN const &_fn;
-				Impl(FN const &fn) : _fn(fn) { }
-				void call(Intrinsics &intrinsics) const override { _fn(intrinsics); }
-			};
-
-			pd_intrinsics.with_intrinsics(cap, pd, Impl { fn });
+			pd_intrinsics.with_intrinsics(cap, pd, Pd_intrinsics::With_intrinsics::Fn { fn });
 		}
 
 	private:
@@ -153,8 +154,10 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			start.with_sub_node("route",
 				[&] (Xml_node const &route) {
 					_route_model.construct(_alloc, route); },
-				[&] () {
-					_route_model.construct(_alloc, _default_route_accessor.default_route()); });
+				[&] {
+					_default_route_accessor.with_default_route([&] (Xml_node const &node) {
+						_route_model.construct(_alloc, node); });
+				});
 		}
 
 		/*
@@ -306,8 +309,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Pd_intrinsics &_pd_intrinsics;
 
-		template <typename FN>
-		void _with_pd_intrinsics(FN const &fn)
+		void _with_pd_intrinsics(auto const &fn)
 		{
 			with_pd_intrinsics(_pd_intrinsics, _child.pd_session_cap(), _child.pd(), fn);
 		}
@@ -715,15 +717,15 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Child_policy::Name name() const override { return _unique_name; }
 
-		Pd_session &ref_pd() override
+		Pd_account &ref_account() override
 		{
-			Pd_session *_ref_pd_ptr = nullptr;
+			Pd_account *_ref_account_ptr = nullptr;
 			_with_pd_intrinsics([&] (Pd_intrinsics::Intrinsics &intrinsics) {
-				_ref_pd_ptr = &intrinsics.ref_pd; });
-			return *_ref_pd_ptr;
+				_ref_account_ptr = &intrinsics.ref_pd; });
+			return *_ref_account_ptr;
 		}
 
-		Pd_session_capability ref_pd_cap() const override { return _ref_pd_cap; }
+		Capability<Pd_account> ref_account_cap() const override { return _ref_pd_cap; }
 
 		Ram_allocator &session_md_ram() override { return _env.ram(); }
 

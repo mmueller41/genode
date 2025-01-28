@@ -23,6 +23,7 @@
 #include <os/static_root.h>
 #include <util/reconstructible.h>
 #include <nitpicker_gfx/texture_painter.h>
+#include <blit/painter.h>
 #include <util/lazy_value.h>
 #include <timer_session/connection.h>
 
@@ -42,6 +43,7 @@ namespace Gui_fader {
 	using Rect  = Genode::Surface_base::Rect;
 
 	using Genode::size_t;
+	using Genode::uint8_t;
 	using Genode::Xml_node;
 	using Genode::Dataspace_capability;
 	using Genode::Attached_ram_dataspace;
@@ -64,9 +66,9 @@ class Gui_fader::Src_buffer
 
 		using Pixel = Pixel_rgb888;
 
-		bool             const _use_alpha;
 		Attached_ram_dataspace _ds;
 		Texture<Pixel>         _texture;
+		bool                   _warned_once = false;
 
 		static size_t _needed_bytes(Area size)
 		{
@@ -74,25 +76,40 @@ class Gui_fader::Src_buffer
 			return size.count() * (1 + 1 + sizeof(Pixel));
 		}
 
+		void _with_pixel_surface(auto const &fn)
+		{
+			Surface<Pixel_rgb888> pixel { _ds.local_addr<Pixel_rgb888>(), _texture.size() };
+			fn(pixel);
+		}
+
 	public:
 
-		/**
-		 * Constructor
-		 */
-		Src_buffer(Genode::Env &env, Area size, bool use_alpha)
+		Src_buffer(Genode::Env &env, Framebuffer::Mode mode)
 		:
-			_use_alpha(use_alpha),
-			_ds(env.ram(), env.rm(), _needed_bytes(size)),
+			_ds(env.ram(), env.rm(), _needed_bytes(mode.area)),
 			_texture(_ds.local_addr<Pixel>(),
-			         _ds.local_addr<unsigned char>() + size.count()*sizeof(Pixel),
-			         size)
+			         mode.alpha ? _ds.local_addr<uint8_t>() + mode.area.count()*sizeof(Pixel)
+			                    : nullptr,
+			         mode.area)
 		{ }
 
 		Dataspace_capability dataspace() { return _ds.cap(); }
 
 		Texture<Pixel> const &texture() const { return _texture; }
 
-		bool use_alpha() const { return _use_alpha; }
+		bool use_alpha() const { return _texture.alpha(); }
+
+		void blit(Rect from, Point to)
+		{
+			if (_texture.alpha() && !_warned_once) {
+				Genode::warning("Framebuffer::Session::blit does not support alpha blending");
+				_warned_once = true;
+			}
+
+			_with_pixel_surface([&] (Surface<Pixel_rgb888> &surface) {
+				surface.clip({ to, from.area });
+				Blit_painter::paint(surface, _texture, to - from.p1()); });
+		}
 };
 
 
@@ -141,7 +158,6 @@ class Gui_fader::Framebuffer_session_component
 		Src_buffer      &_src_buffer;
 
 		Constructible<Dst_buffer> _dst_buffer { };
-
 
 		Lazy_value<int> _fade { };
 
@@ -207,7 +223,7 @@ class Gui_fader::Framebuffer_session_component
 
 			transfer_src_to_dst_alpha(rect);
 
-			_gui.framebuffer.refresh(rect.x1(), rect.y1(), rect.w(), rect.h());
+			_gui.framebuffer.refresh(rect);
 
 			/* keep animating as long as the destination value is not reached */
 			return _fade != _fade.dst();
@@ -238,18 +254,44 @@ class Gui_fader::Framebuffer_session_component
 			_gui.framebuffer.mode_sigh(sigh);
 		}
 
-		void refresh(int x, int y, int w, int h) override
+		void refresh(Rect rect) override
 		{
-			transfer_src_to_dst_pixel(Rect(Point(x, y), Area(w, h)));
-			transfer_src_to_dst_alpha(Rect(Point(x, y), Area(w, h)));
+			transfer_src_to_dst_pixel(rect);
+			transfer_src_to_dst_alpha(rect);
 
-			_gui.framebuffer.refresh(x, y, w, h);
+			_gui.framebuffer.refresh(rect);
+		}
+
+		Blit_result blit(Framebuffer::Blit_batch const &batch) override
+		{
+			Framebuffer::Mode const mode { .area  = _src_buffer.texture().size(),
+			                               .alpha = false };
+			for (Framebuffer::Transfer const &transfer : batch.transfer) {
+				if (transfer.valid(mode)) {
+					_src_buffer.blit(transfer.from, transfer.to);
+					Rect const to_rect { transfer.to, transfer.from.area };
+					refresh(to_rect);
+				}
+			}
+			return Blit_result::OK;
+		}
+
+		void panning(Point pos) override
+		{
+			Rect const rect { { }, _src_buffer.texture().size() };
+
+			transfer_src_to_dst_pixel(rect);
+			transfer_src_to_dst_alpha(rect);
+
+			_gui.framebuffer.panning(pos);
 		}
 
 		void sync_sigh(Genode::Signal_context_capability sigh) override
 		{
 			_gui.framebuffer.sync_sigh(sigh);
 		}
+
+		void sync_source(Genode::Session_label const &) override { }
 };
 
 
@@ -264,7 +306,8 @@ class Gui_fader::Gui_session_component
 
 		Genode::Env &_env;
 
-		Reconstructible<Src_buffer> _src_buffer { _env, Area(1, 1), false };
+		Reconstructible<Src_buffer> _src_buffer {
+			_env, Framebuffer::Mode { .area  = { 1, 1 }, .alpha = false } };
 
 		Gui::Connection _gui { _env };
 
@@ -412,25 +455,15 @@ class Gui_fader::Gui_session_component
 			return _gui.execute();
 		}
 
-		Framebuffer::Mode mode() override
+		Info_result info() override { return _gui.info_rom_cap(); }
+
+		Buffer_result buffer(Framebuffer::Mode mode) override
 		{
-			return _gui.mode();
-		}
+			_src_buffer.construct(_env, mode);
 
-		void mode_sigh(Genode::Signal_context_capability sigh) override
-		{
-			_gui.mode_sigh(sigh);
-		}
+			_gui.buffer({ .area = mode.area, .alpha = true });
 
-		Buffer_result buffer(Framebuffer::Mode mode, bool use_alpha) override
-		{
-			Area const size = mode.area;
-
-			_src_buffer.construct(_env, size, use_alpha);
-
-			_gui.buffer(mode, true);
-
-			_fb_session.dst_buffer(_gui.framebuffer.dataspace(), size);
+			_fb_session.dst_buffer(_gui.framebuffer.dataspace(), mode.area);
 			return Buffer_result::OK;
 		}
 

@@ -47,6 +47,8 @@ struct Backdrop::Main
 
 	Gui::Connection _gui { _env, "backdrop" };
 
+	Gui::Rect _gui_win { };
+
 	struct Buffer
 	{
 		Gui::Connection &gui;
@@ -59,17 +61,12 @@ struct Backdrop::Main
 		Dataspace_capability _ds_cap(Gui::Connection &gui)
 		{
 			/* setup virtual framebuffer mode */
-			gui.buffer(mode, false);
+			gui.buffer(mode);
 
 			return gui.framebuffer.dataspace();
 		}
 
 		Attached_dataspace fb_ds;
-
-		Genode::size_t surface_num_bytes() const
-		{
-			return size().count()*mode.bytes_per_pixel();
-		}
 
 		Attached_ram_dataspace surface_ds;
 
@@ -79,7 +76,7 @@ struct Backdrop::Main
 		Buffer(Genode::Env &env, Gui::Connection &gui, Framebuffer::Mode mode)
 		:	gui(gui), mode(mode),
 			fb_ds(env.rm(), _ds_cap(gui)),
-			surface_ds(env.ram(), env.rm(), surface_num_bytes())
+			surface_ds(env.ram(), env.rm(), mode.num_bytes())
 		{ }
 
 		/**
@@ -100,11 +97,10 @@ struct Backdrop::Main
 		void flush_surface()
 		{
 			/* blit back to front buffer */
-			blit(surface_ds.local_addr<void>(),
-			     (unsigned)surface_num_bytes(),
-			     fb_ds.local_addr<void>(),
-			     (unsigned)surface_num_bytes(),
-			     (unsigned)surface_num_bytes(), 1);
+			unsigned const num_bytes = unsigned(mode.num_bytes());
+			blit(surface_ds.local_addr<void>(), num_bytes,
+			     fb_ds.local_addr<void>(), num_bytes,
+			     num_bytes, 1);
 		}
 	};
 
@@ -118,7 +114,7 @@ struct Backdrop::Main
 		using Command = Gui::Session::Command;
 
 		_gui.enqueue<Command::Background>(_view_id);
-		Gui::Rect rect(Gui::Point(), _buffer->size());
+		Gui::Rect rect(_gui_win.at, _buffer->size());
 		_gui.enqueue<Command::Geometry>(_view_id, rect);
 		_gui.enqueue<Command::Back>(_view_id);
 		_gui.execute();
@@ -135,11 +131,6 @@ struct Backdrop::Main
 	Signal_handler<Main> _config_handler = {
 		_env.ep(), *this, &Main::_handle_config_signal };
 
-	void _handle_sync();
-
-	Signal_handler<Main> _sync_handler = {
-		_env.ep(), *this, &Main::_handle_sync};
-
 	template <typename PT>
 	void _paint_texture(Surface<PT> &, Texture<PT> const &, Surface_base::Point, bool);
 
@@ -150,8 +141,7 @@ struct Backdrop::Main
 	{
 		_gui.view(_view_id, { });
 
-		_gui.mode_sigh(_config_handler);
-
+		_gui.info_sigh(_config_handler);
 		_config.sigh(_config_handler);
 
 		_handle_config();
@@ -318,10 +308,14 @@ void Backdrop::Main::_handle_config()
 {
 	_config.update();
 
-	Framebuffer::Mode const phys_mode = _gui.mode();
-	Framebuffer::Mode const
-		mode { .area = { _config.xml().attribute_value("width",  phys_mode.area.w),
-		                 _config.xml().attribute_value("height", phys_mode.area.h) } };
+	_gui_win = _gui.window().convert<Gui::Rect>(
+		[&] (Gui::Rect rect) { return rect; },
+		[&] (Gui::Undefined) { return Gui::Rect { { }, { 640, 480 } }; });
+
+	_gui_win.area = { _config.xml().attribute_value("width",  _gui_win.w()),
+	                  _config.xml().attribute_value("height", _gui_win.h()) };
+
+	Framebuffer::Mode const mode { .area = _gui_win.area, .alpha = false };
 
 	_buffer.construct(_env, _gui, mode);
 
@@ -345,20 +339,10 @@ void Backdrop::Main::_handle_config()
 		}
 	});
 
-	/* schedule buffer refresh */
-	_gui.framebuffer.sync_sigh(_sync_handler);
-}
-
-
-void Backdrop::Main::_handle_sync()
-{
 	Libc::with_libc([&] () {
 		_buffer->flush_surface();
 		_update_view();
 	});
-
-	/* disable sync signal until the next call of 'handle_config' */
-	_gui.framebuffer.sync_sigh(Signal_context_capability());
 }
 
 

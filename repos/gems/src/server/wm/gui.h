@@ -15,43 +15,17 @@
 #define _GUI_H_
 
 /* Genode includes */
-#include <util/list.h>
-#include <base/tslab.h>
-#include <os/surface.h>
-#include <base/attached_ram_dataspace.h>
-#include <os/session_policy.h>
-#include <os/reporter.h>
-#include <os/session_policy.h>
 #include <root/component.h>
 #include <gui_session/connection.h>
 #include <input_session/capability.h>
 #include <input/component.h>
+#include <os/dynamic_rom_session.h>
 
 /* local includes */
 #include <window_registry.h>
 #include <decorator_gui.h>
 #include <layouter_gui.h>
 #include <direct_gui.h>
-
-
-namespace Wm {
-
-	using Genode::Rpc_object;
-	using Genode::List;
-	using Genode::Allocator;
-	using Genode::Affinity;
-	using Genode::static_cap_cast;
-	using Genode::Signal_handler;
-	using Genode::Weak_ptr;
-	using Genode::Locked_ptr;
-	using Genode::Tslab;
-	using Genode::Attached_ram_dataspace;
-	using Genode::Signal_context_capability;
-	using Genode::Signal_transmitter;
-	using Genode::Reporter;
-	using Genode::Capability;
-	using Genode::Interface;
-}
 
 namespace Wm { namespace Gui {
 
@@ -65,10 +39,6 @@ namespace Wm { namespace Gui {
 	class Session_control_fn;
 	class Session_component;
 	class Root;
-
-	using Rect          = Genode::Surface_base::Rect;
-	using Point         = Genode::Surface_base::Point;
-	using Session_label = Genode::Session_label;
 } }
 
 
@@ -97,13 +67,12 @@ struct Wm::Gui::Input_origin_changed_handler : Interface
 };
 
 
-class Wm::Gui::View : private Genode::Weak_object<View>,
-                      public  Genode::Rpc_object< ::Gui::View>
+class Wm::Gui::View : private Weak_object<View>, public Rpc_object< ::Gui::View>
 {
 	private:
 
-		friend class Genode::Weak_ptr<View>;
-		friend class Genode::Locked_ptr<View>;
+		friend class Weak_ptr<View>;
+		friend class Locked_ptr<View>;
 
 	protected:
 
@@ -121,6 +90,7 @@ class Wm::Gui::View : private Genode::Weak_object<View>,
 		Weak_ptr<View>          _neighbor_ptr    { };
 		bool                    _neighbor_behind { };
 		bool                    _has_alpha;
+		bool                    _layouted = false;
 
 		void _with_temporary_view_id(View_capability cap, auto const &fn)
 		{
@@ -141,12 +111,11 @@ class Wm::Gui::View : private Genode::Weak_object<View>,
 		};
 
 		View(Real_gui            &real_gui,
-		     View_id       const &real_view_id,
 		     Session_label const &session_label,
 		     bool                 has_alpha)
 		:
 			_session_label(session_label), _real_gui(real_gui),
-			_real_view(_real_view_ref, _real_gui.view_ids, real_view_id),
+			_real_view(_real_view_ref, _real_gui.view_ids),
 			_has_alpha(has_alpha)
 		{ }
 
@@ -197,8 +166,8 @@ class Wm::Gui::View : private Genode::Weak_object<View>,
 			_real_gui.session.destroy_view(_real_view.id());
 		}
 
-		using Genode::Weak_object<View>::weak_ptr;
-		using Genode::Weak_object<View>::lock_for_destruction;
+		using Weak_object<View>::weak_ptr;
+		using Weak_object<View>::lock_for_destruction;
 
 		Point virtual_position() const { return _geometry.at; }
 
@@ -241,16 +210,22 @@ class Wm::Gui::View : private Genode::Weak_object<View>,
 		}
 
 		bool has_alpha() const { return _has_alpha; }
+
+		bool layouted() const { return _layouted; }
 };
 
 
 class Wm::Gui::Top_level_view : public View, private List<Top_level_view>::Element
 {
+	public:
+
+		using View_result = Gui::Session::View_result;
+
 	private:
 
 		friend class List<Top_level_view>;
 
-		Window_registry::Id _win_id { };
+		Window_registry::Create_result _win_id = Window_registry::Create_error::IDS_EXHAUSTED;
 
 		Window_registry &_window_registry;
 
@@ -268,36 +243,45 @@ class Wm::Gui::Top_level_view : public View, private List<Top_level_view>::Eleme
 
 		Session_label const _session_label;
 
+		View_result _init_real_view()
+		{
+			return _real_gui.session.view(_real_view.id(), { .title = _title,
+			                                                 .rect  = { },
+			                                                 .front = false });
+		}
+
+		View_result const _real_view_result = _init_real_view();
+
 		using Command = Gui::Session::Command;
+
+		void _with_optional_win_id(auto const &fn) const
+		{
+			_win_id.with_result([&] (Window_registry::Id id) { fn(id); },
+			                    [&] (Window_registry::Create_error) { });
+		}
 
 	public:
 
 		Top_level_view(Real_gui                     &real_gui,
-		               View_id                       view_id,
 		               bool                          has_alpha,
 		               Window_registry              &window_registry,
 		               Input_origin_changed_handler &input_origin_changed_handler)
 		:
-			View(real_gui, view_id, real_gui.label, has_alpha),
+			View(real_gui, real_gui.label, has_alpha),
 			_window_registry(window_registry),
 			_input_origin_changed_handler(input_origin_changed_handler),
 			_session_label(real_gui.label)
-		{
-			/*
-			 * Create and configure physical GUI view.
-			 */
-			_real_gui.session.view(_real_view.id(), { .title = _title,
-			                                          .rect  = { },
-			                                          .front = false });
-		}
+		{ }
 
 		~Top_level_view()
 		{
-			if (_win_id.valid())
-				_window_registry.destroy(_win_id);
+			_with_optional_win_id([&] (Window_registry::Id id) {
+				_window_registry.destroy(id); });
 
 			View::lock_for_destruction();
 		}
+
+		View_result real_view_result() const { return _real_view_result; }
 
 		using List<Top_level_view>::Element::next;
 
@@ -310,15 +294,19 @@ class Wm::Gui::Top_level_view : public View, private List<Top_level_view>::Eleme
 			 * defer the creation of the window ID until the time when the
 			 * initial geometry is known.
 			 */
-			if (!_win_id.valid()) {
-				_win_id = _window_registry.create();
-				_window_registry.title(_win_id, _window_title);
-				_window_registry.label(_win_id, _session_label);
-				_window_registry.has_alpha(_win_id, View::has_alpha());
-				_window_registry.resizeable(_win_id, _resizeable);
+			if (!_win_id.ok()) {
+				_win_id = _window_registry.create({
+					.title      = _window_title,
+					.label      = _session_label,
+					.area       = geometry.area,
+					.alpha      = { View::has_alpha() },
+					.hidden     = { },
+					.resizeable = { _resizeable }
+				});
+			} else {
+				_with_optional_win_id([&] (Window_registry::Id id) {
+					_window_registry.area(id, geometry.area); });
 			}
-
-			_window_registry.size(_win_id, geometry.area);
 
 			View::geometry(geometry);
 		}
@@ -331,11 +319,17 @@ class Wm::Gui::Top_level_view : public View, private List<Top_level_view>::Eleme
 
 			_window_title = title;
 
-			if (_win_id.valid())
-				_window_registry.title(_win_id, _window_title);
+			_with_optional_win_id([&] (Window_registry::Id id) {
+				_window_registry.title(id, _window_title); });
 		}
 
-		bool has_win_id(Window_registry::Id id) const { return id == _win_id; }
+		bool has_win_id(Window_registry::Id id) const
+		{
+			bool result = false;
+			_with_optional_win_id([&] (Window_registry::Id this_id) {
+				result = (this_id == id); });
+			return result;
+		}
 
 		bool belongs_to_win_id(Window_registry::Id id) const override
 		{
@@ -353,26 +347,36 @@ class Wm::Gui::Top_level_view : public View, private List<Top_level_view>::Eleme
 
 			_content_geometry = rect;
 
+			_layouted = true;
+
 			if (position_changed)
 				_input_origin_changed_handler.input_origin_changed();
 		}
 
 		View_capability content_view() { return real_view_cap(); }
 
-		void hidden(bool hidden) { _window_registry.hidden(_win_id, hidden); }
+		void hidden(bool hidden)
+		{
+			_with_optional_win_id([&] (Window_registry::Id id) {
+				_window_registry.hidden(id, hidden); });
+		}
 
 		void resizeable(bool resizeable)
 		{
 			_resizeable = resizeable;
 
-			if (_win_id.valid())
-				_window_registry.resizeable(_win_id, resizeable);
+			_with_optional_win_id([&] (Window_registry::Id id) {
+				_window_registry.resizeable(id, resizeable); });
 		}
 };
 
 
 class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 {
+	public:
+
+		using View_result = Gui::Session::Child_view_result;
+
 	private:
 
 		friend class List<Child_view>;
@@ -381,22 +385,23 @@ class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 
 		bool _visible = false;
 
+		View_result _real_view_result = try_to_init_real_view();
+
 	public:
 
 		Child_view(Real_gui      &real_gui,
-		           View_id        real_gui_id,
 		           bool           has_alpha,
 		           Weak_ptr<View> parent)
 		:
-			View(real_gui, real_gui_id, real_gui.label, has_alpha), _parent(parent)
-		{
-			try_to_init_real_view();
-		}
+			View(real_gui, real_gui.label, has_alpha), _parent(parent)
+		{ }
 
 		~Child_view()
 		{
 			View::lock_for_destruction();
 		}
+
+		View_result real_view_result() const { return _real_view_result; }
 
 		using List<Child_view>::Element::next;
 
@@ -410,7 +415,14 @@ class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 			_neighbor_ptr    = neighbor_ptr;
 			_neighbor_behind = behind;
 
-			_apply_view_config();
+			auto parent_position_known = [&]
+			{
+				Locked_ptr<View> parent(_parent);
+				return parent.valid() && parent->layouted();
+			};
+
+			if (parent_position_known())
+				_apply_view_config();
 		}
 
 		bool belongs_to_win_id(Window_registry::Id id) const override
@@ -428,11 +440,15 @@ class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 			return Point();
 		}
 
-		void try_to_init_real_view()
+		View_result try_to_init_real_view()
 		{
+			using Child_view_result = Gui::Session::Child_view_result;
+
+			Child_view_result result = Child_view_result::INVALID;
+
 			Locked_ptr<View> parent(_parent);
 			if (!parent.valid())
-				return;
+				return result;
 
 			_with_temporary_view_id(parent->real_view_cap(), [&] (View_id parent_id) {
 
@@ -443,22 +459,24 @@ class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 				                                     .rect  = _geometry,
 				                                     .front = false };
 
-				switch (_real_gui.session.child_view(_real_view.id(), parent_id, attr)) {
-				case Gui::Session::Child_view_result::OUT_OF_RAM:
-				case Gui::Session::Child_view_result::OUT_OF_CAPS:
-				case Gui::Session::Child_view_result::INVALID:
+				result = _real_gui.session.child_view(_real_view.id(), parent_id, attr);
+
+				if (result != Child_view_result::OK) {
 					warning("unable to create child view");
 					return;
-				case Gui::Session::Child_view_result::OK:
-					break;
-				};
+				}
+
 				_visible = true;
 			});
 
-			if (_neighbor_ptr == _parent)
-				_unsynchronized_apply_view_config(parent);
-			else
-				_apply_view_config();
+			if (parent->layouted()) {
+				if (_neighbor_ptr == _parent)
+					_unsynchronized_apply_view_config(parent);
+				else
+					_apply_view_config();
+			}
+
+			return result;
 		}
 
 		void update_child_stacking()
@@ -474,10 +492,20 @@ class Wm::Gui::Child_view : public View, private List<Child_view>::Element
 };
 
 
-class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
+class Wm::Gui::Session_component : public Session_object<Gui::Session>,
                                    private List<Session_component>::Element,
-                                   private Input_origin_changed_handler
+                                   private Input_origin_changed_handler,
+                                   private Upgradeable,
+                                   private Dynamic_rom_session::Xml_producer,
+                                   private Input::Session_component::Action
 {
+	public:
+
+		struct Action : Interface
+		{
+			virtual void gen_screen_area_info(Xml_generator &) const = 0;
+		};
+
 	private:
 
 		friend class List<Session_component>;
@@ -513,30 +541,90 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			}
 		};
 
-		Genode::Env &_env;
+		Env    &_env;
+		Action &_action;
 
-		Session_label                _session_label;
-		Genode::Ram_allocator       &_ram;
-		Real_gui                     _real_gui { _env, _session_label };
+		Constrained_ram_allocator _ram {
+			_env.ram(), _ram_quota_guard(), _cap_quota_guard() };
+
+		Sliced_heap                  _session_alloc { _ram, _env.rm() };
+		Real_gui                     _real_gui { _env, _label };
 		Window_registry             &_window_registry;
-		Tslab<Top_level_view, 8000>  _top_level_view_alloc;
-		Tslab<Child_view, 7000>      _child_view_alloc;
-		Tslab<View_ref, 4000>        _view_ref_alloc;
+		Slab<Top_level_view, 8000>   _top_level_view_alloc { _session_alloc };
+		Slab<Child_view, 7000>       _child_view_alloc     { _session_alloc };
+		Slab<View_ref, 4000>         _view_ref_alloc       { _session_alloc };
 		List<Top_level_view>         _top_level_views { };
 		List<Child_view>             _child_views { };
 		View_ids                     _view_ids { };
-		Input::Session_component     _input_session { _env, _ram };
-		Input::Session_capability    _input_session_cap;
-		Click_handler               &_click_handler;
-		Signal_context_capability    _mode_sigh { };
-		Area                         _requested_size { };
-		bool                         _resize_requested = false;
-		bool                         _has_alpha = false;
-		Pointer::State               _pointer_state;
-		Point                  const _initial_pointer_pos { -1, -1 };
-		Point                        _pointer_pos = _initial_pointer_pos;
-		Point                        _virtual_pointer_pos { };
-		unsigned                     _key_cnt = 0;
+
+		Input::Session_component _input_session {
+			_env.ep(), _ram, _env.rm(), *this };
+
+		bool _exclusive_input_requested = false,
+		     _exclusive_input_granted   = false;
+
+		/* used for hiding the click-to-grab event from the client */
+		bool _consume_one_btn_left_release = false;
+
+		/**
+		 * Input::Session_component::Action interface
+		 */
+		void exclusive_input_requested(bool const requested) override
+		{
+			if (requested == _exclusive_input_requested)
+				return;
+
+			/*
+			 * Allow immediate changes when
+			 *
+			 * 1. Exclusive input is already granted by the user having clicked
+			 *    into the window, or
+			 * 2. The client yields the exclusivity, or
+			 * 3. Transient exclusive input is requested while a button is held.
+			 *    In this case, exclusive input will be revoked as soon as the
+			 *    last button/key is released.
+			 */
+			if (_exclusive_input_granted || _key_cnt || !requested)
+				_gui_input.exclusive(requested);
+
+			_exclusive_input_requested = requested;
+		}
+
+		Click_handler &_click_handler;
+
+		struct Info_rom_session : Dynamic_rom_session
+		{
+			Session_component &_session;
+
+			Info_rom_session(Session_component &session, auto &&... args)
+			: Dynamic_rom_session(args...), _session(session) { }
+
+			void sigh(Signal_context_capability sigh) override
+			{
+				Dynamic_rom_session::sigh(sigh);
+
+				/*
+				 * We consider a window as resizable if the client shows interest
+				 * in mode-change notifications.
+				 */
+				_session._resizeable = sigh.valid();
+				for (Top_level_view *v = _session._top_level_views.first(); v; v = v->next())
+					v->resizeable(_session._resizeable);
+			}
+		};
+
+		Constructible<Info_rom_session> _info_rom { };
+
+		bool           _resizeable = false;
+		Area           _requested_size { };
+		bool           _resize_requested = false;
+		bool           _close_requested = false;
+		bool           _has_alpha = false;
+		Pointer::State _pointer_state;
+		Point    const _initial_pointer_pos { -1, -1 };
+		Point          _pointer_pos = _initial_pointer_pos;
+		Point          _virtual_pointer_pos { };
+		unsigned       _key_cnt = 0;
 
 		auto _with_view(View_id id, auto const &fn, auto const &missing_fn)
 		-> decltype(missing_fn())
@@ -567,9 +655,6 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 		Signal_handler<Session_component> _input_handler {
 			_env.ep(), *this, &Session_component::_handle_input };
-
-		Signal_handler<Session_component> _mode_handler {
-			_env.ep(), *this, &Session_component::_handle_mode_change };
 
 		Point _input_origin() const
 		{
@@ -675,20 +760,78 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 					if (propagate_to_pointer_state)
 						_pointer_state.apply_event(ev);
 
+					/*
+					 * Handle pointer grabbing/ungrabbing
+					 */
+
+					/* revoke transient exclusive input (while clicked) */
+					if (ev.release() && _key_cnt == 0)
+						if (_exclusive_input_requested && !_exclusive_input_granted)
+							_gui_input.exclusive(false);
+
+					/* grant exclusive input when clicking into window */
+					if (ev.key_press(Input::BTN_LEFT) && _key_cnt == 1) {
+						if (_exclusive_input_requested && !_exclusive_input_granted) {
+							_gui_input.exclusive(true);
+							_exclusive_input_granted = true;
+							_consume_one_btn_left_release = true;
+							continue;
+						}
+					}
+					if (ev.key_release(Input::BTN_LEFT)) {
+						if (_consume_one_btn_left_release) {
+							_consume_one_btn_left_release = false;
+							continue;
+						}
+					}
+
 					/* submit event to the client */
 					_input_session.submit(_translate_event(ev, input_origin));
 				}
 			}
 		}
 
-		void _handle_mode_change()
+		/**
+		 * Dynamic_rom_session::Xml_producer interface
+		 */
+		void produce_xml(Xml_generator &xml) override
 		{
-			/*
-			 * Inform a viewless client about the upstream
-			 * mode change.
-			 */
-			if (_mode_sigh.valid() && !_top_level_views.first())
-				Signal_transmitter(_mode_sigh).submit();
+			_action.gen_screen_area_info(xml);
+
+			if (_close_requested) {
+				xml.node("capture", [&] { xml.attribute("closed", "yes"); });
+				return;
+			}
+
+			auto virtual_capture_area = [&]
+			{
+				/*
+				 * While resizing the window, return requested window size as
+				 * mode
+				 */
+				if (_resize_requested)
+					return _requested_size;
+
+				/*
+				 * If the first top-level view has a defined size, use it
+				 * as the size of the virtualized GUI session.
+				 */
+				if (Top_level_view const *v = _top_level_views.first())
+					if (v->size().valid())
+						return v->size();
+
+				return Area { };
+			};
+
+			auto gen_attr = [&] (Area const area)
+			{
+				if (area.valid()) {
+					xml.attribute("width",  area.w);
+					xml.attribute("height", area.h);
+				}
+			};
+
+			xml.node("capture", [&] { gen_attr(virtual_capture_area()); });
 		}
 
 		/**
@@ -704,18 +847,26 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			_input_session.submit(Input::Absolute_motion { pos.x, pos.y });
 		}
 
+		void _dissolve_view_from_ep(View &view)
+		{
+			if (view.cap().valid()) {
+				_env.ep().dissolve(view);
+				replenish(Cap_quota { 1 });
+			}
+		}
+
 		void _destroy_top_level_view(Top_level_view &view)
 		{
 			_top_level_views.remove(&view);
-			_env.ep().dissolve(view);
-			Genode::destroy(&_top_level_view_alloc, &view);
+			_dissolve_view_from_ep(view);
+			destroy(&_top_level_view_alloc, &view);
 		}
 
 		void _destroy_child_view(Child_view &view)
 		{
 			_child_views.remove(&view);
-			_env.ep().dissolve(view);
-			Genode::destroy(&_child_view_alloc, &view);
+			_dissolve_view_from_ep(view);
+			destroy(&_child_view_alloc, &view);
 		}
 
 		void _execute_command(Command const &command)
@@ -764,8 +915,8 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 					char sanitized_title[args.title.capacity()];
 
-					Genode::copy_cstring(sanitized_title, command.title.title.string(),
-					                     sizeof(sanitized_title));
+					copy_cstring(sanitized_title, command.title.title.string(),
+					             sizeof(sanitized_title));
 
 					for (char *c = sanitized_title; *c; c++)
 						if (*c == '"')
@@ -785,32 +936,23 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 	public:
 
-		/**
-		 * Constructor
-		 *
-		 * \param ep  entrypoint used for managing the views
-		 */
-		Session_component(Genode::Env &env,
-		                  Genode::Ram_allocator &ram,
-		                  Window_registry       &window_registry,
-		                  Allocator             &session_alloc,
-		                  Session_label   const &session_label,
-		                  Pointer::Tracker      &pointer_tracker,
-		                  Click_handler         &click_handler)
+		Session_component(Env              &env,
+		                  Action           &action,
+		                  Resources  const &resources,
+		                  Label      const &label,
+		                  Diag       const  diag,
+		                  Window_registry  &window_registry,
+		                  Pointer::Tracker &pointer_tracker,
+		                  Click_handler    &click_handler)
 		:
-			_env(env),
-			_session_label(session_label),
-			_ram(ram),
+			Session_object<Gui::Session>(env.ep(), resources, label, diag),
+			Xml_producer("panorama"),
+			_env(env), _action(action),
 			_window_registry(window_registry),
-			_top_level_view_alloc(&session_alloc),
-			_child_view_alloc(&session_alloc),
-			_view_ref_alloc(&session_alloc),
-			_input_session_cap(env.ep().manage(_input_session)),
 			_click_handler(click_handler),
 			_pointer_state(pointer_tracker)
 		{
 			_gui_input.sigh(_input_handler);
-			_real_gui.session.mode_sigh(_mode_handler);
 			_input_session.event_queue().enabled(true);
 		}
 
@@ -824,15 +966,13 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 			while (Child_view *view = _child_views.first())
 				_destroy_child_view(*view);
-
-			_env.ep().dissolve(_input_session);
 		}
 
 		using List<Session_component>::Element::next;
 
-		void upgrade(char const *args)
+		void upgrade_local_or_remote(Resources const &resources)
 		{
-			_real_gui.connection.upgrade(Genode::session_resources_from_args(args));
+			_upgrade_local_or_remote(resources, *this, _real_gui);
 		}
 
 		void try_to_init_real_child_views()
@@ -869,13 +1009,13 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 		View_capability content_view(Window_registry::Id id)
 		{
 			for (Top_level_view *v = _top_level_views.first(); v; v = v->next())
-				if (v->has_win_id(id.value))
+				if (v->has_win_id(id))
 					return v->content_view();
 
 			return View_capability();
 		}
 
-		bool has_win_id(unsigned id) const
+		bool has_win_id(Window_registry::Id id) const
 		{
 			for (Top_level_view const *v = _top_level_views.first(); v; v = v->next())
 				if (v->has_win_id(id))
@@ -883,8 +1023,6 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 			return false;
 		}
-
-		Session_label session_label() const { return _session_label; }
 
 		bool matches_session_label(char const *selector) const
 		{
@@ -896,7 +1034,7 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			 *
 			 * The code snippet originates from nitpicker's 'gui_session.h'.
 			 */
-			String<Session_label::capacity() + 4> const label(_session_label, " ->");
+			String<Session_label::capacity() + 4> const label(_label, " ->");
 			return strcmp(label.string(), selector, strlen(selector)) == 0;
 		}
 
@@ -905,9 +1043,12 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			_requested_size   = size;
 			_resize_requested = true;
 
+			if (_requested_size.count() == 0)
+				_close_requested = true;
+
 			/* notify client */
-			if (_mode_sigh.valid())
-				Signal_transmitter(_mode_sigh).submit();
+			if (_info_rom.constructed())
+				_info_rom->trigger_update();
 		}
 
 		void hidden(bool hidden)
@@ -926,6 +1067,20 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 		 */
 		Capability<Session> session() { return _real_gui.connection.cap(); }
 
+		void propagate_mode_change()
+		{
+			if (_info_rom.constructed())
+				_info_rom->trigger_update();
+		}
+
+		void revoke_exclusive_input()
+		{
+			if (_exclusive_input_granted) {
+				_gui_input.exclusive(false);
+				_exclusive_input_granted = false;
+			}
+		}
+
 
 		/***************************
 		 ** GUI session interface **
@@ -938,38 +1093,63 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 		Input::Session_capability input() override
 		{
-			return _input_session_cap;
+			return _input_session.cap();
 		}
 
 		template <typename VIEW>
-		View_result _create_view_with_id(auto &dealloc, View_id id, View_attr const &attr, auto const &create_fn)
+		VIEW::View_result _create_view_with_id(auto &dealloc, View_id id, View_attr const &attr, auto const &create_fn)
 		{
+			using Result = VIEW::View_result;
+
+			/* precondition for obtaining 'real_view_cap' */
+			if (!try_withdraw(Cap_quota { 1 })) {
+				_starved_for_caps = true;
+				return Result::OUT_OF_CAPS;
+			}
+
 			release_view_id(id);
 
-			View_result error { };
+			Result error { };
 
 			VIEW *view_ptr = nullptr;
 			try {
 				view_ptr = &create_fn();
 			}
-			catch (Out_of_ram)  { error = View_result::OUT_OF_RAM;  }
-			catch (Out_of_caps) { error = View_result::OUT_OF_CAPS; }
+			catch (Out_of_ram)  {
+				_starved_for_ram = true;
+				error = Result::OUT_OF_RAM;
+			}
+			catch (Out_of_caps) {
+				_starved_for_caps = true;
+				error = Result::OUT_OF_CAPS;
+			}
 			if (!view_ptr)
 				return error;
+
+			/* _real_gui view creation may return OUT_OF_RAM or OUT_OF_CAPS */
+			if (view_ptr->real_view_result() != Result::OK) {
+				error = view_ptr->real_view_result();
+				destroy(dealloc, view_ptr);
+				return error;
+			}
 
 			View_ref *view_ref_ptr = nullptr;
 			try {
 				view_ref_ptr =
 					new (_view_ref_alloc) View_ref(view_ptr->weak_ptr(), _view_ids, id);
 			}
-			catch (Out_of_ram)  { error = View_result::OUT_OF_RAM;  }
-			catch (Out_of_caps) { error = View_result::OUT_OF_CAPS; }
+			catch (Out_of_ram)  {
+				_starved_for_ram = true;
+				error = Result::OUT_OF_RAM;
+			}
+			catch (Out_of_caps) {
+				_starved_for_caps = true;
+				error = Result::OUT_OF_CAPS;
+			}
 			if (!view_ref_ptr) {
 				destroy(dealloc, view_ptr);
 				return error;
 			}
-
-			_env.ep().manage(*view_ptr);
 
 			/* apply initial view attributes */
 			_execute_command(Command::Title    { id, attr.title });
@@ -979,7 +1159,7 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 				_window_registry.flush();
 			}
 
-			return View_result::OK;
+			return Result::OK;
 		}
 
 		View_result view(View_id id, View_attr const &attr) override
@@ -990,13 +1170,13 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 				_create_view_with_id<Top_level_view>(_top_level_view_alloc, id, attr,
 					[&] () -> Top_level_view & {
 						view_ptr = new (_top_level_view_alloc)
-							Top_level_view(_real_gui, id, _has_alpha,
+							Top_level_view(_real_gui, _has_alpha,
 							               _window_registry, *this);
 						return *view_ptr;
 					});
 
 			if (result == View_result::OK && view_ptr) {
-				view_ptr->resizeable(_mode_sigh.valid());
+				view_ptr->resizeable(_resizeable);
 				_top_level_views.insert(view_ptr);
 			}
 			return result;
@@ -1009,24 +1189,18 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 
 					Child_view *view_ptr = nullptr;
 
-					View_result const result =
+					Child_view_result const result =
 						_create_view_with_id<Child_view>(_child_view_alloc, id, attr,
 							[&] () -> Child_view & {
 								view_ptr = new (_child_view_alloc)
-									Child_view(_real_gui, id, _has_alpha, parent.weak_ptr());
+									Child_view(_real_gui, _has_alpha, parent.weak_ptr());
 								return *view_ptr;
 							});
 
-					switch (result) {
-					case View_result::OUT_OF_RAM:  return Child_view_result::OUT_OF_RAM;
-					case View_result::OUT_OF_CAPS: return Child_view_result::OUT_OF_CAPS;
-					case View_result::OK:          break;
-					}
-
-					if (view_ptr)
+					if (result == Child_view_result::OK && view_ptr)
 						_child_views.insert(view_ptr);
 
-					return Child_view_result::OK;
+					return result;
 				},
 				[&] () -> Child_view_result { return Child_view_result::INVALID; });
 		}
@@ -1038,11 +1212,13 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 					for (Child_view *v = _child_views.first(); v; v = v->next())
 						if (&view == v) {
 							_destroy_child_view(*v);
+							replenish(Cap_quota { 1 });
 							return;
 						}
 					for (Top_level_view *v = _top_level_views.first(); v; v = v->next())
 						if (&view == v) {
 							_destroy_top_level_view(*v);
+							replenish(Cap_quota { 1 });
 							return;
 						}
 				},
@@ -1064,16 +1240,32 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 						new (_view_ref_alloc) View_ref(view_ptr->weak_ptr(), _view_ids, id);
 						return Associate_result::OK;
 					}
-					catch (Out_of_ram)  { return Associate_result::OUT_OF_RAM;  }
-					catch (Out_of_caps) { return Associate_result::OUT_OF_CAPS; }
+					catch (Out_of_ram)  {
+						_starved_for_ram = true;
+						return Associate_result::OUT_OF_RAM;
+					}
+					catch (Out_of_caps) {
+						_starved_for_caps = true;
+						return Associate_result::OUT_OF_CAPS;
+					}
 				});
 		}
 
 		View_capability_result view_capability(View_id id) override
 		{
 			return _with_view(id,
-				[&] (View &view)               { return view.cap(); },
-				[&] /* view does not exist */  { return View_capability(); });
+				[&] (View &view) -> View_capability_result
+				{
+					if (!view.cap().valid()) {
+						if (!try_withdraw(Cap_quota { 1 })) {
+							_starved_for_caps = true;
+							return View_capability_error::OUT_OF_CAPS;
+						}
+						_env.ep().manage(view);
+					}
+					return view.cap();
+				},
+				[&] () -> View_capability_result { return View_capability(); });
 		}
 
 		void release_view_id(View_id id) override
@@ -1083,7 +1275,7 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 				[&] { });
 		}
 
-		Genode::Dataspace_capability command_dataspace() override
+		Dataspace_capability command_dataspace() override
 		{
 			return _command_ds.cap();
 		}
@@ -1097,46 +1289,38 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			_window_registry.flush();
 		}
 
-		Framebuffer::Mode mode() override
+		Info_result info() override
 		{
-			Framebuffer::Mode const real_mode = _real_gui.session.mode();
+			if (!_info_rom.constructed()) {
+				Cap_quota const needed_caps { 2 };
+				if (!_cap_quota_guard().have_avail(needed_caps)) {
+					_starved_for_caps = true;
+					return Info_error::OUT_OF_CAPS;
+				}
 
-			/*
-			 * While resizing the window, return requested window size as
-			 * mode
-			 */
-			if (_resize_requested)
-				return Framebuffer::Mode { .area = _requested_size };
+				Ram_quota const needed_ram { 8*1024 };
+				if (!_ram_quota_guard().have_avail(needed_ram)) {
+					_starved_for_ram = true;
+					return Info_error::OUT_OF_RAM;
+				}
 
-			/*
-			 * If the first top-level view has a defined size, use it
-			 * as the size of the virtualized GUI session.
-			 */
-			if (Top_level_view const *v = _top_level_views.first())
-				if (v->size().valid())
-					return Framebuffer::Mode { .area = v->size() };
+				try {
+					Dynamic_rom_session::Content_producer &rom_producer = *this;
+					_info_rom.construct(*this, _env.ep(), _ram, _env.rm(), rom_producer);
+					_info_rom->dataspace(); /* eagerly consume RAM and caps */
+				}
+				catch (Out_of_ram)  { _starved_for_ram  = true; }
+				catch (Out_of_caps) { _starved_for_caps = true; }
 
-			/*
-			 * If top-level view has yet been defined, return the real mode.
-			 */
-			return real_mode;
+				if (_starved_for_ram || _starved_for_caps) {
+					if (_starved_for_ram)  return Info_error::OUT_OF_RAM;
+					if (_starved_for_caps) return Info_error::OUT_OF_CAPS;
+				}
+			}
+			return _info_rom->cap();
 		}
 
-		void mode_sigh(Genode::Signal_context_capability sigh) override
-		{
-			_mode_sigh = sigh;
-
-			/*
-			 * We consider a window as resizable if the client shows interest
-			 * in mode-change notifications.
-			 */
-			bool const resizeable = _mode_sigh.valid();
-
-			for (Top_level_view *v = _top_level_views.first(); v; v = v->next())
-				v->resizeable(resizeable);
-		}
-
-		Buffer_result buffer(Framebuffer::Mode mode, bool has_alpha) override
+		Buffer_result buffer(Framebuffer::Mode mode) override
 		{
 			/*
 			 * We must not perform the 'buffer' operation on the connection
@@ -1147,20 +1331,21 @@ class Wm::Gui::Session_component : public Rpc_object<Gui::Session>,
 			 * wrapped GUI session. Otherwise, we would perform session
 			 * upgrades initiated by the wm client's buffer operation twice.
 			 */
-			_has_alpha = has_alpha;
+			_has_alpha = mode.alpha;
 
-			Buffer_result const result = _real_gui.session.buffer(mode, has_alpha);
+			Buffer_result const result = _real_gui.session.buffer(mode);
 
 			_window_registry.flush();
 			return result;
 		}
 
-		void focus(Genode::Capability<Gui::Session>) override { }
+		void focus(Capability<Gui::Session>) override { }
 };
 
 
-class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session> >,
-                      public Decorator_content_callback
+class Wm::Gui::Root : public  Rpc_object<Typed_root<Gui::Session> >,
+                      public  Decorator_content_callback,
+                      private Input::Session_component::Action
 {
 	private:
 
@@ -1170,27 +1355,27 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 		Root(Root const &);
 		Root &operator = (Root const &);
 
-		Genode::Env &_env;
+		Env &_env;
 
-		Genode::Attached_rom_dataspace _config { _env, "config" };
+		Session_component::Action &_action;
 
-		Allocator &_md_alloc;
+		Attached_rom_dataspace _config { _env, "config" };
 
-		Genode::Ram_allocator &_ram;
+		Sliced_heap _sliced_heap { _env.ram(), _env.rm() };
 
 		enum { STACK_SIZE = 1024*sizeof(long) };
 
 		Pointer::Tracker &_pointer_tracker;
 
-		Reporter &_focus_request_reporter;
-
-		unsigned _focus_request_cnt = 0;
-
 		Window_registry &_window_registry;
 
-		Input::Session_component _window_layouter_input { _env, _env.ram() };
+		Input::Session_component _window_layouter_input {
+			_env.ep(), _env.ram(), _env.rm(), *this };
 
-		Input::Session_capability _window_layouter_input_cap { _env.ep().manage(_window_layouter_input) };
+		/**
+		 * Input::Session_component::Action interface
+		 */
+		void exclusive_input_requested(bool) override { }
 
 		/* handler that forwards clicks into unfocused windows to the layouter */
 		struct Click_handler : Gui::Click_handler
@@ -1232,16 +1417,13 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 		/**
 		 * Constructor
 		 */
-		Root(Genode::Env &env,
-		     Window_registry &window_registry, Allocator &md_alloc,
-		     Genode::Ram_allocator &ram,
-		     Pointer::Tracker &pointer_tracker, Reporter &focus_request_reporter,
-		     Gui::Connection &focus_gui_session)
+		Root(Env &env, Session_component::Action &action,
+		     Window_registry  &window_registry,
+		     Pointer::Tracker &pointer_tracker,
+		     Gui::Connection  &focus_gui_session)
 		:
-			_env(env),
-			_md_alloc(md_alloc), _ram(ram),
+			_env(env), _action(action),
 			_pointer_tracker(pointer_tracker),
-			_focus_request_reporter(focus_request_reporter),
 			_window_registry(window_registry),
 			_focus_gui_session(focus_gui_session)
 		{
@@ -1273,11 +1455,16 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 		 ** Root interface **
 		 ********************/
 
+		static_assert(Gui::Session::CAP_QUOTA == 9);
+
 		Genode::Session_capability session(Session_args const &args,
 		                                   Affinity     const &) override
 		{
-			Genode::Session_label const session_label =
-				Genode::label_from_args(args.string());
+			using Session = Genode::Session;
+
+			Session::Label     label     = label_from_args(args.string());
+			Session::Resources resources = session_resources_from_args(args.string());
+			Session::Diag      diag      = session_diag_from_args(args.string());
 
 			enum Role { ROLE_DECORATOR, ROLE_LAYOUTER, ROLE_REGULAR, ROLE_DIRECT };
 			Role role = ROLE_REGULAR;
@@ -1286,8 +1473,7 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 			 * Determine session policy
 			 */
 			try {
-				Genode::Xml_node policy =
-					Genode::Session_policy(session_label, _config.xml());
+				Xml_node policy = Session_policy(label, _config.xml());
 
 				auto const value = policy.attribute_value("role", String<16>());
 
@@ -1297,44 +1483,76 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 			}
 			catch (...) { }
 
+			if (role == ROLE_REGULAR || role == ROLE_DECORATOR) {
+
+				size_t const needed_ram = Real_gui::RAM_QUOTA
+				                        + sizeof(Session_component)
+				                        + _sliced_heap.overhead(sizeof(Session_component))
+				                        + 8*1024;
+
+				if (resources.ram_quota.value < needed_ram)
+					throw Insufficient_ram_quota();
+				resources.ram_quota.value -= needed_ram;
+
+				static constexpr unsigned needed_caps =
+					1 +  /* Sliced_heap alloc of Session_component           */
+					1 +  /* Session_component RPC cap                        */
+					9 +  /* Wrapped nitpicker GUI session  (_real_gui)       */
+					1 +  /* Input_session RPC cap          (_input_session)  */
+					1 +  /* Input_session events dataspace (_input_session)  */
+					1 +  /* Command buffer                 (_command_buffer) */
+					1 +  /* Input signal handler           (_input_handler)  */
+					1;   /* Content-view capability                          */
+
+				if (resources.cap_quota.value < needed_caps)
+					throw Insufficient_cap_quota();
+				/* preserve caps for content_view and command buffer ds */
+				resources.cap_quota.value -= needed_caps - 2;
+			}
+
 			switch (role) {
 
 			case ROLE_REGULAR:
-				{
-					auto session = new (_md_alloc)
-						Session_component(_env, _ram, _window_registry,
-						                  _md_alloc, session_label,
+				try {
+					Session_component &session = *new (_sliced_heap)
+						Session_component(_env, _action, resources, label, diag,
+						                  _window_registry,
 						                  _pointer_tracker,
 						                  _click_handler);
-					_sessions.insert(session);
-					return _env.ep().manage(*session);
+					_sessions.insert(&session);
+					return session.cap();
 				}
+				catch (Out_of_ram)  { throw Insufficient_ram_quota(); }
+				catch (Out_of_caps) { throw Insufficient_cap_quota(); }
 
 			case ROLE_DECORATOR:
-				{
-					auto session = new (_md_alloc)
-						Decorator_gui_session(_env, _ram, _md_alloc,
+				try {
+					Decorator_gui_session &session = *new (_sliced_heap)
+						Decorator_gui_session(_env, resources, label, diag,
 						                      _pointer_tracker,
 						                      _window_layouter_input,
 						                      *this);
-					_decorator_sessions.insert(session);
-					return _env.ep().manage(*session);
+					_decorator_sessions.insert(&session);
+					return session.cap();
 				}
+				catch (Out_of_ram)  { throw Insufficient_ram_quota(); }
+				catch (Out_of_caps) { throw Insufficient_cap_quota(); }
 
 			case ROLE_LAYOUTER:
 				{
-					_layouter_session = new (_md_alloc)
-						Layouter_gui_session(_env, _window_layouter_input_cap);
+					_layouter_session = new (_sliced_heap)
+						Layouter_gui_session(_env, resources, label, diag,
+						                     _window_layouter_input.cap());
 
-					return _env.ep().manage(*_layouter_session);
+					return _layouter_session->cap();
 				}
 
 			case ROLE_DIRECT:
 				{
-					Direct_gui_session *session = new (_md_alloc)
-						Direct_gui_session(_env, session_label);
+					Direct_gui_session &session = *new (_sliced_heap)
+						Direct_gui_session(_env, resources, label, diag);
 
-					return _env.ep().manage(*session);
+					return session.cap();
 				}
 			}
 
@@ -1347,7 +1565,7 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 
 			auto lambda = [&] (Rpc_object_base *session) {
 				if (!session) {
-					Genode::warning("session lookup failed");
+					warning("session lookup failed");
 					return;
 				}
 
@@ -1355,13 +1573,13 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 					dynamic_cast<Session_component *>(session);
 
 				if (regular_session)
-					regular_session->upgrade(args.string());
+					regular_session->upgrade_local_or_remote(session_resources_from_args(args.string()));
 
 				Decorator_gui_session *decorator_session =
 					dynamic_cast<Decorator_gui_session *>(session);
 
 				if (decorator_session)
-					decorator_session->upgrade(args.string());
+					decorator_session->upgrade_local_or_remote(session_resources_from_args(args.string()));
 
 				Direct_gui_session *direct_session =
 					dynamic_cast<Direct_gui_session *>(session);
@@ -1374,54 +1592,46 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 
 		void close(Genode::Session_capability session_cap) override
 		{
-			Genode::Rpc_entrypoint &ep = _env.ep().rpc_ep();
+			Rpc_entrypoint &ep = _env.ep().rpc_ep();
 
 			Session_component *regular_session =
 				ep.apply(session_cap, [this] (Session_component *session) {
-					if (session) {
+					if (session)
 						_sessions.remove(session);
-						_env.ep().dissolve(*session);
-					}
 					return session;
 				});
 			if (regular_session) {
-				Genode::destroy(_md_alloc, regular_session);
+				destroy(_sliced_heap, regular_session);
 				return;
 			}
 
 			Direct_gui_session *direct_session =
 				ep.apply(session_cap, [this] (Direct_gui_session *session) {
-					if (session) {
-						_env.ep().dissolve(*session);
-					}
 					return session;
 				});
 			if (direct_session) {
-				Genode::destroy(_md_alloc, direct_session);
+				destroy(_sliced_heap, direct_session);
 				return;
 			}
 
 			Decorator_gui_session *decorator_session =
 				ep.apply(session_cap, [this] (Decorator_gui_session *session) {
-					if (session) {
+					if (session)
 						_decorator_sessions.remove(session);
-						_env.ep().dissolve(*session);
-					}
 					return session;
 				});
 			if (decorator_session) {
-				Genode::destroy(_md_alloc, decorator_session);
+				destroy(_sliced_heap, decorator_session);
 				return;
 			}
 
 			auto layouter_lambda = [this] (Layouter_gui_session *session) {
-				this->_env.ep().dissolve(*_layouter_session);
 				_layouter_session = nullptr;
 				return session;
 			};
 
 			if (ep.apply(session_cap, layouter_lambda) == _layouter_session) {
-				Genode::destroy(_md_alloc, _layouter_session);
+				destroy(_sliced_heap, _layouter_session);
 				return;
 			}
 		}
@@ -1444,8 +1654,8 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 			 * calling 's->content_view'.
 			 */
 			for (Session_component *s = _sessions.first(); s; s = s->next())
-				if (s->has_win_id(id.value))
-					return s->content_view(id.value);
+				if (s->has_win_id(id))
+					return s->content_view(id);
 
 			return View_capability();
 		}
@@ -1486,20 +1696,32 @@ class Wm::Gui::Root : public Genode::Rpc_object<Genode::Typed_root<Gui::Session>
 				s->content_geometry(id, rect);
 		}
 
-		Capability<Gui::Session> lookup_gui_session(unsigned win_id)
+		void with_gui_session(Window_registry::Id id, auto const &fn)
 		{
 			for (Session_component *s = _sessions.first(); s; s = s->next())
-				if (s->has_win_id(win_id))
-					return s->session();
-
-			return { };
+				if (s->has_win_id(id)) {
+					fn(s->session());
+					return;
+				}
 		}
 
-		void request_resize(unsigned win_id, Area size)
+		void request_resize(Window_registry::Id win_id, Area size)
 		{
 			for (Session_component *s = _sessions.first(); s; s = s->next())
 				if (s->has_win_id(win_id))
 					return s->request_resize(size);
+		}
+
+		void propagate_mode_change()
+		{
+			for (Session_component *s = _sessions.first(); s; s = s->next())
+				s->propagate_mode_change();
+		}
+
+		void revoke_exclusive_input()
+		{
+			for (Session_component *s = _sessions.first(); s; s = s->next())
+				s->revoke_exclusive_input();
 		}
 };
 

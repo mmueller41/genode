@@ -38,7 +38,7 @@ using namespace Core;
 
 Cap_index_allocator &Genode::cap_idx_alloc()
 {
-	static Cap_index_allocator_tpl<Core_cap_index,10*1024> alloc;
+	static Cap_index_allocator_tpl<Core_cap_index, 128 * 1024> alloc;
 	return alloc;
 }
 
@@ -190,7 +190,7 @@ Cap_id_allocator::Cap_id_allocator(Allocator &alloc)
 :
 	_id_alloc(&alloc)
 {
-	_id_alloc.add_range(CAP_ID_OFFSET, CAP_ID_RANGE);
+	_id_alloc.add_range(CAP_ID_OFFSET, unsigned(CAP_ID_RANGE) - unsigned(CAP_ID_OFFSET));
 }
 
 
@@ -213,7 +213,7 @@ void Cap_id_allocator::free(id_t id)
 	Mutex::Guard lock_guard(_mutex);
 
 	if (id < CAP_ID_RANGE)
-		_id_alloc.free((void*)(id & CAP_ID_MASK), CAP_ID_OFFSET);
+		_id_alloc.free((void*)(addr_t(id & CAP_ID_MASK)), CAP_ID_OFFSET);
 }
 
 

@@ -43,9 +43,9 @@ void Intel::Io_mmu::Domain<TABLE>::enable_pci_device(Io_mem_dataspace_capability
 	 * unless invalidation takes place.
 	 */
 	if (cur_domain.valid())
-		_intel_iommu.invalidate_all(cur_domain, Pci::Bdf::rid(bdf));
+		_intel_iommu.invalidator().invalidate_all(cur_domain, Pci::Bdf::rid(bdf));
 	else if (_intel_iommu.caching_mode())
-		_intel_iommu.invalidate_context(Domain_id(), Pci::Bdf::rid(bdf));
+		_intel_iommu.invalidator().invalidate_context(Domain_id(), Pci::Bdf::rid(bdf));
 	else
 		_intel_iommu.flush_write_buffer();
 }
@@ -59,7 +59,7 @@ void Intel::Io_mmu::Domain<TABLE>::disable_pci_device(Pci::Bdf const & bdf)
 	/* lookup default mappings and insert instead */
 	_intel_iommu.apply_default_mappings(bdf);
 
-	_intel_iommu.invalidate_all(_domain_id);
+	_intel_iommu.invalidator().invalidate_all(_domain_id);
 }
 
 
@@ -97,7 +97,7 @@ void Intel::Io_mmu::Domain<TABLE>::add_range(Range const & range,
 
 	/* only invalidate iotlb if failed requests are cached */
 	if (_intel_iommu.caching_mode())
-		_intel_iommu.invalidate_iotlb(_domain_id, vaddr, size);
+		_intel_iommu.invalidator().invalidate_iotlb(_domain_id);
 	else
 		_intel_iommu.flush_write_buffer();
 }
@@ -111,7 +111,7 @@ void Intel::Io_mmu::Domain<TABLE>::remove_range(Range const & range)
 	                                      !_intel_iommu.coherent_page_walk());
 
 	if (!_skip_invalidation)
-		_intel_iommu.invalidate_iotlb(_domain_id, range.start, range.size);
+		_intel_iommu.invalidator().invalidate_iotlb(_domain_id);
 }
 
 
@@ -136,104 +136,12 @@ void Intel::Io_mmu::flush_write_buffer()
 }
 
 
-/**
- * Clear IOTLB.
- *
- * By default, we perform a global invalidation. When provided with a valid
- * Domain_id, a domain-specific invalidation is conducted. If provided with
- * a DMA address and size, a page-selective invalidation is performed.
- *
- * See Table 25 for required invalidation scopes.
- */
-void Intel::Io_mmu::invalidate_iotlb(Domain_id domain_id, addr_t, size_t)
+Intel::Invalidator & Intel::Io_mmu::invalidator()
 {
-	unsigned requested_scope = Context_command::Cirg::GLOBAL;
-	if (domain_id.valid())
-		requested_scope = Context_command::Cirg::DOMAIN;
-
-	/* wait for ongoing invalidation request to be completed */
-	while (Iotlb::Invalidate::get(read_iotlb_reg()));
-
-	/* invalidate IOTLB */
-	write_iotlb_reg(Iotlb::Invalidate::bits(1) |
-	                Iotlb::Iirg::bits(requested_scope) |
-	                Iotlb::Dr::bits(1) | Iotlb::Dw::bits(1) |
-	                Iotlb::Did::bits(domain_id.value));
-
-	/* wait for completion */
-	while (Iotlb::Invalidate::get(read_iotlb_reg()));
-
-	/* check for errors */
-	unsigned actual_scope = Iotlb::Iaig::get(read_iotlb_reg());
-	if (!actual_scope)
-		error("IOTLB invalidation failed (scope=", requested_scope, ")");
-	else if (_verbose && actual_scope < requested_scope)
-		warning("Performed IOTLB invalidation with different granularity ",
-		        "(requested=", requested_scope, ", actual=", actual_scope, ")");
-
-	/* XXX implement page-selective-within-domain IOTLB invalidation */
-}
-
-/**
- * Clear context cache
- *
- * By default, we perform a global invalidation. When provided with a valid
- * Domain_id, a domain-specific invalidation is conducted. When a rid is 
- * provided, a device-specific invalidation is done.
- *
- * See Table 25 for required invalidation scopes.
- */
-void Intel::Io_mmu::invalidate_context(Domain_id domain_id, Pci::rid_t rid)
-{
-	/**
-	 * We are using the register-based invalidation interface for the
-	 * moment. This is only supported in legacy mode and for major
-	 * architecture version 5 and lower (cf. 6.5).
-	 */
-
-	if (read<Version::Major>() > 5) {
-		error("Unable to invalidate caches: Register-based invalidation only ",
-		      "supported in architecture versions 5 and lower");
-		return;
-	}
-
-	/* make sure that there is no context invalidation ongoing */
-	while (read<Context_command::Invalidate>());
-
-	unsigned requested_scope = Context_command::Cirg::GLOBAL;
-	if (domain_id.valid())
-		requested_scope = Context_command::Cirg::DOMAIN;
-
-	if (rid != 0)
-		requested_scope = Context_command::Cirg::DEVICE;
-
-	/* clear context cache */
-	write<Context_command>(Context_command::Invalidate::bits(1) |
-	                       Context_command::Cirg::bits(requested_scope) |
-	                       Context_command::Sid::bits(rid) |
-	                       Context_command::Did::bits(domain_id.value));
-
-
-	/* wait for completion */
-	while (read<Context_command::Invalidate>());
-
-	/* check for errors */
-	unsigned actual_scope = read<Context_command::Caig>();
-	if (!actual_scope)
-		error("Context-cache invalidation failed (scope=", requested_scope, ")");
-	else if (_verbose && actual_scope < requested_scope)
-		warning("Performed context-cache invalidation with different granularity ",
-		        "(requested=", requested_scope, ", actual=", actual_scope, ")");
-}
-
-
-void Intel::Io_mmu::invalidate_all(Domain_id domain_id, Pci::rid_t rid)
-{
-	invalidate_context(domain_id, rid);
-
-	/* XXX clear PASID cache if we ever switch from legacy mode translation */
-
-	invalidate_iotlb(domain_id, 0, 0);
+	if (!read<Global_status::Qies>())
+		return *_register_invalidator;
+	else
+		return *_queued_invalidator;
 }
 
 
@@ -248,6 +156,12 @@ void Intel::Io_mmu::_handle_faults()
 
 		if (read<Fault_status::Iqe>())
 			error("Invalidation queue error");
+
+		if (read<Fault_status::Ice>())
+			error("Invalidation completion error");
+
+		if (read<Fault_status::Ite>())
+			error("Invalidation time-out error");
 
 		/* acknowledge all faults */
 		write<Fault_status>(0x7d);
@@ -347,6 +261,9 @@ void Intel::Io_mmu::generate(Xml_generator & xml)
 			xml.attribute("mask", (bool)read<Fault_event_control::Mask>());
 		});
 
+		if (read<Global_status::Irtps>())
+			_irq_table.generate(xml);
+
 		if (!read<Global_status::Rtps>())
 			return;
 
@@ -365,7 +282,7 @@ void Intel::Io_mmu::generate(Xml_generator & xml)
 		/* dump root table, context table, and page tables */
 		_report_helper.with_table<Root_table>(rt_addr,
 			[&] (Root_table & root_table) {
-				root_table.generate(xml, _env, _report_helper);
+				root_table.generate(xml, _report_helper);
 			});
 	});
 }
@@ -398,6 +315,62 @@ void Intel::Io_mmu::default_mappings_complete()
 	/* insert contexts into managed root table */
 	_default_mappings.copy_stage2(_managed_root_table);
 
+	_enable_translation();
+
+	log("enabled IOMMU ", name(), " with default mappings");
+}
+
+
+void Intel::Io_mmu::resume()
+{
+	_init();
+	_enable_translation();
+	_enable_irq_remapping();
+}
+
+
+void Intel::Io_mmu::_enable_irq_remapping()
+{
+	/*
+	 * If IRQ remapping has already been enabled during boot, the kernel is
+	 * in charge of the remapping. Since there is no way to get the required
+	 * unremapped vector for requested MSI, we cannot take over control.
+	 */
+
+	if (read<Global_status::Ires>()) {
+		warning("IRQ remapping is controlled by kernel for ", name());
+		return;
+	}
+
+	/* caches must be cleared if Esirtps is not set */
+	if (read<Capability::Esirtps>())
+		invalidator().invalidate_irq(0, true);
+
+	/* set interrupt remapping table address */
+	write<Irq_table_address>(
+		Irq_table_address::Size::bits(Irq_table::ENTRIES_LOG2-1) |
+		Irq_table_address::Address::masked(_irq_table_phys));
+
+	/* issue set interrupt remapping table pointer command */
+	_global_command<Global_command::Sirtp>(1);
+
+	/* disable compatibility format interrupts */
+	_global_command<Global_command::Cfi>(0);
+
+	/* enable interrupt remapping */
+	_global_command<Global_command::Ire>(1);
+
+	log("enabled interrupt remapping for ", name());
+
+	_remap_irqs = true;
+}
+
+
+void Intel::Io_mmu::_enable_translation()
+{
+	Root_table_address::access_t rtp =
+		Root_table_address::Address::masked(_managed_root_table.phys_addr());
+
 	/* set root table address */
 	write<Root_table_address>(rtp);
 
@@ -406,48 +379,55 @@ void Intel::Io_mmu::default_mappings_complete()
 
 	/* caches must be cleared if Esrtps is not set (see 6.6) */
 	if (!read<Capability::Esrtps>())
-		invalidate_all();
+		invalidator().invalidate_all();
 
 	/* enable IOMMU */
 	if (!read<Global_status::Enabled>())
 		_global_command<Global_command::Enable>(1);
-
-	log("enabled IOMMU ", name(), " with default mappings");
 }
 
 
-void Intel::Io_mmu::suspend()
+void Intel::Io_mmu::_init()
 {
-	_s3_fec    = read<Fault_event_control>();
-	_s3_fedata = read<Fault_event_data>();
-	_s3_feaddr = read<Fault_event_address>();
-	_s3_rta    = read<Root_table_address>();
-}
+	if (read<Global_status::Enabled>()) {
+		log("IOMMU has been enabled during boot");
 
-
-void Intel::Io_mmu::resume()
-{
-	/* disable queued invalidation interface if it was re-enabled by kernel */
-	if (read<Global_status::Enabled>() && read<Global_status::Qies>())
-		_global_command<Global_command::Qie>(false);
-
-	/* restore fault events only if kernel did not enable IRQ remapping */
-	if (!read<Global_status::Ires>()) {
-		write<Fault_event_control>(_s3_fec);
-		write<Fault_event_data>(_s3_fedata);
-		write<Fault_event_address>(_s3_feaddr);
+		/* disable queued invalidation interface */
+		if (read<Global_status::Qies>())
+			_global_command<Global_command::Qie>(false);
 	}
 
-	/* issue set root table pointer command */
-	write<Root_table_address>(_s3_rta);
-	_global_command<Global_command::Srtp>(1);
+	if (read<Extended_capability::Qi>()) {
+		/* enable queued invalidation if supported */
+		_queued_invalidator.construct(_env, base() + 0x80);
+		_global_command<Global_command::Qie>(true);
+	} else {
+		/* use register-based invalidation interface as fallback */
+		addr_t context_reg_base = base() + 0x28;
+		addr_t iotlb_reg_base   = base() + 8*_offset<Extended_capability::Iro>();
+		_register_invalidator.construct(context_reg_base, iotlb_reg_base, _verbose);
+	}
 
-	if (!read<Capability::Esrtps>())
-		invalidate_all();
+	/* enable fault event interrupts if desired */
+	if (_fault_irq.constructed()) {
+		Irq_session::Info info = _fault_irq->info();
 
-	/* enable IOMMU */
-	if (!read<Global_status::Enabled>())
-		_global_command<Global_command::Enable>(1);
+		if (info.type == Irq_session::Info::INVALID)
+			error("Unable to enable fault event interrupts for ", _name);
+		else {
+			write<Fault_event_address>((Fault_event_address::access_t)info.address);
+			write<Fault_event_data>((Fault_event_data::access_t)info.value);
+			write<Fault_event_control::Mask>(0);
+		}
+	}
+
+	/*
+	 * We always enable IRQ remapping if its supported by the IOMMU. Note, there
+	 * might be the possibility that the ACPI DMAR table says otherwise but
+	 * we've never seen such a case yet.
+	 */
+	if (read<Extended_capability::Ir>())
+		_enable_irq_remapping();
 }
 
 
@@ -460,10 +440,11 @@ Intel::Io_mmu::Io_mmu(Env                      & env,
 : Attached_mmio(env, {(char *)range.start, range.size}),
   Driver::Io_mmu(io_mmu_devices, name),
   _env(env),
-  _managed_root_table(_env, table_allocator, *this, !coherent_page_walk()),
-  _default_mappings(_env, table_allocator, *this, !coherent_page_walk(),
-                    _sagaw_to_levels()),
-  _domain_allocator(_max_domains()-1)
+  _table_allocator(table_allocator),
+  _domain_allocator(_max_domains()-1),
+  _managed_root_table(_env, _table_allocator, *this, !coherent_page_walk()),
+  _default_mappings(_env, _table_allocator, *this, !coherent_page_walk(),
+                    _sagaw_to_levels())
 {
 	if (_broken_device()) {
 		error(name, " reports invalid capability registers. Please disable VT-d/IOMMU.");
@@ -475,28 +456,13 @@ Intel::Io_mmu::Io_mmu(Env                      & env,
 		return;
 	}
 
-	if (read<Global_status::Enabled>()) {
-		log("IOMMU has been enabled during boot");
-
-		/* disable queued invalidation interface */
-		if (read<Global_status::Qies>())
-			_global_command<Global_command::Qie>(false);
-	}
-
 	/* enable fault event interrupts (if not already enabled by kernel) */
 	if (irq_number && !read<Global_status::Ires>()) {
 		_fault_irq.construct(_env, irq_number, 0, Irq_session::TYPE_MSI);
 
 		_fault_irq->sigh(_fault_handler);
 		_fault_irq->ack_irq();
-
-		Irq_session::Info info = _fault_irq->info();
-		if (info.type == Irq_session::Info::INVALID)
-			error("Unable to enable fault event interrupts for ", name);
-		else {
-			write<Fault_event_address>((Fault_event_address::access_t)info.address);
-			write<Fault_event_data>((Fault_event_data::access_t)info.value);
-			write<Fault_event_control::Mask>(0);
-		}
 	}
+
+	_init();
 }

@@ -24,11 +24,8 @@ namespace Wm {
 }
 
 
-struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
+struct Wm::Layouter_gui_session : Session_object<Gui::Session>
 {
-	using View_capability = Gui::View_capability;
-	using View_id         = Gui::View_id;
-
 	Input::Session_capability _input_session_cap;
 
 	/*
@@ -36,13 +33,15 @@ struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
 	 */
 	Gui::Connection _mode_sigh_gui;
 
-	Genode::Signal_context_capability _mode_sigh { };
-
 	Attached_ram_dataspace _command_ds;
 
-	Layouter_gui_session(Genode::Env &env,
+	Layouter_gui_session(Env                      &env,
+	                     Resources          const &resources,
+	                     Label              const &label,
+	                     Diag               const &diag,
 	                     Input::Session_capability input_session_cap)
 	:
+		Session_object<Gui::Session>(env.ep(), resources, label, diag),
 		_input_session_cap(input_session_cap),
 		_mode_sigh_gui(env), _command_ds(env.ram(), env.rm(), 4096)
 	{ }
@@ -62,53 +61,45 @@ struct Wm::Layouter_gui_session : Genode::Rpc_object<Gui::Session>
 		return _input_session_cap;
 	}
 
-	View_result view(View_id, View_attr const &) override
+	Info_result info() override
+	{
+		return _mode_sigh_gui.info_rom_cap();
+	}
+
+	View_result view(Gui::View_id, View_attr const &) override
 	{
 		return View_result::OK;
 	}
 
-	Child_view_result child_view(View_id, View_id, View_attr const &) override
+	Child_view_result child_view(Gui::View_id, Gui::View_id, View_attr const &) override
 	{
 		return Child_view_result::OK;
 	}
 
-	void destroy_view(View_id) override { }
+	void destroy_view(Gui::View_id) override { }
 
-	Associate_result associate(View_id, View_capability) override
+	Associate_result associate(Gui::View_id, Gui::View_capability) override
 	{
 		return Associate_result::OK;
 	}
 
-	View_capability_result view_capability(View_id) override
+	View_capability_result view_capability(Gui::View_id) override
 	{
-		return View_capability();
+		return Gui::View_capability();
 	}
 
-	void release_view_id(View_id) override { }
+	void release_view_id(Gui::View_id) override { }
 
-	Genode::Dataspace_capability command_dataspace() override
+	Dataspace_capability command_dataspace() override
 	{
 		return _command_ds.cap();
 	}
 
 	void execute() override { }
 
-	Framebuffer::Mode mode() override { return _mode_sigh_gui.mode(); }
+	Buffer_result buffer(Framebuffer::Mode) override { return Buffer_result::OK; }
 
-	void mode_sigh(Genode::Signal_context_capability sigh) override
-	{
-		/*
-		 * Remember signal-context capability to keep NOVA from revoking
-		 * transitive delegations of the capability.
-		 */
-		_mode_sigh = sigh;
-
-		_mode_sigh_gui.mode_sigh(sigh);
-	}
-
-	Buffer_result buffer(Framebuffer::Mode, bool) override { return Buffer_result::OK; }
-
-	void focus(Genode::Capability<Gui::Session>) override { }
+	void focus(Capability<Gui::Session>) override { }
 };
 
 #endif /* _LAYOUTER_GUI_H_ */
