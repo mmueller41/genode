@@ -92,10 +92,10 @@ class Lwip::Nic_netif
 
 		enum {
 			PACKET_SIZE = Nic::Packet_allocator::DEFAULT_PACKET_SIZE,
-			BUF_SIZE    = 1024*PACKET_SIZE,
+			BUF_SIZE    = 32768*PACKET_SIZE,
 		};
 
-		Genode::Tslab<Nic_netif_pbuf, 1024*sizeof(Nic_netif_pbuf)> _pbuf_alloc;
+		Genode::Tslab<Nic_netif_pbuf, 32768*sizeof(Nic_netif_pbuf)> _pbuf_alloc;
 
 		Nic::Packet_allocator _nic_tx_alloc;
 		Nic::Connection _nic;
