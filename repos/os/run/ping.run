@@ -73,7 +73,7 @@ proc dst_ip { } {
 
 	global on_hardware
 	if {$on_hardware} {
-		return "10.0.0.2"
+		return "192.168.0.1"
 	} else {
 		return "10.0.2.2"
 	}
@@ -106,7 +106,7 @@ append config {
 	</start>
 
 	<start name="drivers" caps="1200" managing_system="yes">
-		<resource name="RAM" quantum="32M"/>
+		<resource name="RAM" quantum="512M"/>
 		<binary name="init"/>
 		<route>
 			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
@@ -135,7 +135,7 @@ append config {
 			<policy label_prefix="drivers" domain="uplink"/>
 			<policy label_prefix="ping"    domain="downlink"/>
 
-			<domain name="uplink">
+			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.1">
 
 				<nat domain="downlink" icmp-ids="100" udp-ports="100"/>
 
@@ -180,7 +180,7 @@ append config {
 		        period_sec="1"
 		        report="yes"
 		        verbose="no"
-		        count="3"/>
+		        count="100"/>
 		<route>
 			<service name="Report"> <child name="report_rom"/> </service>
 			<service name="Nic"> <child name="nic_router"/> </service>
