@@ -57,7 +57,7 @@ REBUILD ?= $(FORCE)
 
 build: extract
 	$(if $(VERSIONED_ARCHIVES),\
-	   $(VERBOSE)$(MAKE) -f $(GENODE_DIR)/tool/depot/build $(VERSIONED_ARCHIVES) \
+	   $(VERBOSE)$(MAKE) -j64 -f $(GENODE_DIR)/tool/depot/build $(VERSIONED_ARCHIVES) \
 	                     VERBOSE=$(VERBOSE) CCACHE=$(CCACHE) REBUILD=$(REBUILD) \
 	                     KEEP_BUILD_DIR=$(KEEP_BUILD_DIR))
 

@@ -156,7 +156,7 @@ $(BUILD_MK_FILE): checked_source_archives_exist checked_no_uncategorized
 # Invoke sub make to process generated makefile
 #
 execute_generated_build_mk_file: $(BUILD_MK_FILE)
-	$(VERBOSE)$(MAKE) $(if $(VERBOSE),--quiet) -f $(BUILD_MK_FILE) \
+	$(VERBOSE)$(MAKE) -j64 $(if $(VERBOSE),--quiet) -f $(BUILD_MK_FILE) \
 	                  -C $(DEPOT_DIR) VERBOSE=$(VERBOSE)
 
 ifneq ($(REBUILD),)
