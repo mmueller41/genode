@@ -59,13 +59,13 @@ void Netty::Tcp::server(int const sd, bool const nonblock, bool const read_write
 			Genode::log("okay, accept will not block");
 		}
 
-		Genode::log("test in ", nonblock ? "non-blocking" : "blocking", " mode");
+		//Genode::log("test in ", nonblock ? "non-blocking" : "blocking", " mode");
 
 		int const cd = accept(sd, pcaddr, &scaddr);
-		Genode::log("cd=", cd);
+		//Genode::log("cd=", cd);
 		if (cd == -1) DIE("accept");
 
-		getnames(cd);
+		//getnames(cd);
 
 		size_t count = 0;
 		static char data[64*1024];
@@ -78,7 +78,7 @@ void Netty::Tcp::server(int const sd, bool const nonblock, bool const read_write
 			        : recv(cd, data, sizeof(data), 0);
 
 			if (ret == 0) {
-				Genode::log("experienced EOF");
+				//Genode::log("experienced EOF");
 				break;
 			}
 
@@ -102,7 +102,7 @@ void Netty::Tcp::server(int const sd, bool const nonblock, bool const read_write
 			if (ret == -1) DIE("select");
 		}
 
-		Genode::log("echoed ", count, " bytes");
+		//Genode::log("echoed ", count, " bytes");
 
 		ret = shutdown(cd, SHUT_RDWR);
 		if (ret == -1) DIE("shutdown");
