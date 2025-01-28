@@ -22,7 +22,7 @@ import_from_depot [depot_user]/src/[base_src] \
                   [depot_user]/src/dynamic_rom \
                   [depot_user]/src/init \
                   [depot_user]/src/libc \
-                  [depot_user]/src/nic_router \
+                  [depot_user]/src/nic_uplink \
                   [depot_user]/src/vfs_audit \
                   [depot_user]/src/vfs_[ipstack] \
                   [depot_user]/src/vfs
@@ -52,18 +52,33 @@ append config {
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
-	<start name="drivers" caps="1000" managing_system="yes">
+	<start name="drivers" caps="1500" managing_system="yes">
 		<resource name="RAM" quantum="512M"/>
 		<binary name="init"/>
 		<route>
 			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
 			<service name="Timer"> <child name="timer"/> </service>
-			<service name="Uplink"> <child name="nic_router"/> </service>
+			<service name="Uplink"> <child name="nic_uplink"/> </service>
 			<any-service> <parent/> </any-service>
 		</route>
 	</start>
-
-	<start name="nic_router" caps="200">
+	<start name="nic_uplink" caps="100">
+		<resource name="RAM" quantum="1M"/>
+		<provides>
+			<service name="Uplink"/>
+			<service name="Nic"/>
+		</provides>
+		<config verbose="no"/>
+		<route>
+			<service name="Timer">  <child name="timer"/> </service>
+			<service name="PD"> <parent/> </service>
+			<service name="ROM"> <parent/> </service>
+			<service name="LOG"> <parent/> </service>
+			<service name="CPU"> <parent/> </service>
+		</route>
+	</start>
+	<!--
+	<start name="nic_uplink" caps="200">
 		<resource name="RAM" quantum="10M"/>
 		<provides>
 			<service name="Nic"/>
@@ -73,7 +88,7 @@ append config {
 			<policy label_prefix="socket_fs" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
 
-			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
+			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2">
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -101,7 +116,7 @@ append config {
 
 			</domain>
 		</config>
-	</start>
+	</start>-->
 }
 
 append_if [use_dynamic_rom] config {
@@ -141,7 +156,7 @@ append config {
 		<resource name="RAM" quantum="32M"/>
 		<provides> <service name="File_system"/> </provides>
 		<route>
-			<service name="Nic"> <child name="nic_router"/> </service>}
+			<service name="Nic"> <child name="nic_uplink"/> </service>}
 
 if {[use_dynamic_rom]} { append config {
 
@@ -157,8 +172,8 @@ if {[use_dynamic_rom]} { append config {
 		<config ld_verbose="yes">
 			<vfs>
 				<dir name="socket">
-					<!-- <} [ipstack] { ip_addr="10.0.3.55" netmask="255.255.255.0" gateway="10.0.3.1" nameserver="8.8.8.8"/> -->
-					<} [ipstack] { dhcp="yes"/>
+					<} [ipstack] { ip_addr="192.168.0.2" netmask="255.255.255.0" gateway="192.168.0.2" nameserver="8.8.8.8"/>
+					<!--<} [ipstack] { dhcp="yes"/>-->
 				</dir>
 				<!-- change default policy to "/audit" for more verbosity -->
 				<dir name="audit">
@@ -189,7 +204,7 @@ if {[protocol] == "tcp"} { append config {
 	<start name="netty-server-8080">
 		<binary name="test-netty_tcp"/>
 		<resource name="RAM" quantum="4M"/>
-		<config ld_verbose="yes" mode="server" port="8080" nonblock="false">
+		<config ld_verbose="yes" mode="server" port="8080" read_write="true" nonblock="false">
 			<vfs>
 				<dir name="dev">    <log/> </dir>
 				<dir name="socket"> <fs/>  </dir>
