@@ -93,7 +93,7 @@ append config {
 	</start>
 
 	<start name="report_rom">
-		<resource name="RAM" quantum="2M"/>
+		<resource name="RAM" quantum="8M"/>
 		<provides> <service name="Report"/> <service name="ROM"/> </provides>
 		<config>
 			<policy label="pci_decode -> system" report="acpi -> acpi"/>
@@ -102,7 +102,7 @@ append config {
 	</start>
 
 	<start name="acpi" caps="350">
-		<resource name="RAM" quantum="4M"/>
+		<resource name="RAM" quantum="32M"/>
 		<route>
 			<service name="Report"> <child name="report_rom"/> </service>
 			<service name="IO_MEM"> <parent/> </service>
@@ -115,7 +115,7 @@ append config {
 	</start>
 
 	<start name="pci_decode" caps="350">
-		<resource name="RAM" quantum="2M"/>
+		<resource name="RAM" quantum="16M"/>
 		<route>
 			<service name="Report">             <child name="report_rom"/> </service>
 			<service name="ROM" label="system"> <child name="report_rom"/> </service>
@@ -129,7 +129,7 @@ append config {
 	</start>
 
 	<start name="platform" caps="100" managing_system="yes">
-		<resource name="RAM" quantum="2M"/>
+		<resource name="RAM" quantum="32M"/>
 		<provides>
 			<service name="Platform"/>
 		</provides>
@@ -152,7 +152,7 @@ append config {
 	</start>
 
 	<start name="nvme" caps="120">
-		<resource name="RAM" quantum="24M"/>
+		<resource name="RAM" quantum="48M"/>
 		<provides> <service name="Block"/> </provides>
 		<config max_hmb_size="16M" verbose_regs="yes" verbose_identify="yes">
 			<policy label_prefix="block_tester" writeable="} [writeable] {"/>
