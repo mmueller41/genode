@@ -30,6 +30,8 @@ SRC_CC += \
 
 INC_DIR += $(PRG_DIR)
 
+CC_OLEVEL = -O3
+
 CONFIG_XSD = config.xsd
 
 CC_CXX_WARN_STRICT_CONVERSION =
