@@ -1,7 +1,7 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
 
-#include "strategies/config.h"
+#include "../config.h"
 #include "vgpu.h"
 #include "kernel.h"
 
@@ -57,9 +57,11 @@ namespace gpgpu_virt {
              */
             void handle_gpu_event()
             {
+#ifndef QEMU_TEST
                 // reduce frequency
                 GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
                 gpgpudriver.setMinFreq();
+#endif // QEMU_TEST
 
                 /* Switch to next vGPU in the run list */
                 _curr_vgpu = strat.nextVGPU();
@@ -78,11 +80,23 @@ namespace gpgpu_virt {
                 // switch context
                 dispatch(*_curr_vgpu);
 
+#ifdef QEMU_TEST
+                // sim interupt
+                handle_gpu_event();
+
+                // set finished and call callback
+                next->get_config()->finished = true;
+                if(next->get_config()->finish_callback)
+                {
+                    next->get_config()->finish_callback();
+                }
+#else
                 // set frequency
                 gpgpudriver.setMaxFreq();
 
                 // run gpgpu task
                 gpgpudriver.enqueueRun(*next->get_config());
+#endif // QEMU_TEST
 
                 // free kernel object
                 // kernel_config will not be freed, just the Queue object!

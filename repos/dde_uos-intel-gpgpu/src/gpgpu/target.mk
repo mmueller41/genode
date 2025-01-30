@@ -9,7 +9,7 @@ SRC_CC = main.cc gpgpu_genode.cc stubs.cc test.cc ../virt/rpc.cc ../virt/strateg
 LIBS   = base
 INC_DIR += $(GPGPU_DRIVER_PATH)
 
-$(TARGET): $(UOS_INTEL_GPGPU) $(SRC_CC) ../virt/strategies/config.h
+$(TARGET): $(UOS_INTEL_GPGPU) $(SRC_CC) ../config.h
 
 $(UOS_INTEL_GPGPU):
 	$(MSG_BUILD) "Building uos-intel-gpgpu..."

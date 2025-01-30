@@ -30,7 +30,9 @@ void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_c
 	ram_cap_vm = ram_cap;
 
 	// create vgpu context and add it to scheduler
+#ifndef QEMU_TEST
 	vgpu.allocContext();
+#endif // QEMU_TEST
 	_global_sched->add_vgpu(&vgpu);
 }
 
@@ -67,7 +69,8 @@ void Session_component::start_task(unsigned long kconf)
 	// trigger sched
 	_global_sched->trigger();
 
-	/*static int id = 0;
+#ifdef VERBOSE
+	static int id = 0;
 	Genode::log("Kernel ", id);
 	for(int i = 0; i < 3; i++)
 	{
@@ -81,19 +84,20 @@ void Session_component::start_task(unsigned long kconf)
 		{
 			Genode::log("\t\tvaddr: ", (void*)kc->buffConfigs[i].buffer);
 			Genode::log("\t\tval: ", *((uint32_t*)(kc->buffConfigs[i].buffer)));
-			Genode::log("\t\tgpuaddr: ", (void*)((addr_t)kc->buffConfigs[i].ga)); // to print this, temporary make the var public
-			Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos); // to print this, temporary make the var public
+			//Genode::log("\t\tgpuaddr: ", (void*)((addr_t)kc->buffConfigs[i].ga)); // to print this, temporary make the var public
+			//Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos); // to print this, temporary make the var public
 		}
 		else
 		{
 			Genode::log("\t\tvaddr: ", (void*)((Genode::addr_t)kc->buffConfigs[i].buffer - base + mapped_base));
 			Genode::log("\t\tpaddr: ", (void*)kc->buffConfigs[i].buffer);
-			Genode::log("\t\tgpuaddr: ", (void*)((addr_t)kc->buffConfigs[i].ga));  // to print this, temporary make the var public
-			Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);  // to print this, temporary make the var public
+			//Genode::log("\t\tgpuaddr: ", (void*)((addr_t)kc->buffConfigs[i].ga));  // to print this, temporary make the var public
+			//Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);  // to print this, temporary make the var public
 		}
 		Genode::log("\t\tsize: ", (int)kc->buffConfigs[i].buffer_size);
 	}
-	id++;*/
+	id++;
+#endif // VERBOSE
 }
 
 Session_component::~Session_component()

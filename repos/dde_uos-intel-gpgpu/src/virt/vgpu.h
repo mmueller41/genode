@@ -2,7 +2,7 @@
 #define VGPU_H
 
 #include <base/log.h>
-#include "strategies/config.h"
+#include "../config.h"
 #include "kernel.h"
 
 #ifdef SCHED_CFS

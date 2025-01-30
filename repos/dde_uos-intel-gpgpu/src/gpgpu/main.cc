@@ -1,5 +1,6 @@
 #include <base/component.h>
 
+#include "../config.h"
 #include "../virt/rpc.h"
 #include "../virt/scheduler.h"
 
@@ -7,12 +8,11 @@
 #include <driver/gpgpu_driver.h>
 #include "gpgpu_genode.h"
 
-//#define TEST // test stubs only (works with qemu)
-#ifdef TEST
+#ifdef QEMU_TEST
 #include <stubs.h>
-#else
+#else // QEMU_TEST
 #include "test.h"
-#endif // TEST
+#endif // QEMU_TEST
 
 gpgpu::gpgpu_genode* _global_gpgpu_genode;
 gpgpu_virt::GPGPUScheduler* _global_sched;
@@ -28,7 +28,7 @@ void Component::construct(Genode::Env& e)
     static gpgpu_virt::GPGPUScheduler sched;
     _global_sched = &sched;
     
-#ifdef TEST
+#ifdef QEMU_TEST
     // test prink
     printk("Hello printk: %d", 42);
 
@@ -80,7 +80,7 @@ void Component::construct(Genode::Env& e)
     // test interrupts
     _global_gpgpu_genode->registerInterruptHandler();
     Genode::log("Interrupt test finished!");
-#else
+#else // QEMU_TEST
     // init driver
     Genode::log("Init GPGPU driver...");
     GPGPU_Driver& gpgpudriver = GPGPU_Driver::getInstance();
@@ -91,7 +91,7 @@ void Component::construct(Genode::Env& e)
     // run the test and hope the best
     Genode::log("Run self test...");
     gpgpu::run_gpgpu_test();
-#endif // TEST
+#endif // QEMU_TEST
 
     Genode::log("Register RPCs...");
     static gpgpu_virt::Main main(e);
