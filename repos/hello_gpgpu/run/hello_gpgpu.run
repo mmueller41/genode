@@ -57,7 +57,7 @@ append_platform_drv_config
 append config {
     <start name="gpgpu">
 		<provides> <service name="gpgpu"/> </provides>
-        <resource name="RAM" quantum="1024M"/>
+        <resource name="RAM" quantum="12G"/>
     </start>
 	<start name="hello_gpgpu">
 		<binary name="hello_gpgpu"/>
@@ -79,5 +79,5 @@ append_platform_drv_boot_modules
 build_boot_image $boot_modules
 
 # qemu stuff
-append qemu_args " -nographic -m 4G"
+append qemu_args " -nographic -m 16G"
 run_genode_until "hello gpgpu completed.*\n" 600
