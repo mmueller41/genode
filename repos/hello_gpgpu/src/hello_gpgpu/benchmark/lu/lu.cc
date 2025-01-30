@@ -312,8 +312,8 @@ int main(int argc, char *argv[])
 	}
 
 	/* Stop and print timer. */
-	printf("GPU Time in seconds:\n");
-  	polybench_stop_instruments;
+	polybench_stop_instruments;
+  	printf("GPU Time in seconds:\n");
  	polybench_print_instruments;
 
 	errcode = clEnqueueReadBuffer(clCommandQue, a_mem_obj, CL_TRUE, 0, N*N*sizeof(DATA_TYPE), POLYBENCH_ARRAY(A_outputFromGpu), 0, NULL, NULL);
@@ -327,8 +327,8 @@ int main(int argc, char *argv[])
 		lu(n, POLYBENCH_ARRAY(A));
 	
 		/* Stop and print timer. */
-		printf("CPU Time in seconds:\n");
-	  	polybench_stop_instruments;
+		polybench_stop_instruments;
+        printf("CPU Time in seconds:\n");
 	 	polybench_print_instruments;
 
 		compareResults(n, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(A_outputFromGpu));

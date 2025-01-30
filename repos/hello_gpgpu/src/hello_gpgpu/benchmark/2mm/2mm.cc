@@ -275,8 +275,8 @@ void cl_launch_kernel(int ni, int nj, int nk, int nl, DATA_TYPE alpha, DATA_TYPE
 	clFinish(clCommandQue); 
 
 	/* Stop and print timer. */
-	printf("GPU Time in seconds:\n");
-  	polybench_stop_instruments;
+	polybench_stop_instruments;
+  	printf("GPU Time in seconds:\n");
  	polybench_print_instruments;
 }
 
@@ -394,8 +394,8 @@ int main(int argc, char *argv[])
 		mm2_cpu(ni, nj, nk, nl, alpha, beta, POLYBENCH_ARRAY(tmp), POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(C), POLYBENCH_ARRAY(D));
 	
 		/* Stop and print timer. */
-		printf("CPU Time in seconds:\n");
-	  	polybench_stop_instruments;
+		polybench_stop_instruments;
+        printf("CPU Time in seconds:\n");
 	 	polybench_print_instruments;
 
 		compareResults(ni, nl, POLYBENCH_ARRAY(D), POLYBENCH_ARRAY(D_outputFromGpu));

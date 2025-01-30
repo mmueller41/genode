@@ -236,8 +236,8 @@ void cl_launch_kernel(int nx, int ny)
 	clFinish(clCommandQue);
 
 	/* Stop and print timer. */
-	printf("GPU Time in seconds:\n");
-  	polybench_stop_instruments;
+	polybench_stop_instruments;
+  	printf("GPU Time in seconds:\n");
  	polybench_print_instruments;
 }
 
@@ -333,8 +333,8 @@ int main(int argc, char *argv[])
 		atax_cpu(nx, ny, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(x), POLYBENCH_ARRAY(y), POLYBENCH_ARRAY(tmp));
 	
 		/* Stop and print timer. */
-		printf("CPU Time in seconds:\n");
-	  	polybench_stop_instruments;
+		polybench_stop_instruments;
+        printf("CPU Time in seconds:\n");
 	 	polybench_print_instruments;
 
 		compareResults(ny, POLYBENCH_ARRAY(y), POLYBENCH_ARRAY(y_outputFromGpu));

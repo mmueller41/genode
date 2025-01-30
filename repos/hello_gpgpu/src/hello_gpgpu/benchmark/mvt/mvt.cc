@@ -239,8 +239,8 @@ void cl_launch_kernel(int n)
 	clFinish(clCommandQue);
 	
 	/* Stop and print timer. */
-	printf("GPU Time in seconds:\n");
-  	polybench_stop_instruments;
+	polybench_stop_instruments;
+  	printf("GPU Time in seconds:\n");
  	polybench_print_instruments;
 }
 
@@ -338,8 +338,8 @@ int main(int argc, char *argv[])
 		runMvt(n, POLYBENCH_ARRAY(a), POLYBENCH_ARRAY(x1), POLYBENCH_ARRAY(x2), POLYBENCH_ARRAY(y_1), POLYBENCH_ARRAY(y_2));
 	
 		/* Stop and print timer. */
-		printf("CPU Time in seconds:\n");
-	  	polybench_stop_instruments;
+		polybench_stop_instruments;
+        printf("CPU Time in seconds:\n");
 	 	polybench_print_instruments;	
 
 		compareResults(n, POLYBENCH_ARRAY(x1), POLYBENCH_ARRAY(x1_outputFromGpu), POLYBENCH_ARRAY(x2), POLYBENCH_ARRAY(x2_outputFromGpu));

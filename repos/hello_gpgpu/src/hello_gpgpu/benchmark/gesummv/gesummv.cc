@@ -249,8 +249,8 @@ void cl_launch_kernel(int n, DATA_TYPE alpha, DATA_TYPE beta)
 	clFinish(clCommandQue);
 
 	/* Stop and print timer. */
-	printf("GPU Time in seconds:\n");
-  	polybench_stop_instruments;
+	polybench_stop_instruments;
+  	printf("GPU Time in seconds:\n");
  	polybench_print_instruments;
 }
 
@@ -324,8 +324,8 @@ int main(int argc, char *argv[])
 		gesummv(n, alpha, beta, POLYBENCH_ARRAY(A), POLYBENCH_ARRAY(B), POLYBENCH_ARRAY(tmp), POLYBENCH_ARRAY(x), POLYBENCH_ARRAY(y));
 	
 		/* Stop and print timer. */
-		printf("CPU Time in seconds:\n");
-	  	polybench_stop_instruments;
+		polybench_stop_instruments;
+        printf("CPU Time in seconds:\n");
 	 	polybench_print_instruments;
 
 		compareResults(n, POLYBENCH_ARRAY(y), POLYBENCH_ARRAY(y_outputFromGpu));
