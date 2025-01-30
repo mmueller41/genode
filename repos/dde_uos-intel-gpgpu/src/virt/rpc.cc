@@ -98,7 +98,9 @@ void Session_component::start_task(unsigned long kconf)
 Session_component::~Session_component()
 {
 	_global_sched->remove_vgpu(&vgpu);
+#ifndef QEMU_TEST
 	vgpu.freeContext();
+#endif // QEMU_TEST
 	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 
