@@ -100,11 +100,6 @@ public:
      * 
      */
     void reset() { allocator.reset(); }
-
-    /**
-    * @brief print bench results */
-    void print_vgpu_bench(unsigned long i);
-
 };
 
 #endif // CL_GENODE_H

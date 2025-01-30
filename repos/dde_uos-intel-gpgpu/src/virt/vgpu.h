@@ -106,15 +106,6 @@ namespace gpgpu_virt {
             Kernel* take_kernel() { 
                 return (Kernel*)ready_list.dequeue();
             }
-
-            /**
-            * @brief Print bench
-            */
-            void print_vgpu_bench(unsigned long i)
-            {
-                Genode::log("bench result of vgpu ", i);
-                GPGPU_Driver::getInstance().printBenchResults();
-            };
     };
 }
 

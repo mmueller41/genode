@@ -25,8 +25,6 @@ struct Session_component : Genode::Rpc_object<Session>
 
 	void start_task(unsigned long kconf) override;
 
-	void print_vgpu_bench(unsigned long i) override; 
-
 };
 
 class Root_component

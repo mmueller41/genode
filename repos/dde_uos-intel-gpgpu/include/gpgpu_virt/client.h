@@ -23,10 +23,6 @@ struct Session_client : Genode::Rpc_client<Session>
 		call<Rpc_register_vm>(size, ram_cap);
 	}
 
-	void print_vgpu_bench(unsigned long i) override
-	{
-		call<Rpc_print_vgpu_bench>(i);
-	}
 };
 
 }

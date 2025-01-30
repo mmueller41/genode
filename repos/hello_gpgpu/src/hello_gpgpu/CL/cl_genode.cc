@@ -55,8 +55,3 @@ void cl_genode::wait(struct kernel_config* kconf)
         asm("nop");
     }
 }
-
-void cl_genode::print_vgpu_bench(unsigned long i)
-{
-    backend_driver.print_vgpu_bench(i);
-}

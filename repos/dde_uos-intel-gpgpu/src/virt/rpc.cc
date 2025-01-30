@@ -18,11 +18,6 @@ extern gpgpu_virt::GPGPUScheduler* _global_sched;
 
 namespace gpgpu_virt {
 
-void Session_component::print_vgpu_bench(unsigned long i)
-{
-	vgpu.print_vgpu_bench(i);
-}
-
 void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {
 	// create shared mem
@@ -107,15 +102,10 @@ Session_component::~Session_component()
 	_global_gpgpu_genode->freeRamCap(ram_cap);
 }
 
-
-
 Session_component* Root_component::_create_session(const char *)
 {
 	return new (md_alloc()) Session_component();
 }
-
-
-
 
 Root_component::Root_component(Genode::Entrypoint &ep,
 				Genode::Allocator &alloc)
