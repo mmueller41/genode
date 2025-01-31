@@ -123,7 +123,7 @@
 
 /* Dead-code elimination macros. Use argc/argv for the run-time check. */
 # ifndef POLYBENCH_DUMP_ARRAYS
-#  define POLYBENCH_DCE_ONLY_CODE    if (argc > 42 && ! strcmp(argv[0], ""))
+#  define POLYBENCH_DCE_ONLY_CODE    if (argc > 42 && argv[0][0] == '\0')
 # else
 #  define POLYBENCH_DCE_ONLY_CODE
 # endif
