@@ -8,8 +8,8 @@ namespace gpgpu_virt {
     class cfs_entry : public util::RBTree<cfs_entry>::RBNode
     {
         public:
-            unsigned long runtime;
-            unsigned long ts;
+            unsigned long long runtime;
+            unsigned long long ts;
             cfs_entry() : runtime(0), ts(0) {}
     };
 }
