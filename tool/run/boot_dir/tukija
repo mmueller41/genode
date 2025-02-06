@@ -1,0 +1,160 @@
+source [genode_dir]/tool/run/bender.inc
+
+proc binary_name_ld_lib_so { } { return "ld-tukija.lib.so" }
+proc binary_name_core_a    { } { return "core-tukija.a" }
+proc binary_name_timer     { } { return "tukija_timer" }
+
+proc kernel_files { } { return hypervisor }
+proc kernel_output { } { return "serial" }
+
+proc boot_output { } { return "serial" }
+
+proc grub_menuentry { } { return "'Genode on NOVA'" }
+
+proc run_boot_string { } {
+	return "\nHypervisor NOVA "
+}
+
+proc apply_microcode { } { return false }
+
+proc core_link_address { } { return "0x100000" }
+
+
+proc core_ld_opts { } {
+	set ret { -Wl,-T }
+	lappend ret "-Wl,[genode_dir]/repos/base/src/ld/genode.ld"
+	lappend ret "-Wl,[genode_dir]/repos/base-tukija/src/core/core-bss.ld"
+	return $ret
+}
+
+##
+# Populate directory with binaries on NOVA
+#
+proc run_boot_dir {binaries} {
+
+	#
+	# Build kernel-specific targets if needed
+	#
+	# If the run scripts imports the base-tukija binary archive, [run_dir] is
+	# already populated, so we can skip the build.
+	#
+	set kernel_arg ""
+	set core_arg   ""
+	set ld_arg     ""
+	if {![file exists [run_dir]/genode/hypervisor]}  { set kernel_arg kernel/tukija }
+	if {![file exists [run_dir]/genode/core-tukija.a]} { set core_arg   core/tukija }
+	if {![file exists [run_dir]/genode/ld.lib.so]}   { set ld_arg     lib/ld-tukija }
+
+	set targets "$kernel_arg $core_arg $ld_arg"
+	if {[llength $targets]} { build $targets }
+
+	if {$kernel_arg != ""} { copy_file bin/hypervisor     [run_dir]/genode/hypervisor }
+	if {$core_arg   != ""} { copy_file bin/core-tukija.a    [run_dir]/genode/core-tukija.a }
+	if {$ld_arg     != ""} { copy_file bin/ld-tukija.lib.so [run_dir]/genode/ld.lib.so }
+
+	#
+	# Collect contents of the boot image
+	#
+	build_core_image $binaries
+
+	exec mkdir -p [run_dir]/boot
+	copy_file [run_dir]/genode/hypervisor [run_dir]/boot/hypervisor
+
+	remove_genode_dir
+
+	exec mv [run_dir]/image.elf [run_dir]/boot/image.elf
+
+	#
+	# Setup bender options, e.g. serial and applying Intel HWP mode
+	#
+	set options_bender "[boot_output] [bender_intel_hwp_mode_option]"
+
+	if {[apply_microcode]} {
+		exec cp bin/micro.code [run_dir]/boot/
+		append options_bender " microcode"
+	}
+
+	if {[have_include "image/iso"] || [have_include "image/disk"] || [have_include image/uefi]} {
+		#
+		# Compress Genode image, to be uncompressed by GRUB
+		#
+		exec gzip -n [run_dir]/boot/image.elf
+
+		if {[have_include "image/disk"]} {
+			install_disk_bootloader_to_run_dir
+		}
+
+		if {[have_include "image/iso"]} {
+			install_iso_bootloader_to_run_dir
+		}
+
+		if {[have_include image/uefi]} {
+			install_uefi_bootloader_to_run_dir
+			append options_bender " serial_fallback"
+		}
+
+		#
+		# Generate GRUB2 config file
+		#
+		set fh [create_header_grub2_config]
+
+		puts $fh "menuentry [grub_menuentry] {"
+		puts $fh " insmod multiboot2"
+		puts $fh " insmod gzio"
+		puts $fh " multiboot2 /boot/bender $options_bender"
+		if {[apply_microcode]} {
+			puts $fh " module2 /boot/micro.code micro.code"
+		}
+		puts $fh " module2 /boot/hypervisor hypervisor iommu_intel iommu_amd [kernel_output]"
+		puts $fh " module2 /boot/image.elf.gz image.elf"
+		puts $fh "}"
+		close $fh
+	}
+
+	#
+	# Build image
+	#
+	run_image
+
+	if {[have_include "load/tftp"]} {
+		#
+		# Install PXE bootloader pulsar
+		#
+		install_pxe_bootloader_to_run_dir
+
+		#
+		# Generate pulsar config file
+		#
+		set fh [open "[run_dir]/config-52-54-00-12-34-56" "WRONLY CREAT TRUNC"]
+		puts $fh " exec /boot/bender $options_bender"
+		if {[apply_microcode]} {
+			puts $fh " load /boot/micro.code micro.code"
+		}
+		puts $fh " load /boot/hypervisor iommu_intel iommu_amd [kernel_output]"
+		puts $fh " load /boot/image.elf"
+		close $fh
+
+		generate_tftp_config
+	}
+
+	if {[have_include "load/ipxe"]} {
+		create_ipxe_config
+		update_ipxe_boot_dir
+		create_symlink_for_iso
+	}
+}
+
+
+##
+# Base source archive within depot
+#
+proc base_src { } {
+
+	if {[have_spec x86]} { return base-tukija }
+
+	global specs
+
+	puts stderr "Test requires base-tukija kernel archive, which is missing for this build configuration"
+	puts stderr "  SPECS=\"$specs\""
+	exit 0
+}

@@ -1,0 +1,33 @@
+/*
+ * \brief  Client-side NOVA-specific CPU session interface
+ * \author Norman Feske
+ * \date   2016-04-21
+ */
+
+/*
+ * Copyright (C) 2016-2017 Genode Labs GmbH
+ *
+ * This file is part of the Genode OS framework, which is distributed
+ * under the terms of the GNU Affero General Public License version 3.
+ */
+
+#ifndef _INCLUDE__NOVA_NATIVE_CPU__CLIENT_H_
+#define _INCLUDE__NOVA_NATIVE_CPU__CLIENT_H_
+
+#include <tukija_native_cpu/tukija_native_cpu.h>
+#include <base/rpc_client.h>
+
+namespace Genode { struct Tukija_native_cpu_client; }
+
+
+struct Genode::Tukija_native_cpu_client : Rpc_client<Cpu_session::Native_cpu>
+{
+	explicit Tukija_native_cpu_client(Capability<Cpu_session::Native_cpu> cap)
+	: Rpc_client<Cpu_session::Native_cpu>(cap) { }
+
+	void thread_type(Thread_capability thread_cap, Thread_type thread_type,
+	                 Exception_base exception_base) override {
+		call<Rpc_thread_type>(thread_cap, thread_type, exception_base); }
+};
+
+#endif /* _INCLUDE__NOVA_NATIVE_CPU__CLIENT_H_ */

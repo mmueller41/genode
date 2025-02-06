@@ -1,0 +1,11 @@
+LICENSE   := GPLv2
+VERSION   := git
+DOWNLOADS := tukija.git
+
+# tukija-staging branch
+URL(tukija) := git@github.com:mmueller41/tukija.git
+REV(tukija) := tukija-staging
+DIR(tukija) := src/kernel/tukija
+
+PATCHES   := $(sort $(wildcard $(REP_DIR)/patches/*.patch))
+PATCH_OPT := -p1 -d ${DIR(tukija)}
