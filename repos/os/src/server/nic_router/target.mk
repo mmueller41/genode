@@ -31,6 +31,7 @@ SRC_CC += \
 INC_DIR += $(PRG_DIR)
 
 CC_OLEVEL = -O3
+CC_OPT += -Wno-error=stringop-overflow -Wno-error=maybe-uninitialized
 
 CONFIG_XSD = config.xsd
 
