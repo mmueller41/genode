@@ -1,0 +1,139 @@
+create_boot_directory
+import_from_depot [depot_user]/pkg/[drivers_nic_pkg] \
+
+append config {
+<config verbose="yes">
+
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+		<service name="TOPO"/>
+	</parent-provides>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+
+	<affinity-space width="64" height="1"/>
+	<default caps="500"/>
+
+	<start name="timer">
+		<resource name="RAM" quantum="16M"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>
+
+	<start name="drivers" caps="1500" managing_system="yes">
+		<resource name="RAM" quantum="512M"/>
+		<affinity xpos="1" width="2" height="1" ypos="0"/>
+		<binary name="init"/>
+		<route>
+			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
+			<service name="Timer"> <child name="timer"/> </service>
+			<service name="Uplink"> <child name="nic_router"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+	</start>
+	<!--<start name="nic_router" caps="100">
+		<binary name="nic_uplink"/>
+		<resource name="RAM" quantum="1M"/>
+		<provides>
+			<service name="Uplink"/>
+			<service name="Nic"/>
+		</provides>
+		<config verbose="no"/>
+		<route>
+			<service name="Timer">  <child name="timer"/> </service>
+			<service name="PD"> <parent/> </service>
+			<service name="ROM"> <parent/> </service>
+			<service name="LOG"> <parent/> </service>
+			<service name="CPU"> <parent/> </service>
+		</route>
+	</start>
+	-->
+	<start name="nic_router" caps="200">
+		<resource name="RAM" quantum="20M"/>
+		<provides>
+			<service name="Nic"/>
+			<service name="Uplink"/>
+		</provides>
+		<affinity xpos="2" ypos="0" height="1" width="1"/>
+		<config verbose_domain_state="true">
+
+			<policy label_prefix="rawnic" domain="downlink"/>
+			<policy label_prefix="drivers"   domain="uplink"/>
+			<!--
+			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
+			-->
+			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="yes">
+
+				<nat domain="downlink"
+				     tcp-ports="16384"
+				     udp-ports="16384"
+				     icmp-ids="16384"/>
+
+				<tcp-forward port="80"   domain="downlink" to="10.0.3.55"/>
+				<tcp-forward port="8080" domain="downlink" to="10.0.3.55"/>
+
+				<udp-forward port="7"    domain="downlink" to="10.0.3.55"/>
+				<udp-forward port="7070" domain="downlink" to="10.0.3.55"/>
+
+			</domain>
+
+			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="yes">
+
+				<dhcp-server ip_first="10.0.3.55" ip_last="10.0.3.55">
+					<dns-server ip="8.8.8.8"/>
+					<dns-server ip="1.1.1.1"/>
+				</dhcp-server>
+
+				<tcp dst="0.0.0.0/0"><permit-any domain="uplink" /></tcp>
+				<udp dst="0.0.0.0/0"><permit-any domain="uplink" /></udp>
+				<icmp dst="0.0.0.0/0" domain="uplink"/>
+
+			</domain>
+
+		</config>
+	</start>
+	<!--
+	<start name="ping_1">
+		<binary name="ping"/>
+		<resource name="RAM" quantum="64M"/>
+		<config dst_ip="10.0.2.1"
+		        period_sec="1"
+		        verbose="no"
+		        count="100"
+				protocol="icmp"/>
+		<route>
+			<service name="Nic"> <child name="nic_router"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+		</route>
+	</start>
+	-->
+    <start name="rawnic" caps="200">
+        <binary name="lwip_raw"/>
+		<affinity xpos="3" ypos="0" height="1" width="1"/>
+        <resource name="RAM" quantum="512M"/>
+		<route>
+			<service name="Nic"> <child name="nic_router"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+        </route>
+		<config dhcp="yes"/>
+    </start>
+</config>
+}
+
+append qemu_args " -nographic "
+append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
+
+build { core init timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx server/nic_router server/nic_uplink app/lwip_raw }
+
+install_config $config
+build_boot_image [build_artifacts]
+#build_boot_image { core init timer ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so nic_router nic_uplink lwip_raw }
+run_genode_until forever
