@@ -242,4 +242,34 @@ Genode::Affinity::Location Genode::Affinity::Space::location_of_index(int index)
 	return Location(index % _width, (index / _width) % _height, 1, 1);
 }
 
+namespace Genode {
+	static inline void print(Output &out, const Affinity::Space &space) 
+	{
+			Genode::print(out, "(");
+			Genode::print(out, space.width());
+			Genode::print(out, ",");
+			Genode::print(out, space.height());
+			Genode::print(out, ")");
+	}
+
+	static inline void print(Output &out, const Affinity::Location &loc)
+	{
+			Genode::print(out, "(");
+			Genode::print(out, loc.xpos());
+			Genode::print(out, ",");
+			Genode::print(out, loc.ypos());
+			Genode::print(out, ",");
+			Genode::print(out, loc.width());
+			Genode::print(out, "×");
+			Genode::print(out, loc.height());
+			Genode::print(out, ")");
+	}
+
+	static inline void print(Output &out, const Affinity &affinity)
+	{
+		Genode::print(out, affinity.location());
+		Genode::print(out, " in ");
+		Genode::print(out, affinity.space());
+	}
+}
 #endif /* _INCLUDE__BASE__AFFINITY_H_ */
