@@ -38,7 +38,7 @@ namespace Genode {
 
 			enum {
 				HEADER = sizeof(_base) + sizeof(_mutex) + sizeof(_last),
-				CAP_RANGE_SIZE = 4096,
+				CAP_RANGE_SIZE = 65536,
 				WORDS = (CAP_RANGE_SIZE - HEADER - sizeof(Avl_node<Cap_range>)) / sizeof(addr_t),
 			};
 

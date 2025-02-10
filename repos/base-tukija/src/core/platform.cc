@@ -792,7 +792,7 @@ Core::Platform::Platform()
 	{
 		void * phys_ptr = nullptr;
 
-		ram_alloc().alloc_aligned(get_page_size(), get_page_size_log2()).with_result(
+		ram_alloc().alloc_aligned(16*get_page_size(), get_page_size_log2()).with_result(
 			[&] (void *ptr) { phys_ptr = ptr; },
 			[&] (Range_allocator::Alloc_error) { /* covered by nullptr test below */ });
 
@@ -800,7 +800,7 @@ Core::Platform::Platform()
 			break;
 
 		addr_t phys_addr = reinterpret_cast<addr_t>(phys_ptr);
-		addr_t core_local_addr = _map_pages(phys_addr, 1);
+		addr_t core_local_addr = _map_pages(phys_addr, 16);
 
 		if (!core_local_addr) {
 			ram_alloc().free(phys_ptr);
