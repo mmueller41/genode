@@ -6,7 +6,7 @@ build $build_components
 create_boot_directory
 
 install_config {
-    <config>
+    <config prio_levels="32" verbose="true">
         <parent-provides>
             <service name="LOG"/>
             <service name="PD"/>
@@ -25,6 +25,7 @@ install_config {
             <any-service><parent/><any-child/></any-service>
         </default-route>
         <default caps="2000"/>
+        <affinity-space width="64" height="1"/>
         <start name="timer">
             <resource name="RAM" quantum="3M"/>
             <provides><service name="Timer"/></provides>
@@ -32,41 +33,16 @@ install_config {
                 <any-service><parent/><any-child/></any-service>
             </route>
         </start>
-        <start name="hoitaja" caps="1046284">
-            <resource name="RAM" quantum="250G"/>
-            <config prio_levels="32" verbose="true">
-                <parent-provides>
-                    <service name="LOG"/>
-                    <service name="PD"/>
-                    <service name="CPU"/>
-                    <service name="ROM"/>
-                    <service name="RAM"/>
-                    <service name="IRQ"/>
-                    <service name="IO_MEM"/>
-                    <service name="IO_PORT"/>
-                    <service name="CAP"/>
-                    <service name="RM"/>
-                    <service name="SIGNAL"/>
-                    <service name="TRACE"/>
-                    <service name="Timer"/>
-                </parent-provides>
-                <default-route>
-                    <any-service><parent/><any-child/></any-service>
-                </default-route>
-                <default caps="600"/>
-                <affinity-space width="64" height="1"/>
-                <start name="cell1" priority="-1">
-                    <binary name="volatile_cell"/>
-                    <resource name="RAM" quantum="3M"/>
-                </start>
+        <start name="cell1" priority="-1">
+            <binary name="volatile_cell"/>
+            <resource name="RAM" quantum="3M"/>
+        </start>
                 <!--
                 <start name="cell2" priority="-2">
                     <binary name="empty_cell"/>
                     <resource name="RAM" quantum="3M"/>
                 </start>
                 -->
-            </config>
-        </start>
     </config>   
 }
 
