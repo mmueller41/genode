@@ -19,6 +19,7 @@
 #include <platform_generic.h>
 #include <core_mem_alloc.h>
 #include <address_space.h>
+#include <tukija/syscall-generic.h>
 
 namespace Core { class Platform; }
 
@@ -40,6 +41,8 @@ class Core::Platform : public Platform_generic
 		unsigned           _core_pd_sel     { 0 };  /* cap selector of root PD */
 		addr_t             _core_phys_start { 0 };
 
+		Tukija::Tip *_tip{nullptr};
+
 		/**
 		 * Virtual address range usable by non-core processes
 		 */
@@ -52,14 +55,22 @@ class Core::Platform : public Platform_generic
 		/* map of virtual cpu ids in Genode to kernel cpu ids */
 		uint16_t map_cpu_ids[MAX_SUPPORTED_CPUS];
 
-		addr_t _map_pages(addr_t phys_page, addr_t pages,
-		                  bool guard_page = false);
+
+		addr_t
+		_map_pages(addr_t phys_page, addr_t pages,
+				   bool guard_page = false);
 
 		size_t _max_caps = 0;
+		
+		/* space for mapping topology model */
+		alignas(4096) unsigned char topo_pages[8 * Tukija::PAGE_SIZE_BYTE];
 
 		void _init_rom_modules();
 
 		addr_t _rom_module_phys(addr_t virt);
+
+		Platform(const Platform &);
+		Platform& operator=(const Platform &);
 
 	public:
 

@@ -334,11 +334,9 @@ Core::Platform::Platform()
 	                       Mem_crd(BDA_VIRT, 0, Rights(true, false, false)),
 	                       _core_pd_sel);
 
-
 	/*
 	 * Now that we can access the I/O ports for comport 0, printf works...
 	 */
-
 
 	/*
 	 * remap main utcb to default utcb address
@@ -349,6 +347,11 @@ Core::Platform::Platform()
 	              (addr_t)main_thread_utcb(), 1, Rights(true, true, false))) {
 		error("could not remap utcb of main thread");
 	}
+	
+	/*
+	 * Map Topology Information Pages (needed for correct mapping of CPU Ids)
+	 */
+
 
 	/*
 	 * Mark successful boot of hypervisor for automatic tests. This must be
@@ -358,10 +361,21 @@ Core::Platform::Platform()
 	log("\nHypervisor ", String<sizeof(hip.signature)+1>((char const *)&hip.signature),
 	    " (API v", hip.api_version, ")");
 
+	log("HIP resides at ", static_cast<const void *>(&hip));
+	log("TIP resides at ", reinterpret_cast<void *>(hip.topo_model), "(PA: ", hip.topo_phys ,")");
+
+	_tip = (Tip*)(hip.topo_model);
+	log("TIP has length ", _tip->length);
+	log("TIP reports following topology:");
+	log("Size of CPUset structure ", sizeof(Tukija::Cpuset));
+	_tip->for_each([&](Tukija::Tip::Domain &dom) {
+		log(dom);
+	});
+
 	/* init genode cpu ids based on kernel cpu ids (used for syscalls) */
 	warn_reorder = !hip.remap_cpu_ids(map_cpu_ids,
-	                                  sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]),
-	                                  (unsigned)boot_cpu());
+									  sizeof(map_cpu_ids) / sizeof(map_cpu_ids[0]),
+									  (unsigned)boot_cpu());
 
 	/* configure virtual address spaces */
 #ifdef __x86_64__
@@ -372,6 +386,7 @@ Core::Platform::Platform()
 
 	/* set up page fault handler for core - for debugging */
 	addr_t const ec_core_exc_sel = init_core_page_fault_handler(core_pd_sel());
+	
 
 	/* initialize core allocators */
 	size_t const num_mem_desc = (hip.hip_length - hip.mem_desc_offset)
@@ -411,6 +426,9 @@ Core::Platform::Platform()
 	/* exclude utcb of main thread and hip + empty guard pages before and after */
 	region_alloc().remove_range((addr_t)__main_thread_utcb - get_page_size(),
 	                            get_page_size() * 4);
+
+	/* exclude TIP */
+	region_alloc().remove_range((addr_t)_tip, get_page_size() * 32);
 
 	/* sanity checks */
 	addr_t check [] = {
