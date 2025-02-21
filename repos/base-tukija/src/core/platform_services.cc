@@ -1,7 +1,8 @@
 /*
- * \brief  Platform specific services for NOVA
+ * \brief  Platform specific services for Tukija
  * \author Alexander Boettcher
- * \date   2018-08-26
+ * \author Michael Müller
+ * \date   2025-02-14
  */
 
 /*
@@ -15,6 +16,8 @@
 #include <platform_services.h>
 #include <vm_root.h>
 #include <io_port_root.h>
+#include <base/log.h>
+#include <habitat_root.h>
 
 /*
  * Add x86 specific services 
@@ -30,7 +33,11 @@ void Core::platform_add_local_services(Rpc_entrypoint         &ep,
 	static Vm_root vm_root(ep, heap, core_ram, core_rm, trace_sources);
 	static Core_service<Vm_session_component> vm(services, vm_root);
 
+	static Rpc_entrypoint habitat_entry{nullptr, 20*1024, "habitat_entry", Affinity::Location()};
 	static Io_port_root io_root(io_port_ranges, heap);
+    static Habitat_root habitat_root(core_ram, core_rm, habitat_entry, heap);
 
-	static Core_service<Io_port_session_component> io_port(services, io_root);
+    log("Adding Tukija specific services");
+    static Core_service<Io_port_session_component> io_port(services, io_root);
+    static Core_service<Habitat_session_component> habitat(services, habitat_root);
 }
