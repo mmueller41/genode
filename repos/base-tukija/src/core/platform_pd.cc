@@ -37,6 +37,8 @@ Platform_pd::Platform_pd(Allocator &, char const *label, signed, bool)
 		return;
 	}
 
+	log("Creating PD for <", label, "> with cap selector ", _pd_sel);
+
 	/* create task */
 	enum { KEEP_FREE_PAGES_NOT_AVAILABLE_FOR_UPGRADE = 2, UPPER_LIMIT_PAGES = 32 };
 	uint8_t res = Tukija::create_pd(_pd_sel, platform_specific().core_pd_sel(),
@@ -47,7 +49,6 @@ Platform_pd::Platform_pd(Allocator &, char const *label, signed, bool)
 	if (res != Tukija::NOVA_OK)
 		error("create_pd returned ", res);
 }
-
 
 Platform_pd::~Platform_pd()
 {

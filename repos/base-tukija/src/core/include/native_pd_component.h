@@ -44,6 +44,7 @@ class Core::Native_pd_component : public Rpc_object<Pd_session::Native_pd>
 		 */
 		Native_capability alloc_rpc_cap(Native_capability, addr_t, addr_t) override;
 		void imprint_rpc_cap(Native_capability, unsigned long) override;
+		Genode::addr_t sel() override;
 };
 
 #endif /* _CORE__INCLUDE__NATIVE_PD_COMPONENT_H_ */

@@ -36,6 +36,10 @@ void Native_pd_component::imprint_rpc_cap(Native_capability cap, unsigned long b
 		imprint_badge(cap.local_name(), badge);
 }
 
+Genode::addr_t Native_pd_component::sel()
+{
+	return _pd_session._pd->pd_sel();
+}
 
 Native_pd_component::Native_pd_component(Pd_session_component &pd, char const *)
 :

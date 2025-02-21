@@ -39,8 +39,9 @@ class Core::Platform_pd : public Address_space
 		Platform_pd(Platform_pd const &);
 		Platform_pd &operator = (Platform_pd const &);
 
-	public:
+		friend class Native_pd;
 
+	public:
 		bool has_any_threads = false;
 
 		/**
