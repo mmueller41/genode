@@ -10,7 +10,6 @@
 #include <tukija_native_pd/client.h>
 #include <pd_session/client.h>
 
-#include <platform.h>
 
 #include <nova_util.h>
 
@@ -22,13 +21,13 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
         Genode::Region_map &_local_rm;
         Genode::Affinity::Space const &_space;
 
-    void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Genode::Affinity::Location &loc)
+    void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Affinity::Location &loc)
     {
         for (unsigned y = loc.ypos(); y < loc.ypos() + loc.height(); y++)
         {
             for (unsigned x = loc.xpos(); x < loc.xpos()+loc.width(); x++)
             {
-                unsigned kernel_cpu = platform_specific().kernel_cpu_id(Genode::Affinity::Location(x, y, loc.width(), loc.height()));
+                unsigned kernel_cpu = platform_specific().kernel_cpu_id(Affinity::Location(x, y, loc.width(), loc.height()));
                 coreset->set(kernel_cpu);
             }
         }
@@ -37,7 +36,7 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
     public:
         Habitat_session_component(Genode::Region_map &rm, Genode::Affinity::Space const &space) : _local_rm(rm), _space(space) {}
 
-        void create_cell(Genode::Capability<Genode::Pd_session> pd_cap, Genode::Affinity &affinity, Genode::uint16_t prio) override {
+        void create_cell(Genode::Capability<Genode::Pd_session> pd_cap, [[maybe_unused]] Genode::Affinity &affinity, Genode::uint16_t prio) override {
 
             Genode::Pd_session_client pd(pd_cap);
 
@@ -48,9 +47,9 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
             Tukija::mword_t cip_phys = 0;
             
             Tukija::mword_t cip_virt = 0;
-            platform().region_alloc().alloc_aligned(2 * Tukija::PAGE_SIZE_BYTE, Tukija::PAGE_SIZE_LOG2).with_result([&](void *ptr)
-                                                                                                                          { cip_virt = reinterpret_cast<Tukija::mword_t>(ptr); },
-                                                                                                                          [&](Genode::Range_allocator::Alloc_error) {});
+            platform().region_alloc().alloc_aligned(4 * Tukija::PAGE_SIZE_BYTE, Tukija::PAGE_SIZE_LOG2).with_result(
+                [&](void *ptr) { cip_virt = reinterpret_cast<Tukija::mword_t>(ptr); },
+                [&](Genode::Range_allocator::Alloc_error) {});
 
             if (Tukija::create_cell(cell_pd_sel, static_cast<Genode::uint8_t>(prio), cip_phys, cip_virt))
             {
@@ -58,11 +57,11 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
             }
 
             Genode::log("Mapped CIP from ", reinterpret_cast<void *>(cip_phys), " to ", cip_virt);
-            unsigned long *cip = reinterpret_cast<unsigned long *>(cip_virt);
-            Genode::log("CIP ", *cip);
-            *cip = 0xff;
+            //*cip = 0xff;
+            Tukija::Cip *cip = reinterpret_cast<Tukija::Cip *>(cip_virt);
 
-            _calculate_mask_for_location(coreset, affinity.location());
+            _calculate_mask_for_location(&cip->cores_reserved, affinity.location());
+            Genode::log("Cores reserved: ", cip->cores_reserved);
 
 
         }
