@@ -296,6 +296,18 @@ namespace Tukija {
 	}
 
 
+	ALWAYS_INLINE
+	inline uint8_t create_cell(mword_t pd, uint8_t prio, mword_t &cip, mword_t &dst)
+	{
+		return syscall_5(TUKIJA_CREATE_CELL, prio, pd, dst, cip);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t alloc()
+	{
+		return syscall_0(TUKIJA_ALLOCATE, 0, 0);
+	}
+
 	/**
 	 * Revoke memory, capabilities or i/o ports from a PD
 	 *
