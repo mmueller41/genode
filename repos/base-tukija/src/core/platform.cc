@@ -39,6 +39,7 @@
 /* NOVA includes */
 #include <tukija/syscalls.h>
 #include <tukija/util.h>
+#include <tukija/cap_map.h>
 
 using namespace Core;
 using namespace Tukija;
@@ -429,6 +430,9 @@ Core::Platform::Platform()
 
 	/* exclude TIP */
 	region_alloc().remove_range((addr_t)_tip, get_page_size() * 32);
+
+	/* exclude CIP */
+	region_alloc().remove_range((addr_t)Tukija::Cip::cip(), get_page_size() * 4);
 
 	/* sanity checks */
 	addr_t check [] = {
