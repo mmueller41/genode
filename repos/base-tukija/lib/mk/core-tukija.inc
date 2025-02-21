@@ -52,7 +52,7 @@ INC_DIR     += $(REP_DIR)/src/core/include \
 
 include $(GEN_CORE_DIR)/version.inc
 
-vpath main.cc                      $(GEN_CORE_DIR)
+vpath main.cc                      $(REP_DIR)/src/core
 vpath pd_session_component.cc      $(GEN_CORE_DIR)
 vpath rom_session_component.cc     $(GEN_CORE_DIR)
 vpath core_log.cc                  $(GEN_CORE_DIR)
