@@ -38,6 +38,8 @@
 #define _INCLUDE__NOVA__SYSCALL_GENERIC_H_
 
 #include <tukija/stdint.h>
+#include <tukija/atomic.h>
+#include <tukija/bits.h>
 
 namespace Tukija {
 
@@ -67,6 +69,8 @@ namespace Tukija {
 		NOVA_ASSIGN_PCI = 0xd,
 		NOVA_ASSIGN_GSI = 0xe,
 		NOVA_PD_CTRL    = 0xf,
+		TUKIJA_CREATE_CELL = 0x10,
+		TUKIJA_ALLOCATE	   = 0x11,
 	};
 
 	/**
@@ -84,6 +88,323 @@ namespace Tukija {
 		NOVA_INV_CPU        = 7,
 		NOVA_INVD_DEVICE_ID = 8,
 		NOVA_PD_OOM         = 9,
+	};
+
+	/**
+	 * CPU Set
+	 */
+	class Cpuset 
+	{
+		private:
+			enum {CPUS_PER_VALUE = sizeof(mword_t) * 8};
+			mword_t raw[1 + (256 - 1) / CPUS_PER_VALUE];
+
+			inline mword_t &value(unsigned const cpu) {
+				return raw[cpu / CPUS_PER_VALUE]; 
+			}
+
+			inline mword_t const &value(unsigned const cpu) const {
+				return raw[cpu / CPUS_PER_VALUE];
+			}
+
+			inline mword_t bit_cpu(unsigned const cpu) const {
+				return cpu % CPUS_PER_VALUE;
+			}
+		
+		public:
+			inline explicit Cpuset(mword_t const v)
+			{
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++)
+					raw[i] = v;
+			}
+
+			inline bool chk(unsigned const cpu) const {
+				return value(cpu) & (1UL << bit_cpu(cpu));
+			}
+
+			inline void set(unsigned const cpu) {
+				Atomic::test_set_bit(value(cpu), bit_cpu(cpu));
+			}
+
+			inline void clr(unsigned const cpu) {
+				Atomic::test_clr_bit(value(cpu), bit_cpu(cpu));
+			}
+
+			inline void merge(Cpuset const &s)
+			{
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++)
+					Atomic::set_mask(value(i * CPUS_PER_VALUE), s.value(i * CPUS_PER_VALUE));
+			}
+
+			template <typename T>
+			void for_each(T const fn)
+			{
+				long cpu = 0;
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++)
+				{
+					mword_t subset = raw[i];
+					while ((cpu = bit_scan_forward(subset)) != -1)
+					{
+						Atomic::test_clr_bit(subset, bit_cpu(static_cast<unsigned int>(cpu)));
+						fn(cpu);
+					}
+				}
+			}
+
+			unsigned count()
+			{
+				unsigned count = 0;
+				for (unsigned i = 0; i < sizeof(raw); i++) {
+					count += static_cast<unsigned>(popcount(raw[i]));
+				}
+				return count;
+			}
+	};
+
+	/**
+	 * Cell information pages
+	 *
+	 */
+	class Cip 
+	{
+		public:
+
+			/**
+			 * \brief Per-worker thread information
+			 * 
+			 * \details Workers represent arbitrary computing resources (e.g. CPU cores). Tukija grants or revokes workers from cells by adjusting its CPU core allocation. However, to allow a cell to react to a revocation of workers, Tukija employs a shared mem structure containing a flag that signals a yield request. It is expected that the cell polls this flag regularly in user-space, e.g. after the execution of an MxTask.
+			 */
+			struct alignas(64) Worker {
+				volatile unsigned short yield_flag{0}; /* This flag will be set if a yield request has been filed */
+				unsigned short padding[3];
+			};
+
+
+			/**
+			 * @brief Information about MxTasking channels
+			 * 
+			 * @details A channel is the representation of a task queue, holding a set of tasks to execute. Every task is enqueued in exactly one channel and each channel as processed by at most one worker at any given time. To ensure progress of a cell, Tukija expects cells to implement load balancing strategies to ensure that each channel's tasks are executed by a worker thread. However, Tukija does not command that each allocated core and its worker must process a channel.
+			 */
+			struct alignas(64) Channel {
+				volatile unsigned short remainder{0}; /* Number of channels that remain unstolen, after each worker has stolen `limit` many channels*/
+				volatile unsigned short limit{0}; /* Number of channels each worker is allowed to steal when core allocation has changed */
+				alignas(64) unsigned int count{0}; /* Total number of channels this cell uses. */
+			};
+
+			alignas(64) Worker worker_info[256];
+			alignas(64) Channel channel_info;
+
+			/**
+			 * @brief Contains the set of CPU cores that are currently allocated by this cell.
+			 * 
+			 */
+			Cpuset cores_current;
+
+			/**
+			 * @brief Contains the set of CPU cores this cell may lay claims to.
+			 * 
+			 * @details Hoitaja prepartitions all CPU cores among the currently running cells. Each of these partitions present the optimal allocation according to each cell's priority. However, to achieve better utilization, Tukija can assign more or less cores to a cell than contained in this set.
+			 */
+			Cpuset cores_reserved;
+
+			/**
+			 * @brief The set of cores, Tukija has chosen to answer the last allocation request.
+			 * 
+			 */
+			Cpuset cores_new;
+
+			/**
+			 * @brief Returns a pointer to the cell information page from within the address space of the respective cell.
+			 * @details This pointer is used by the user-space runtime environment of the cell to get information about pending yield requests, changes in core allocation, and parameters for adjusting the assignment of channels to workers.
+			 * 
+			 * @return Cip* 
+			 */
+			static Cip *
+			cip()
+			{
+				return reinterpret_cast<Cip *>(0x7FFFBFFDE000);
+			}
+	};
+
+	/**
+	 * Topology information pages
+	 */
+	class Tip
+	{
+		public: 
+		/**************/
+		/* Exceptions */
+		/**************/	
+		
+		/**
+		 * @brief Exception indicating that the requested NUMA domain could not be found.
+		 * 
+		 */
+		struct Domain_not_found {
+		};
+
+		/**
+		 * @brief Exception signaling that a NUMA domain has no memory region 
+		 * 
+		 */
+		struct Domain_has_no_memory_regions {
+		};
+
+		/***
+		 * Data structure definitions
+		 */
+		
+		/**
+		 * @brief Describes the physical address range of a NUMA domain
+		 * 
+		 */
+		struct Memory_region {
+			void *start;
+			void *end;	
+		};
+
+		/**
+		 * @brief Desribes either an ACPI or PCI device and its beloging to a NUMA domain.
+		 * 
+		 */
+		struct Device {
+			enum dev_type
+			{
+				ACPI = 0,
+				PCI = 1
+			};
+
+			dev_type type;
+
+			union {
+				struct {
+					uint64_t hid;
+					uint32_t uid;
+				} acpi_handle;
+				struct {
+					uint16_t segment;
+					uint16_t bdf;
+				} pci_handle;
+			};
+		};
+
+		/**
+		 * @brief Representation of a NUMA domain
+		 * 
+		 * @details A NUMA domain consists of a (possibly empty set) of CPU cores, a physical address range, and a set of devices. The information provided by a NUMA domain structure can be used to provide NUMA-aware placement of data objects and tasks.
+		 * 
+		 */
+		struct Domain {
+			uint32_t id;
+			uint8_t num_mem_descriptors;
+			uint8_t num_devices;
+			Memory_region memory_regions[32];
+			Device devices[32];
+			Cpuset cpus{0};
+
+			template <typename T>
+			void for_each_mem(T const fn) {
+				for (uint8_t i = 0; i < num_mem_descriptors; i++)
+					fn(memory_regions[i]);
+			}
+		};
+
+		/** Page layout */
+		uint16_t length{8}; /* Length of the Topology information page */
+		Domain nodes[]; /* Set of detected NUMA domains */
+
+		/* Parsing functions */
+		/**
+		 * @brief Applies the function fn to all detected NUMA domain structures
+		 * 
+		 * @tparam T - type parameter used for the function lambda provided by fn
+		 * @param fn - a function (e.g. a lambda closure) to execute on each NUMA domain.
+		 */
+		template <typename T>
+		void for_each(T const fn) {
+			mword_t const node_cnt = (reinterpret_cast<mword_t>(&nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain);
+
+			Domain *dom = nodes;
+
+			for (unsigned i = 0; i < node_cnt; i++) {
+				dom = nodes + i;
+
+				fn(*dom);
+			}
+		}
+
+		/**
+		 * @brief Looks up the NUMA domain the CPU with id cpu belongs to.
+		 * 
+		 * @param cpu | The ID of the cpu whose NUMA domain should be looked up.
+		 * @return Domain& | the NUMA domain the cpu belongs to.
+		 * @throws a Domain_not_found exception, if the cpu cannot be linked to a NUMA domain. 
+		 */
+		Domain &dom_of_cpu(unsigned cpu) {
+			Domain *d = nullptr;
+
+			for_each([&](Domain &dom)
+					 {
+				if (dom.cpus.chk(cpu)) {
+					d = &dom;
+					return;
+				} });
+			if (!d)
+				throw Domain_not_found();
+		}
+
+		/**
+		 * @brief Applies a function on a NUMA domain structure
+		 * 
+		 * @tparam T 
+		 * @param fn | the function to apply
+		 * @param id | the ID of the NUMA domain
+		 */
+		template <typename T>
+		void on_node(T const fn, uint32_t id)
+		{
+			mword_t const node_cnt = (reinterpret_cast<mword_t>(nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain);
+
+			Domain *dom = nodes;
+
+			for (unsigned i = 0; i < node_cnt; i++) {
+				dom = nodes + i;
+
+				if (dom->id == id)
+					break;
+			}
+
+			if (dom->id != id)
+				return;
+
+			fn(*dom);
+		}
+
+		/**
+		 * @brief Returns the memory region of a NUMA domain
+		 * 
+		 * @tparam T 
+		 * @param dom_id - The ID of the NUMA ID
+		 * @param region_count - number of memory regions the NUMA domain encompasses.
+		 * @return Memory_region& - The first memory region for this NUMA domain.
+		 */
+		template <typename T>
+		Memory_region &memory_for_domain(uint32_t dom_id, uint8_t *&region_count) {
+			Memory_region *mem;
+
+			on_node([&](Domain &dom)
+					{ mem = &(dom.memory_regions); });
+			
+			if (!mem) {
+				throw Domain_has_no_memory_regions();
+			}
+
+			return *mem;
+		}
+
+		inline static Tip const *tip() {
+			return reinterpret_cast<Tip *>(0x7fffbffe0000);
+		}
 	};
 
 	/**
@@ -130,7 +451,8 @@ namespace Tukija {
 		uint32_t const utcb_sizes;  /* supported utcb sizes                    */
 		uint32_t const tsc_freq;    /* time-stamp counter frequency in kHz     */
 		uint32_t const bus_freq;    /* bus frequency in kHz                    */
-
+		mword_t const topo_model;
+		Genode::addr_t const topo_phys;
 		bool has_feature_iommu() const { return feature_flags & (1 << 0); }
 		bool has_feature_vmx()   const { return feature_flags & (1 << 1); }
 		bool has_feature_svm()   const { return feature_flags & (1 << 2); }
@@ -912,5 +1234,26 @@ namespace Tukija {
 		SM_SEL_EC         = 0x1d,  /* convention on Genode */
 	};
 
+}
+
+namespace Genode {
+	static inline void print(Output &out, Tukija::Tip::Memory_region &mem) {
+		print(out, " | ", Hex(reinterpret_cast<unsigned long long>(mem.start)), " - ", Hex(reinterpret_cast<unsigned long long>(mem.end)));
+	}
+
+	static inline void print(Output &out, Tukija::Cpuset &cpus) {
+		print(out, "CPUs [ ");
+		cpus.for_each([&](long cpu)
+					  { print(out, cpu, " "); });
+		print(out, "]");
+	}
+
+	static inline void print(Output &out, Tukija::Tip::Domain &dom) {
+		print(out, "Domain ", dom.id, ": ");
+		print(out, dom.cpus);
+		print(out, " ", dom.num_mem_descriptors, " memory regions");
+		dom.for_each_mem([&](Tukija::Tip::Memory_region &mem)
+						 { print(out, mem); });
+	}
 }
 #endif /* _INCLUDE__NOVA__SYSCALL_GENERIC_H_ */
