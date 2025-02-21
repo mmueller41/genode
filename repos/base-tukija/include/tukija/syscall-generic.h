@@ -174,9 +174,9 @@ namespace Tukija {
 			 * 
 			 * \details Workers represent arbitrary computing resources (e.g. CPU cores). Tukija grants or revokes workers from cells by adjusting its CPU core allocation. However, to allow a cell to react to a revocation of workers, Tukija employs a shared mem structure containing a flag that signals a yield request. It is expected that the cell polls this flag regularly in user-space, e.g. after the execution of an MxTask.
 			 */
-			struct alignas(64) Worker {
-				volatile unsigned short yield_flag{0}; /* This flag will be set if a yield request has been filed */
-				unsigned short padding[3];
+			struct Worker {
+				volatile unsigned long yield_flag{0}; /* This flag will be set if a yield request has been filed */
+				unsigned long padding[3];
 			};
 
 
@@ -185,14 +185,14 @@ namespace Tukija {
 			 * 
 			 * @details A channel is the representation of a task queue, holding a set of tasks to execute. Every task is enqueued in exactly one channel and each channel as processed by at most one worker at any given time. To ensure progress of a cell, Tukija expects cells to implement load balancing strategies to ensure that each channel's tasks are executed by a worker thread. However, Tukija does not command that each allocated core and its worker must process a channel.
 			 */
-			struct alignas(64) Channel {
+			struct Channels {
 				volatile unsigned short remainder{0}; /* Number of channels that remain unstolen, after each worker has stolen `limit` many channels*/
 				volatile unsigned short limit{0}; /* Number of channels each worker is allowed to steal when core allocation has changed */
-				alignas(64) unsigned int count{0}; /* Total number of channels this cell uses. */
+				unsigned int count{0}; /* Total number of channels this cell uses. */
 			};
 
 			alignas(64) Worker worker_info[256];
-			alignas(64) Channel channel_info;
+			Channels channel_info;
 
 			/**
 			 * @brief Contains the set of CPU cores that are currently allocated by this cell.
@@ -222,7 +222,7 @@ namespace Tukija {
 			static Cip *
 			cip()
 			{
-				return reinterpret_cast<Cip *>(0x7FFFBFFDE000);
+				return reinterpret_cast<Cip *>(0x7FFFBFFDC000);
 			}
 	};
 
