@@ -754,7 +754,8 @@ Sandbox::Child::Child(Env                      &env,
                       Registry<Parent_service> &parent_services,
                       Registry<Routed_service> &child_services,
                       Registry<Local_service>  &local_services,
-                      Pd_intrinsics            &pd_intrinsics)
+                      Pd_intrinsics            &pd_intrinsics,
+					  Ealan::Habitat_connection &habitat)
 :
 	_env(env), _alloc(alloc), _verbose(verbose), _id(id),
 	_report_update_trigger(report_update_trigger),
@@ -774,7 +775,8 @@ Sandbox::Child::Child(Env                      &env,
 	_parent_services(parent_services),
 	_child_services(child_services),
 	_local_services(local_services),
-	_session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm())
+	_session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm()),
+	_habitat(habitat)
 {
 	log("Creating new cell <", _unique_name, ">");
 	if (_verbose.enabled()) {

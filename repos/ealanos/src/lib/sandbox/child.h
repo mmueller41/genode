@@ -14,6 +14,11 @@
 #ifndef _LIB__SANDBOX__CHILD_H_
 #define _LIB__SANDBOX__CHILD_H_
 
+/* Tukija includes */
+#include <tukija_native_pd/client.h>
+#include <tukija/syscall-generic.h>
+#include <tukija/syscalls.h>
+
 /* Genode includes */
 #include <base/log.h>
 #include <base/child.h>
@@ -30,6 +35,9 @@
 #include <service.h>
 #include <utils.h>
 #include <route_model.h>
+
+/* EalánOS includes */
+#include <habitat/connection.h>
 
 namespace Sandbox { class Child; }
 
@@ -375,6 +383,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Session_requester _session_requester;
 
+		Ealan::Habitat_connection &_habitat;
+
 		/**
 		 * CPU-session priority parameters
 		 */
@@ -595,7 +605,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		      Registry<Parent_service> &parent_services,
 		      Registry<Routed_service> &child_services,
 		      Registry<Local_service>  &local_services,
-		      Pd_intrinsics            &pd_intrinsics);
+		      Pd_intrinsics            &pd_intrinsics,
+			  Ealan::Habitat_connection &habitat);
 
 		virtual ~Child();
 
@@ -628,11 +639,13 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			if (_state == State::RAM_INITIALIZED) {
 				_child.initiate_env_sessions();
 
-				if (_child.active())
+				if (_child.active()) {
+					_habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority));
 					_state = State::ALIVE;
-				else
+				} else
 					_uncertain_dependencies = true;
 			}
+
 		}
 
 		/*

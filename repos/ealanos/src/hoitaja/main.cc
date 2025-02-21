@@ -17,6 +17,7 @@
 #include <sandbox/sandbox.h>
 #include <os/reporter.h>
 #include <base/log.h>
+#include <tukija/syscall-generic.h>
 
 namespace Init {
 
@@ -103,6 +104,10 @@ struct Init::Main : Sandbox::State_handler
 
 		/* prevent init to block for resource upgrades (never satisfied by core) */
 		_env.parent().resource_avail_sigh(_resource_avail_handler);
+
+		Tukija::Tip const *tip = Tukija::Tip::tip();
+
+		Genode::log("Found topology model of size ", tip->length, " at ", static_cast<const void *>(tip));
 
 		_handle_config();
 	}

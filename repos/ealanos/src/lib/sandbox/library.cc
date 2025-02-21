@@ -23,6 +23,9 @@
 #include <config_model.h>
 #include <core_allocator.h>
 
+/* EalánOS includes */
+#include <habitat/connection.h>
+
 struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
                                   ::Sandbox::Child::Default_route_accessor,
                                   ::Sandbox::Child::Default_caps_accessor,
@@ -64,6 +67,7 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	Registry<Local_service>  &_local_services;
 	Child_registry            _children        { };
 
+	Constructible<Ealan::Habitat_connection> _habitat { };
 	/*
 	 * Global parameters obtained from config
 	 */
@@ -376,8 +380,11 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 		        "but affinity defined for child ",
 		        start_node.attribute_value("name", Child_policy::Name()));
 
-	if (_affinity_space.constructed() && !_core_allocator.constructed())
+	if (_affinity_space.constructed() && !_core_allocator.constructed()) {
+		log("Creating new core allocator for ", _affinity_space->total(), " cores.");
 		_core_allocator.construct(*_affinity_space, _prio_levels);
+		_habitat.construct(_env, Affinity(*_affinity_space, Affinity::Location(0,0)));
+	}
 
 	Affinity::Location allocation = _core_allocator->allocate_cores_for_cell(start_node);
 
@@ -393,7 +400,7 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 			      start_node, *this, *this, _children, *this, *this, *this, *this,
 			      _prio_levels, _effective_affinity_space(), allocation,
 			      _parent_services, _child_services, _local_services,
-			      _pd_intrinsics);
+			      _pd_intrinsics, *_habitat);
 		_children.insert(&child);
 
 		_avail_cpu.percent -= min(_avail_cpu.percent, child.cpu_quota().percent);
