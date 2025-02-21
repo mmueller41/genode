@@ -39,12 +39,18 @@ struct Genode::Pd_session::Native_pd : Interface
 	 */
 	virtual void imprint_rpc_cap(Native_capability cap, unsigned long badge) = 0;
 
+	/**
+	 * Get PD selector
+	 */
+	virtual Genode::addr_t sel() = 0;
+
 	GENODE_RPC_THROW(Rpc_alloc_rpc_cap, Native_capability, alloc_rpc_cap,
 	                 GENODE_TYPE_LIST(Out_of_ram, Out_of_caps),
 	                 Native_capability, addr_t, addr_t);
 	GENODE_RPC(Rpc_imprint_rpc_cap, void, imprint_rpc_cap,
 	           Native_capability, unsigned long);
-	GENODE_RPC_INTERFACE(Rpc_alloc_rpc_cap, Rpc_imprint_rpc_cap);
+	GENODE_RPC(Rpc_get_pd_sel, Genode::addr_t, sel);
+	GENODE_RPC_INTERFACE(Rpc_alloc_rpc_cap, Rpc_imprint_rpc_cap, Rpc_get_pd_sel);
 };
 
 #endif /* _INCLUDE__NOVA_NATIVE_PD__NOVA_NATIVE_PD_H_ */

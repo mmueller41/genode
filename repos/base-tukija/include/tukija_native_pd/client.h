@@ -35,6 +35,11 @@ struct Genode::Tukija_native_pd_client : Rpc_client<Pd_session::Native_pd>
 	{
 		call<Rpc_imprint_rpc_cap>(cap, badge);
 	}
+
+	Genode::addr_t sel() override
+	{
+		return call<Rpc_get_pd_sel>();
+	}
 };
 
 #endif /* _INCLUDE__NOVA_NATIVE_PD__CLIENT_H_ */
