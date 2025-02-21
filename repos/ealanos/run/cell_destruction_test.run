@@ -25,7 +25,7 @@ install_config {
             <any-service><parent/><any-child/></any-service>
         </default-route>
         <default caps="2000"/>
-        <affinity-space width="64" height="1"/>
+        <affinity-space width="32" height="1"/>
         <start name="timer">
             <resource name="RAM" quantum="3M"/>
             <provides><service name="Timer"/></provides>
