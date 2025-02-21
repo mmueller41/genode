@@ -23,10 +23,13 @@ class Hoitaja_test::Empty_cell
             Genode::log("Found topology model of size ", Tukija::Tip::tip()->length, " mapped at ", static_cast<const void *>(Tukija::Tip::tip()));
             Tukija::Cip *cip = Tukija::Cip::cip();
             Genode::log("CIP value: ", *reinterpret_cast<unsigned long*>(cip));
+
+            Genode::log("Cores: ", cip->cores_reserved);
             long pd_sel = _env.pd().native_pd().local_name();
             Genode::log("pd_sel = ", pd_sel);
             _timer.msleep(10000);
             Genode::log("Exiting..");
+
             _env.parent().exit(0);
 
         }
