@@ -18,6 +18,7 @@
 #include <base/rpc_args.h>
 #include <session/session.h>
 #include <pd_session/pd_session.h>
+#include <cell/cell.h>
 
 namespace Ealan { struct Habitat_session; }
 
@@ -30,9 +31,9 @@ struct Ealan::Habitat_session : Genode::Session
     /**
      * Attach cell info page to the cells virtual memory space
      */
-    virtual void create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio) = 0;
+    virtual Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) = 0;
 
-    GENODE_RPC(Rpc_create_cell, void, create_cell, Genode::Capability<Genode::Pd_session>, Genode::Affinity&, Genode::uint16_t);
+    GENODE_RPC(Rpc_create_cell, Cell_capability, create_cell, Genode::Capability<Genode::Pd_session>, Genode::Affinity &, Genode::uint16_t, Genode::Session_label const &);
     GENODE_RPC_INTERFACE(Rpc_create_cell);
 };
 #endif

@@ -27,8 +27,8 @@ struct Ealan::Habitat_client : Genode::Rpc_client<Ealan::Habitat_session>
 {
     explicit Habitat_client(Habitat_capability session) : Rpc_client<Habitat_session>(session) {}
 
-    void create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio) override {
-        call<Rpc_create_cell>(pd, affinity, prio);
+    Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
+        return call<Rpc_create_cell>(pd, affinity, prio, label);
     }
 };
 #endif
