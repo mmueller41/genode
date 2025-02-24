@@ -84,6 +84,13 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
             Genode::log("Cores for <", label, ">: ", _cip->cores_reserved);
+
+            _ep.manage(this);
+        }
+
+        ~Cell_component()
+        {
+            _ep.dissolve(this);
         }
 
         /********************
