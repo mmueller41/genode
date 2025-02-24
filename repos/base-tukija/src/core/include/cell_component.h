@@ -100,6 +100,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
         void update(Genode::Affinity &affinity) override {
             /* TODO: implement */
             Genode::log("Changing cell's affinity to ", affinity);
+            _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
         }
 
         bool is_brick() override {
