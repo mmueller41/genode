@@ -86,7 +86,7 @@ class Hoitaja::Core_allocator
         void update(::Sandbox::Child &cell, int *xpos, int *lower_limit) {
             if (cell.abandoned())
                 return;
-            /*::Sandbox::Child::Resources resources = cell.resources();
+            ::Sandbox::Child::Resources resources = cell.resources();
             long priority = (resources.priority == 0)? 1 : resources.priority;
 
             unsigned int cores_share = _calculate_resource_share(priority);
@@ -100,13 +100,14 @@ class Hoitaja::Core_allocator
 
             Genode::Affinity::Location location(*xpos - cores_share, resources.affinity.location().ypos(), cores_share, resources.affinity.location().height());
             
-            if (resources.affinity.location() != location) { // Only update, if location has actually changed
+            /*if (resources.affinity.location() != location) { // Only update, if location has actually changed
                 cell.update_affinity(Genode::Affinity(resources.affinity.space(), location));
             }
 
             if (location.width() > resources.affinity.location().width()) {
                 cell.grow_cores(location);
-            }
+            }*/
+
 
             *xpos = location.xpos();
             // TODO: Update affinity of existing sessions for cell
@@ -114,8 +115,9 @@ class Hoitaja::Core_allocator
 
             if (cores_to_reclaim > 0) {
                 log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
-                cell.shrink_cores(location);
-            }*/
+            }
+            
+            cell.update(Genode::Affinity(resources.affinity.space(), location));
             
         }
 

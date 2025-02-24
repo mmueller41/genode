@@ -7,6 +7,7 @@ CONFIG_XSD = config.xsd
 
 # statically link sandbox library to avoid dependency from sandbox.lib.so
 SRC_CC  += library.cc child.cc server.cc config_model.cc
+INC_DIR += $(REP_DIR)/include
 INC_DIR += $(REP_DIR)/src/lib/sandbox
 vpath %.cc $(REP_DIR)/src/lib/sandbox
 

@@ -35,9 +35,11 @@
 #include <service.h>
 #include <utils.h>
 #include <route_model.h>
+#include <sandbox/sandbox.h>
 
 /* EalánOS includes */
 #include <habitat/connection.h>
+#include <cell/client.h>
 
 namespace Sandbox { class Child; }
 
@@ -105,6 +107,46 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		{
 			pd_intrinsics.with_intrinsics(cap, pd, Pd_intrinsics::With_intrinsics::Fn { fn });
 		}
+		
+		/**
+		 * Resources assigned to the child
+		 */
+		struct Resources
+		{
+			long      prio_levels_log2;
+			long      priority;
+			Affinity  affinity;
+			Ram_quota assigned_ram_quota;
+			Cap_quota assigned_cap_quota;
+			Cpu_quota assigned_cpu_quota;
+
+			Ram_quota effective_ram_quota() const
+			{
+				return Genode::Child::effective_quota(assigned_ram_quota);
+			}
+
+			Cap_quota effective_cap_quota() const
+			{
+				/* capabilities consumed by 'Genode::Child' */
+				Cap_quota const effective =
+					Genode::Child::effective_quota(assigned_cap_quota);
+
+				/* capabilities additionally consumed by init */
+				enum {
+					STATIC_COSTS = 1  /* possible heap backing-store
+					                     allocation for session object */
+					             + 1  /* buffered XML start node */
+					             + 2  /* dynamic ROM for config */
+					             + 2  /* dynamic ROM for session requester */
+				};
+
+				if (effective.value < STATIC_COSTS)
+					return Cap_quota{0};
+
+				return Cap_quota{effective.value - STATIC_COSTS};
+			}
+		};
+
 
 	private:
 
@@ -148,6 +190,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		State _state = State::INITIAL;
 
 		Report_update_trigger &_report_update_trigger;
+
+		Genode::Sandbox::State_handler &_habitat_handler;
 
 		List_element<Child> _list_element;
 
@@ -236,45 +280,6 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			/* don't expect heartbeats from a child that is not yet complete */
 			return _heartbeat_enabled && (_state == State::ALIVE);
 		}
-
-		/**
-		 * Resources assigned to the child
-		 */
-		struct Resources
-		{
-			long      prio_levels_log2;
-			long      priority;
-			Affinity  affinity;
-			Ram_quota assigned_ram_quota;
-			Cap_quota assigned_cap_quota;
-			Cpu_quota assigned_cpu_quota;
-
-			Ram_quota effective_ram_quota() const
-			{
-				return Genode::Child::effective_quota(assigned_ram_quota);
-			}
-
-			Cap_quota effective_cap_quota() const
-			{
-				/* capabilities consumed by 'Genode::Child' */
-				Cap_quota const effective =
-					Genode::Child::effective_quota(assigned_cap_quota);
-
-				/* capabilities additionally consumed by init */
-				enum {
-					STATIC_COSTS = 1  /* possible heap backing-store
-					                     allocation for session object */
-					             + 1  /* buffered XML start node */
-					             + 2  /* dynamic ROM for config */
-					             + 2  /* dynamic ROM for session requester */
-				};
-
-				if (effective.value < STATIC_COSTS)
-					return Cap_quota{0};
-
-				return Cap_quota{effective.value - STATIC_COSTS};
-			}
-		};
 
 		static
 		Resources _resources_from_start_node(Xml_node start_node, Prio_levels prio_levels,
@@ -421,6 +426,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Genode::Child _child { _env.rm(), _env.ep().rpc_ep(), *this };
 
+		Ealan::Cell_capability _cell_cap { };
+
 		struct Pd_accessor : Routed_service::Pd_accessor
 		{
 			Genode::Child &_child;
@@ -528,6 +535,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		bool _exited     { false };
 		int  _exit_value { -1 };
 
+
 		/**
 		 * Return true if it's safe to call the PD for requesting resource
 		 * information
@@ -606,7 +614,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		      Registry<Routed_service> &child_services,
 		      Registry<Local_service>  &local_services,
 		      Pd_intrinsics            &pd_intrinsics,
-			  Ealan::Habitat_connection &habitat);
+			  Ealan::Habitat_connection &habitat,
+			  Genode::Sandbox::State_handler &habitat_handler);
 
 		virtual ~Child();
 
@@ -640,8 +649,9 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 				_child.initiate_env_sessions();
 
 				if (_child.active()) {
-					_habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority));
-					_state = State::ALIVE;
+					 _cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name));
+					 Genode::log("Created new cell ", _unique_name, " ", _cell_cap);
+					 _state = State::ALIVE;
 				} else
 					_uncertain_dependencies = true;
 			}
@@ -668,6 +678,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		bool restart_scheduled() const { return _state == State::RESTART_SCHEDULED; }
 
 		bool stuck() const { return _state == State::STUCK; }
+		
+		bool exited() { return _exited; }
 
 		bool env_sessions_closed() const { return _child.env_sessions_closed(); }
 
@@ -726,19 +738,16 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		struct Resources &resources() { return _resources; }
 
-        void update_affinity(Genode::Affinity affinity) {
-            //Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
+        void update(Genode::Affinity affinity) {
+            Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
             _resources.affinity = affinity;
             //Genode::log("Moving CPU session ", _env.cpu_session_cap());
             if (_child.active()) {
-            }
-        }
-
-		void shrink_cores(Genode::Affinity::Location &cores) {
-        }
-
-        void grow_cores(Genode::Affinity::Location &cores) {
-        }
+				Ealan::Cell_client cell(_cell_cap);
+				Genode::log("Updating cell ", _cell_cap);
+				cell.update(affinity);
+			}
+		}
 
 		bool is_brick() { return false; }
 
@@ -800,6 +809,9 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			 * printed by the default implementation of 'Child_policy::exit'.
 			 */
 			Child_policy::exit(exit_value);
+
+			Genode::log("Notifying Hoitaja");
+			_habitat_handler.handle_child_state(*this);
 		}
 
 		void session_state_changed() override

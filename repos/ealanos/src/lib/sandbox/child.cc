@@ -755,10 +755,12 @@ Sandbox::Child::Child(Env                      &env,
                       Registry<Routed_service> &child_services,
                       Registry<Local_service>  &local_services,
                       Pd_intrinsics            &pd_intrinsics,
-					  Ealan::Habitat_connection &habitat)
+					  Ealan::Habitat_connection &habitat,
+					  Genode::Sandbox::State_handler &habitat_handler)
 :
 	_env(env), _alloc(alloc), _verbose(verbose), _id(id),
 	_report_update_trigger(report_update_trigger),
+	_habitat_handler(habitat_handler),
 	_list_element(this),
 	_start_node(_alloc, start_node),
 	_default_route_accessor(default_route_accessor),
@@ -776,8 +778,7 @@ Sandbox::Child::Child(Env                      &env,
 	_child_services(child_services),
 	_local_services(local_services),
 	_session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm()),
-	_habitat(habitat)
-{
+	_habitat(habitat){
 	log("Creating new cell <", _unique_name, ">");
 	if (_verbose.enabled()) {
 		log("child \"",       _unique_name, "\"");

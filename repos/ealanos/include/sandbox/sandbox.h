@@ -22,7 +22,9 @@
 #include <base/heap.h>
 
 namespace Genode { class Sandbox; }
-
+namespace Sandbox {
+	class Child;
+}
 
 class Genode::Sandbox : Noncopyable
 {
@@ -43,6 +45,7 @@ class Genode::Sandbox : Noncopyable
 		struct State_handler : Interface
 		{
 			virtual void handle_sandbox_state() = 0;
+			virtual void handle_child_state(::Sandbox::Child &child) = 0;
 		};
 
 		/**
@@ -108,8 +111,9 @@ class Genode::Sandbox : Noncopyable
 		 * \throw Xml_generator::Buffer_exceeded
 		 */
 		void generate_state_report(Xml_generator &) const;
-};
 
+		void update(::Sandbox::Child &child);
+};
 
 class Genode::Sandbox::Local_service_base : public Service
 {

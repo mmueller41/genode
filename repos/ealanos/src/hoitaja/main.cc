@@ -18,7 +18,7 @@
 #include <os/reporter.h>
 #include <base/log.h>
 #include <tukija/syscall-generic.h>
-
+#include <child.h>
 namespace Init {
 
 	using namespace Genode;
@@ -27,11 +27,11 @@ namespace Init {
 }
 
 
-struct Init::Main : Sandbox::State_handler
+struct Init::Main : Genode::Sandbox::State_handler
 {
 	Env &_env;
 
-	Sandbox _sandbox { _env, *this };
+	Genode::Sandbox _sandbox { _env, *this };
 
 	Attached_rom_dataspace _config { _env, "config" };
 
@@ -93,6 +93,16 @@ struct Init::Main : Sandbox::State_handler
 					xml.attribute("error", "report buffer exceeded"); });
 			}
 			catch (...) { }
+		}
+	}
+
+	void handle_child_state(::Sandbox::Child &child) override {
+		try {
+			Genode::log("Updating sandbox state");
+			_sandbox.update(child);
+		} catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded) {
+			Genode::log("Caps exceeded while handling child state");
+			_env.parent().exit(1);
 		}
 	}
 

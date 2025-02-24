@@ -79,6 +79,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	Constructible<Affinity::Space> _affinity_space { };
 	Preservation                   _preservation   { };
 
+	State_handler &_habitat_handler;
+
 	Affinity::Space _effective_affinity_space() const
 	{
 		return _affinity_space.constructed() ? *_affinity_space
@@ -289,7 +291,7 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	        State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
 	:
 		_env(env), _heap(heap), _core_allocator(), _pd_intrinsics(pd_intrinsics),
-		_local_services(local_services), _state_reporter(_env, *this, state_handler)
+		_local_services(local_services), _habitat_handler(state_handler), _state_reporter(_env, *this, state_handler)
 	{ }
 
 	Library(Env &env, Heap &heap, Registry<Local_service> &local_services,
@@ -304,8 +306,18 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	{
 		_state_reporter.generate(xml);
 	}
-};
 
+	void maintain_cells();
+
+	void update(Child &child) {
+		if (child.exited()) {
+			_children.remove(&child);
+			_core_allocator->free_cores_from_cell(child);
+			Genode::log("Starting new maintenance cycle");
+			maintain_cells();
+		}
+	}
+};
 
 void Genode::Sandbox::Library::_destroy_abandoned_parent_services()
 {
@@ -400,8 +412,10 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 			      start_node, *this, *this, _children, *this, *this, *this, *this,
 			      _prio_levels, _effective_affinity_space(), allocation,
 			      _parent_services, _child_services, _local_services,
-			      _pd_intrinsics, *_habitat);
+			      _pd_intrinsics, *_habitat, _habitat_handler);
 		_children.insert(&child);
+
+		maintain_cells();
 
 		_avail_cpu.percent -= min(_avail_cpu.percent, child.cpu_quota().percent);
 
@@ -537,6 +551,16 @@ void Genode::Sandbox::Library::apply_config(Xml_node const &config)
 		_state_reporter.trigger_immediate_report_update();
 }
 
+void Genode::Sandbox::Library::maintain_cells()
+{
+	int xpos = _affinity_space->total();
+	int lower_limit = _affinity_space->total() - _core_allocator->cores_available();
+	_children.for_each_child([&](Child &child)
+							 {
+                                log(child.name(), " ram: ", child.ram_quota());
+								if (!(child.is_brick()))
+                                	_core_allocator->update(child, &xpos, &lower_limit); });
+}
 
 /*********************************
  ** Sandbox::Local_service_base **
@@ -682,6 +706,10 @@ void Genode::Sandbox::generate_state_report(Xml_generator &xml) const
 	_library.generate_state_report(xml);
 }
 
+void Genode::Sandbox::update(::Sandbox::Child &child)
+{
+	_library.update(child);
+}
 
 Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
 :
