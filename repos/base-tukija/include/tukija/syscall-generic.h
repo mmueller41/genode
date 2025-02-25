@@ -71,6 +71,15 @@ namespace Tukija {
 		NOVA_PD_CTRL    = 0xf,
 		TUKIJA_CREATE_CELL = 0x10,
 		TUKIJA_ALLOCATE	   = 0x11,
+		TUKIJA_CELL_CTRL   = 0x12,
+	};
+
+	/**
+	 * Tukija operations
+	 */
+	enum Cell_control
+	{
+		UPDATE_AFFINITY = 0,
 	};
 
 	/**

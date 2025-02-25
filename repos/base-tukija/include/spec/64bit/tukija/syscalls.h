@@ -411,6 +411,11 @@ namespace Tukija {
 		return syscall_5(NOVA_PD_CTRL, Pd_op::PD_DEBUG, pd, limit, usage);
 	}
 
+	ALWAYS_INLINE
+	inline uint8_t cell_ctrl(mword_t pd, Cell_control const op)
+	{
+		return syscall_0(TUKIJA_CELL_CTRL, op, pd);
+	}
 
 	ALWAYS_INLINE
 	inline uint8_t assign_pci(mword_t pd, mword_t mem, mword_t rid)
