@@ -83,6 +83,8 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             }
 
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
+            Tukija::cell_ctrl(cell_pd_sel, Tukija::Cell_control::UPDATE_AFFINITY);
+            
             Genode::log("Cores for <", label, ">: ", _cip->cores_reserved);
 
             _ep.manage(this);
