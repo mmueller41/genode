@@ -25,7 +25,7 @@ namespace Core {
                     throw Genode::Service_denied();
                 }
 
-                return new (md_alloc()) Habitat_session_component(session_label_from_args(args), _session_ep, _local_rm, _ram_alloc, affinity.space());
+                return new (md_alloc()) Habitat_session_component(session_label_from_args(args), _session_ep, _local_rm, _ram_alloc, affinity);
             }
 
             void _upgrade_session(Habitat_session_component *, const char *) override

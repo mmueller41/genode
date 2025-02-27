@@ -34,26 +34,24 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
 {
     private:
         Genode::Region_map &_local_rm;
-        Genode::Affinity::Space const &_space;
+        Genode::Affinity const &_affinity;
         Genode::Session_label const &_label;
         Genode::Sliced_heap _md_alloc;
         Genode::Rpc_entrypoint &_ep;
         Genode::List<Ealan::Cell_component> _managed_cells { };
 
-        void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Affinity::Location &loc)
+        void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Genode::Affinity::Location &loc)
         {
-            for (unsigned y = loc.ypos(); y < loc.ypos() + loc.height(); y++)
-            {
-                for (unsigned x = loc.xpos(); x < loc.xpos() + loc.width(); x++)
+            const_cast<Genode::Affinity::Location&>(loc).for_each(
+                [&](Genode::Affinity::Location const &location)
                 {
-                    unsigned kernel_cpu = platform_specific().kernel_cpu_id(Affinity::Location(x, y, loc.width(), loc.height()));
+                    unsigned kernel_cpu = Core::platform_specific().kernel_cpu_id(location);
                     coreset->set(kernel_cpu);
-                }
-            }
-    }
+                });
+        }
 
     public:
-        Habitat_session_component(Genode::Session_label const &label, Genode::Rpc_entrypoint &session_ep, Genode::Region_map &rm, Genode::Ram_allocator &alloc, Genode::Affinity::Space const &space) :  _local_rm(rm), _space(space), _label(label), _md_alloc(alloc, rm), _ep(session_ep) {}
+        Habitat_session_component(Genode::Session_label const &label, Genode::Rpc_entrypoint &session_ep, Genode::Region_map &rm, Genode::Ram_allocator &alloc, Genode::Affinity const &affinity) :  _local_rm(rm), _affinity(affinity), _label(label), _md_alloc(alloc, rm), _ep(session_ep) {}
 
         Ealan::Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, [[maybe_unused]] Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
 
@@ -62,6 +60,13 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
             _managed_cells.insert(cell);
 
             return cell->cap();
+        }
+
+        Genode::Affinity affinity() override
+        {
+            Genode::Affinity::Space const &core_space = Core::platform().affinity_space();
+
+            return Genode::Affinity(core_space, _affinity.location());
         }
 };
 
