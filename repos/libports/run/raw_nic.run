@@ -67,10 +67,10 @@ append config {
 
 			<policy label_prefix="rawnic" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
-			<!--
 			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
-			-->
+			<!--
 			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="yes">
+			-->
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -131,9 +131,9 @@ append config {
 append qemu_args " -nographic "
 append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
 
-build { core init timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx server/nic_router server/nic_uplink app/lwip_raw }
+build { core init hoitaja timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx server/nic_router server/nic_uplink app/lwip_raw }
 
 install_config $config
 build_boot_image [build_artifacts]
-#build_boot_image { core init timer ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so nic_router nic_uplink lwip_raw }
+#build_boot_image { core hoitaja timer ld.lib.so libm.lib.so libc.lib.so stdcxx.lib.so nic_router nic_uplink lwip_raw }
 run_genode_until forever
