@@ -52,14 +52,23 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
     
         void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Genode::Affinity::Location &loc)
         {
-            for (unsigned y = loc.ypos(); y < loc.ypos() + loc.height(); y++)
-            {
-                for (unsigned x = loc.xpos(); x < loc.xpos()+loc.width(); x++)
+            const_cast<Genode::Affinity::Location&>(loc).for_each(
+                [&](Genode::Affinity::Location const &location)
                 {
-                    unsigned kernel_cpu = Core::platform_specific().kernel_cpu_id(Genode::Affinity::Location(x, y, loc.width(), loc.height()));
+                    unsigned kernel_cpu = Core::platform_specific().kernel_cpu_id(location);
                     coreset->set(kernel_cpu);
-                }
-            }
+                });
+        }
+
+        void _map_location_to_kernel(const Genode::Affinity &affinity)
+        {
+            unsigned local_idx = 0; /* Cell-local index */
+            Genode::Affinity::Location const &loc = affinity.location();
+            const_cast<Genode::Affinity::Location &>(loc).for_each(
+                [&](Genode::Affinity::Location const &location)
+                {
+                    _cip->idx_to_phys_cpu_id[local_idx++] = Core::platform_specific().kernel_cpu_id(location);
+                });
         }
 
         Cell_component(const Cell_component &);
@@ -72,20 +81,42 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             Tukija::mword_t cell_pd_sel = _native_pd.sel();
             Tukija::mword_t cip_phys = 0;
 
+            /* Allocate a region map for mapping the CIP of this new cell. 
+             * Only a region map needs to be allocated here, because the kernel will already
+             * allocate a frame for this cell CIP during the syscall.
+             */
             Core::platform().region_alloc().alloc_aligned(4 * Tukija::PAGE_SIZE_BYTE, Tukija::PAGE_SIZE_LOG2).with_result(
                 [&](void *ptr) { _cip = static_cast<Tukija::Cip*>(ptr); },
                 [&](Genode::Range_allocator::Alloc_error) { throw Genode::Out_of_ram(); });
 
             Tukija::mword_t cip_virt = reinterpret_cast<Tukija::mword_t>(_cip);
 
+            /* Create cell at kernel. This will create a cell object in the kernel and allocate 
+             * a page frame for the CIP. The CIP will then be mapped by the kernel using the 
+             * supplied virtual address from the previously allocated region map.
+             */
             if (Tukija::create_cell(cell_pd_sel, static_cast<Genode::uint8_t>(prio), cip_phys, cip_virt)) {
                 Genode::error("Failed to create cell at Tukija.");
             }
 
+            /* We need to specify the pre-reserved CPU cores from this cell. 
+             * However, as the pre-resevred CPU cores are provided as Genode::Affinity
+             * we need to convert it into a CPUset of the corresponding kernel cpu IDs.
+             */
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
             Tukija::cell_ctrl(cell_pd_sel, Tukija::Cell_control::UPDATE_AFFINITY);
             
             Genode::log("Cores for <", label, ">: ", _cip->cores_reserved);
+
+            /* Set affinity space this cell resides in */
+            Genode::log("Affinity of cell ", label, ": ", affinity);
+            _cip->habitat_affinity = affinity.space();
+
+            /* As Genode operates on logical affinites, we need to set a mapping from Affinities
+             * to kernel cpu IDs in order to make the user-space cell able to locate the correct
+             * worker information structure for its worker threads.
+             */
+            _map_location_to_kernel(affinity);
 
             _ep.manage(this);
         }
@@ -104,6 +135,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             Genode::log("Changing cell's affinity to ", affinity);
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
             Tukija::cell_ctrl(_native_pd.sel(), Tukija::Cell_control::UPDATE_AFFINITY);
+            _map_location_to_kernel(affinity);
         }
 
         bool is_brick() override {
