@@ -303,9 +303,9 @@ namespace Tukija {
 	}
 
 	ALWAYS_INLINE
-	inline uint8_t alloc()
+	inline uint8_t alloc(Tukija::Resource_type type, Genode::size_t quantity)
 	{
-		return syscall_0(TUKIJA_ALLOCATE, 0, 0);
+		return syscall_0(TUKIJA_ALLOCATE, type, quantity);
 	}
 
 	/**
