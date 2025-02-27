@@ -166,6 +166,15 @@ class Genode::Affinity
 					                node.attribute_value("height", default_height));
 				}
 
+				template<typename FUNC>
+				void for_each(const FUNC &fn) {
+					for (unsigned y = _ypos; y < _ypos + height(); y++) {
+						for (unsigned x = _xpos; x < _xpos+_width; x++) {
+							fn(Genode::Affinity::Location(x, y, _width, _height));
+						}
+					}
+				}
+
 		};
 
 	private:
