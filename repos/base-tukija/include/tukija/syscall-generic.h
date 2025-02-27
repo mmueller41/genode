@@ -244,6 +244,12 @@ namespace Tukija {
 
 			Genode::Affinity::Space habitat_affinity; /* the affinity space the corresponding cell lives in */
 
+			/**
+			 * @brief Return the sanitized kernel CPU ID for a given location
+			 * 
+			 * @param location - the location for which to request the kernel CPU ID
+			 * @return unsigned - the kernel CPU ID of the given location
+			 */
 			unsigned location_to_kernel_cpu(Genode::Affinity::Location const &location)
 			{
 				unsigned pager_index = (location.xpos() * habitat_affinity.height() + location.ypos()) % (habitat_affinity.height() * habitat_affinity.width());
