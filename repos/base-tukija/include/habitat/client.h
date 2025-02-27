@@ -30,5 +30,10 @@ struct Ealan::Habitat_client : Genode::Rpc_client<Ealan::Habitat_session>
     Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
         return call<Rpc_create_cell>(pd, affinity, prio, label);
     }
+
+    Genode::Affinity affinity() override
+    {
+        return call<Rpc_affinity>();
+    }
 };
 #endif
