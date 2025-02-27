@@ -1,5 +1,5 @@
 /*
- * \brief  Syscall bindings for the NOVA microhypervisor
+ * \brief  Syscall bindings for the Tukija (originally NOVA) microhypervisor
  * \author Norman Feske
  * \author Sebastian Sumpf
  * \author Alexander Boettcher
@@ -41,6 +41,8 @@
 #include <tukija/atomic.h>
 #include <tukija/bits.h>
 
+#include <base/affinity.h>
+
 namespace Tukija {
 
 	enum {
@@ -80,6 +82,11 @@ namespace Tukija {
 	enum Cell_control
 	{
 		UPDATE_AFFINITY = 0,
+	};
+
+	enum Resource_type
+	{
+		CPU_CORE = 0,
 	};
 
 	/**
@@ -181,7 +188,11 @@ namespace Tukija {
 			/**
 			 * \brief Per-worker thread information
 			 * 
-			 * \details Workers represent arbitrary computing resources (e.g. CPU cores). Tukija grants or revokes workers from cells by adjusting its CPU core allocation. However, to allow a cell to react to a revocation of workers, Tukija employs a shared mem structure containing a flag that signals a yield request. It is expected that the cell polls this flag regularly in user-space, e.g. after the execution of an MxTask.
+			 * \details Workers represent arbitrary computing resources (e.g. CPU cores). 
+			 * Tukija grants or revokes workers from cells by adjusting its CPU core allocation. 
+			 * However, to allow a cell to react to a revocation of workers, Tukija employs a 
+			 * shared mem structure containing a flag that signals a yield request. It is expected 
+			 * that the cell polls this flag regularly in user-space, e.g. after the execution of an MxTask.
 			 */
 			struct Worker {
 				volatile unsigned long yield_flag{0}; /* This flag will be set if a yield request has been filed */
@@ -192,7 +203,11 @@ namespace Tukija {
 			/**
 			 * @brief Information about MxTasking channels
 			 * 
-			 * @details A channel is the representation of a task queue, holding a set of tasks to execute. Every task is enqueued in exactly one channel and each channel as processed by at most one worker at any given time. To ensure progress of a cell, Tukija expects cells to implement load balancing strategies to ensure that each channel's tasks are executed by a worker thread. However, Tukija does not command that each allocated core and its worker must process a channel.
+			 * @details A channel is the representation of a task queue, holding a set of tasks to execute. 
+			 * Every task is enqueued in exactly one channel and each channel as processed by at most one 
+			 * worker at any given time. To ensure progress of a cell, Tukija expects cells to implement 
+			 * load balancing strategies to ensure that each channel's tasks are executed by a worker thread. 
+			 * However, Tukija does not command that each allocated core and its worker must process a channel.
 			 */
 			struct Channels {
 				volatile unsigned short remainder{0}; /* Number of channels that remain unstolen, after each worker has stolen `limit` many channels*/
@@ -212,7 +227,10 @@ namespace Tukija {
 			/**
 			 * @brief Contains the set of CPU cores this cell may lay claims to.
 			 * 
-			 * @details Hoitaja prepartitions all CPU cores among the currently running cells. Each of these partitions present the optimal allocation according to each cell's priority. However, to achieve better utilization, Tukija can assign more or less cores to a cell than contained in this set.
+			 * @details Hoitaja prepartitions all CPU cores among the currently running cells. 
+			 * Each of these partitions present the optimal allocation according to each cell's priority. 
+			 * However, to achieve better utilization, 
+			 * Tukija can assign more or less cores to a cell than contained in this set.
 			 */
 			Cpuset cores_reserved;
 
@@ -222,11 +240,40 @@ namespace Tukija {
 			 */
 			Cpuset cores_new;
 
+			unsigned idx_to_phys_cpu_id[256]; /* Mapping from pager index to kernel cpu ID */
+
+			Genode::Affinity::Space habitat_affinity; /* the affinity space the corresponding cell lives in */
+
+			unsigned location_to_kernel_cpu(Genode::Affinity::Location const &location)
+			{
+				unsigned pager_index = (location.xpos() * habitat_affinity.height() + location.ypos()) % (habitat_affinity.height() * habitat_affinity.width());
+				return (idx_to_phys_cpu_id[0] + pager_index) % habitat_affinity.total();
+			}
+
 			/**
-			 * @brief Returns a pointer to the cell information page from within the address space of the respective cell.
-			 * @details This pointer is used by the user-space runtime environment of the cell to get information about pending yield requests, changes in core allocation, and parameters for adjusting the assignment of channels to workers.
+			 * @brief Return the worker information structure for the workers at the given location
+			 *
+			 * @details Allows to request kernel worker information for the workers residing on the CPU specified by location.
+			 *          This must be used by user-space to retrieve the yield_flag for the CPU specified by location. The kernel
+			 * 			expects each user-space cell to regularly poll the yield_flag of each of its granted CPUs to ensure
+			 *  		that borrowed CPU cores are returned to their rightful owner.
+			 *  
+			 * @param location - location of the workers for which to request the information struct
+			 * @return struct Worker& - the information struct for the workers
+			 */
+			struct Worker &worker_for_location(Genode::Affinity::Location const &location)
+			{
+				return worker_info[location_to_kernel_cpu(location)];
+			}
+
+			/**
+			 * @brief Returns a pointer to the cell information pages from within the address space 
+			 * 		  of the respective cell.
+			 * @details This pointer is used by the user-space runtime environment of the cell to get 
+			 * information about pending yield requests, changes in core allocation, and parameters for 
+			 * adjusting the assignment of channels to workers.
 			 * 
-			 * @return Cip* 
+			 * @return Cip* pointer to the cell's information pages 
 			 */
 			static Cip *
 			cip()
