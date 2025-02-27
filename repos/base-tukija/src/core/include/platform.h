@@ -28,7 +28,7 @@ class Core::Platform : public Platform_generic
 {
 	public:
 
-		enum { MAX_SUPPORTED_CPUS = 64};
+		enum { MAX_SUPPORTED_CPUS = 256};
 
 	private:
 
