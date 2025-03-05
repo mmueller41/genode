@@ -19,7 +19,7 @@
 namespace Genode {
 
 	addr_t stack_area_virtual_base();
-	static constexpr addr_t stack_area_virtual_size() { return 0x10000000UL; }
+	static constexpr addr_t stack_area_virtual_size() { return 0x40000000UL; }
 	static constexpr addr_t stack_virtual_size()      { return 0x00100000UL; }
 }
 
