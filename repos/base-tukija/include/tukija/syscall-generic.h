@@ -74,6 +74,7 @@ namespace Tukija {
 		TUKIJA_CREATE_CELL = 0x10,
 		TUKIJA_ALLOCATE	   = 0x11,
 		TUKIJA_CELL_CTRL   = 0x12,
+		TUKIJA_RELEASE	   = 0x13,
 	};
 
 	/**
@@ -87,6 +88,12 @@ namespace Tukija {
 	enum Resource_type
 	{
 		CPU_CORE = 0,
+	};
+
+	enum Release_op
+	{
+		RELEASE = 0,
+		RETURN_TO_OWNER = 1,
 	};
 
 	/**
@@ -152,6 +159,12 @@ namespace Tukija {
 					Atomic::set_mask(value(i * CPUS_PER_VALUE), s.value(i * CPUS_PER_VALUE));
 			}
 
+			inline void clear()
+			{
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++)
+					Atomic::clr_mask(value(i * CPUS_PER_VALUE),0UL);
+			}
+
 			template <typename T>
 			void for_each(T const fn)
 			{
@@ -162,7 +175,7 @@ namespace Tukija {
 					while ((cpu = bit_scan_forward(subset)) != -1)
 					{
 						Atomic::test_clr_bit(subset, bit_cpu(static_cast<unsigned int>(cpu)));
-						fn(cpu);
+						fn((cpu+i*CPUS_PER_VALUE));
 					}
 				}
 			}
@@ -244,16 +257,19 @@ namespace Tukija {
 
 			Genode::Affinity::Space habitat_affinity; /* the affinity space the corresponding cell lives in */
 
+			Genode::Affinity::Location location; /* Location of the cell within its habitat */
+
 			/**
 			 * @brief Return the sanitized kernel CPU ID for a given location
 			 * 
 			 * @param location - the location for which to request the kernel CPU ID
 			 * @return unsigned - the kernel CPU ID of the given location
 			 */
-			unsigned location_to_kernel_cpu(Genode::Affinity::Location const &location)
+			unsigned location_to_kernel_cpu(Genode::Affinity::Location const &loc)
 			{
-				unsigned pager_index = (location.xpos() * habitat_affinity.height() + location.ypos()) % (habitat_affinity.height() * habitat_affinity.width());
-				return (idx_to_phys_cpu_id[0] + pager_index) % habitat_affinity.total();
+				Genode::Affinity::Location loc_in_habitat = loc.transpose(location.xpos(), location.ypos());
+				unsigned idx = (loc_in_habitat.xpos() * habitat_affinity.height() + loc_in_habitat.ypos()) % habitat_affinity.total();
+				return idx_to_phys_cpu_id[idx];
 			}
 
 			/**
@@ -373,6 +389,7 @@ namespace Tukija {
 
 		/** Page layout */
 		uint16_t length{8}; /* Length of the Topology information page */
+		uint32_t cpu_to_domain[256]; /* Mapping of CPU to NUMA IDs */
 		Domain nodes[]; /* Set of detected NUMA domains */
 
 		/* Parsing functions */
@@ -402,17 +419,21 @@ namespace Tukija {
 		 * @return Domain& | the NUMA domain the cpu belongs to.
 		 * @throws a Domain_not_found exception, if the cpu cannot be linked to a NUMA domain. 
 		 */
-		Domain &dom_of_cpu(unsigned cpu) {
-			Domain *d = nullptr;
+		Domain const &dom_of_cpu(unsigned cpu) {
+			unsigned id = cpu_to_domain[cpu];
+			unsigned idx = 0;
+			mword_t const node_cnt = (reinterpret_cast<mword_t>(&nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain);
 
-			for_each([&](Domain &dom)
-					 {
-				if (dom.cpus.chk(cpu)) {
-					d = &dom;
-					return;
-				} });
-			if (!d)
+			for (; idx < node_cnt; idx++) {
+				if (nodes[idx].id == id)
+					break;
+			}
+
+			Domain const &d = nodes[idx];
+			if (!d.cpus.chk(cpu))
 				throw Domain_not_found();
+
+			return d;
 		}
 
 		/**

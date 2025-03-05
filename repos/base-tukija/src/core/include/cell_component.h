@@ -111,12 +111,13 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             /* Set affinity space this cell resides in */
             Genode::log("Affinity of cell ", label, ": ", affinity);
             _cip->habitat_affinity = affinity.space();
+            _cip->location = affinity.location();
 
             /* As Genode operates on logical affinites, we need to set a mapping from Affinities
              * to kernel cpu IDs in order to make the user-space cell able to locate the correct
              * worker information structure for its worker threads.
              */
-            _map_location_to_kernel(affinity);
+            _map_location_to_kernel(Genode::Affinity(affinity.space(), Genode::Affinity::Location(0,0,affinity.space().width(), affinity.space().height())));
 
             _ep.manage(this);
         }
