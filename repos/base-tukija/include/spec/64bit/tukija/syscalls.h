@@ -418,6 +418,18 @@ namespace Tukija {
 	}
 
 	ALWAYS_INLINE
+	inline uint8_t release(Tukija::Resource_type type, Tukija::Release_op op = Tukija::Release_op::RELEASE) 
+	{
+		return syscall_0(TUKIJA_RELEASE, op, type);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t return_to_owner(Tukija::Resource_type type)
+	{
+		return release(type, Tukija::Release_op::RETURN_TO_OWNER);
+	}
+
+	ALWAYS_INLINE
 	inline uint8_t assign_pci(mword_t pd, mword_t mem, mword_t rid)
 	{
 		return syscall_2(NOVA_ASSIGN_PCI, 0, pd, mem, rid);
