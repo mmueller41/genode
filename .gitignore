@@ -14,3 +14,22 @@
 /repos/world
 /repos/zynq
 
+repos/ealanos/.vscode/settings.json
+repos/ealanos/.vscode/c_cpp_properties.json
+repos/base-tukija/.vscode/c_cpp_properties.json
+repos/base-nova/include/nova/syscall-generic_REMOTE_4066947.h
+repos/base-nova/include/nova/syscall-generic_LOCAL_4066947.h
+repos/base-nova/include/nova/syscall-generic_BASE_4066947.h
+repos/base-nova/include/nova/syscall-generic_BACKUP_4066947.h
+.code-workspace.code-workspace
+.gitignore
+base-hw.log
+crash.log
+debug.log
+ealanos.code-workspace
+.vscode/configurationCache.log
+.vscode/c_cpp_properties.json
+.vscode/dryrun.log
+.vscode/extension.log
+.vscode/settings.json
+.vscode/targets.log
