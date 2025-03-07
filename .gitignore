@@ -33,3 +33,4 @@ ealanos.code-workspace
 .vscode/extension.log
 .vscode/settings.json
 .vscode/targets.log
+repos/base/.vscode/c_cpp_properties.json
