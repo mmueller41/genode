@@ -20,7 +20,7 @@ using namespace Core;
 
 
 Ram_allocator::Alloc_result
-Pd_session_component::try_alloc(size_t ds_size, Cache cache)
+Pd_session_component::try_alloc_from_range(size_t ds_size, Cache cache, Range_allocator::Range const range)
 {
 	/* zero-sized dataspaces are not allowed */
 	if (!ds_size)
@@ -55,16 +55,21 @@ Pd_session_component::try_alloc(size_t ds_size, Cache cache)
 			 * Each dataspace is an RPC object and thereby consumes a
 			 * capability.
 			 */
-			return _cap_quota_guard().with_reservation<Result>(Cap_quota{1},
+			return _cap_quota_guard().with_reservation<Result>(
+				Cap_quota{1},
 
-				[&] (Genode::Reservation &) -> Result {
-					return _ram_ds_factory.try_alloc(ds_size, cache);
+				[&](Genode::Reservation &) -> Result
+				{
+					if (range.end == 0)
+						return _ram_ds_factory.try_alloc(ds_size, cache);
+					else
+						return _ram_ds_factory.try_alloc(ds_size, cache, range);
 				},
-				[&] () -> Result {
+				[&]() -> Result
+				{
 					ram_reservation.cancel();
 					return Ram_allocator::Alloc_error::OUT_OF_CAPS;
-				}
-			);
+				});
 		},
 		[&] () -> Result {
 			return Ram_allocator::Alloc_error::OUT_OF_RAM;

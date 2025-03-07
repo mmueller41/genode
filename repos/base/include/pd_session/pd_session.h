@@ -21,6 +21,7 @@
 #include <session/session.h>
 #include <region_map/region_map.h>
 #include <base/ram_allocator.h>
+#include <base/allocator.h>
 
 namespace Genode {
 	struct Pd_account;
@@ -261,6 +262,7 @@ struct Genode::Pd_session : Session, Pd_account, Ram_allocator
 	 */
 	Ram_quota avail_ram() const { return { ram_quota().value - used_ram().value }; }
 
+	virtual Ram_allocator::Alloc_result try_alloc_from_range(size_t, Cache, Range_allocator::Range const) = 0;
 
 	/*****************************************
 	 ** Access to kernel-specific interface **
@@ -365,6 +367,7 @@ struct Genode::Pd_session : Session, Pd_account, Ram_allocator
 	GENODE_RPC(Rpc_dma_addr, addr_t, dma_addr, Ram_dataspace_capability);
 	GENODE_RPC(Rpc_attach_dma, Attach_dma_result, attach_dma,
 	           Dataspace_capability, addr_t);
+	GENODE_RPC(Rpc_try_alloc_range, Alloc_result, try_alloc_from_range, size_t, Cache, Range_allocator::Range const);
 
 	GENODE_RPC_INTERFACE_INHERIT(Pd_account,
 		Rpc_assign_parent, Rpc_assign_pci, Rpc_map,
@@ -375,7 +378,7 @@ struct Genode::Pd_session : Session, Pd_account, Ram_allocator
 		Rpc_cap_quota, Rpc_used_caps, Rpc_try_alloc, Rpc_free,
 		Rpc_ram_quota, Rpc_used_ram,
 		Rpc_native_pd, Rpc_system_control_cap,
-		Rpc_dma_addr, Rpc_attach_dma);
+		Rpc_dma_addr, Rpc_attach_dma, Rpc_try_alloc_range);
 };
 
 #endif /* _INCLUDE__PD_SESSION__PD_SESSION_H_ */

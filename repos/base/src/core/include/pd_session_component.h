@@ -356,7 +356,11 @@ class Core::Pd_session_component : public Session_object<Pd_session>
 		 ** RAM allocation and accounting **
 		 ***********************************/
 
-		Alloc_result try_alloc(size_t, Cache) override;
+		Alloc_result try_alloc(size_t ds_size, Cache cache) override {
+			return try_alloc_from_range(ds_size, cache, {.start = 0, .end = 0});
+		}
+
+		Alloc_result try_alloc_from_range(size_t, Cache, Range_allocator::Range const) override;
 
 		void free(Ram_dataspace_capability) override;
 

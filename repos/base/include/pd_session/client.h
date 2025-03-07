@@ -104,6 +104,11 @@ struct Genode::Pd_session_client : Rpc_client<Pd_session>
 
 	Attach_dma_result attach_dma(Dataspace_capability ds, addr_t at) override {
 		return call<Rpc_attach_dma>(ds, at); }
+
+	Ram_allocator::Alloc_result try_alloc_from_range(size_t size, Cache cache, Range_allocator::Range const range) override
+	{
+		return call<Rpc_try_alloc_range>(size, cache, range);
+	}
 };
 
 #endif /* _INCLUDE__PD_SESSION__CLIENT_H_ */

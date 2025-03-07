@@ -107,6 +107,7 @@ class Core::Ram_dataspace_factory : public Ram_allocator,
 		 ** Ram_allocator interface **
 		 *****************************/
 
+		Alloc_result try_alloc(size_t, Cache, Range_allocator::Range const);
 		Alloc_result try_alloc(size_t, Cache) override;
 		void free(Ram_dataspace_capability) override;
 		size_t dataspace_size(Ram_dataspace_capability ds) const override;

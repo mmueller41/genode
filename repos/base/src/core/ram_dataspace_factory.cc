@@ -15,7 +15,7 @@
 #include <ram_dataspace_factory.h>
 
 using namespace Core;
-
+using namespace Genode;
 
 Ram_allocator::Alloc_result
 Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
@@ -149,6 +149,92 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache)
 	return static_cap_cast<Ram_dataspace>(ds_cap);
 }
 
+Ram_allocator::Alloc_result
+Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache, Range_allocator::Range const range)
+{
+	if (!ds_size)
+		return Alloc_error::DENIED;
+
+	ds_size = align_addr(ds_size, 12);
+
+	Range_allocator::Alloc_result allocated_range = Allocator::Alloc_error::DENIED;
+
+	for (size_t align_log2 = log2(ds_size); align_log2 >= 12; align_log2--) {
+		_phys_alloc.alloc_aligned(ds_size, (unsigned)align_log2, range);
+		if (allocated_range.ok())
+			break;
+	}
+
+	if (allocated_range.failed()) {
+		error("out of physical memory while allocating ", ds_size, " bytes ",
+		      "in range [", Hex(_phys_range.start), "-", Hex(_phys_range.end), "]");
+
+		return allocated_range.convert<Ram_allocator::Alloc_result>(
+			[&] (void *)            { return Alloc_error::DENIED; },
+			[&] (Alloc_error error) { return error; });
+	}
+	
+	/*
+	 * Helper to release the allocated physical memory whenever we leave the
+	 * scope via an exception.
+	 */
+	struct Phys_alloc_guard
+	{
+		Range_allocator &phys_alloc;
+		struct { void * ds_addr = nullptr; };
+		bool keep = false;
+
+		Phys_alloc_guard(Range_allocator &phys_alloc)
+		: phys_alloc(phys_alloc) { }
+
+		~Phys_alloc_guard() { if (!keep && ds_addr) phys_alloc.free(ds_addr); }
+
+	} phys_alloc_guard(_phys_alloc);
+
+	allocated_range.with_result(
+		[&] (void *ptr) { phys_alloc_guard.ds_addr = ptr; },
+		[&] (Alloc_error) { /* already checked above */ });
+
+	/*
+	 * For non-cached RAM dataspaces, we mark the dataspace as write
+	 * combined and expect the pager to evaluate this dataspace property
+	 * when resolving page faults.
+	 */
+	Dataspace_component *ds_ptr = nullptr;
+	try {
+		ds_ptr = new (_ds_slab)
+			Dataspace_component(ds_size, (addr_t)phys_alloc_guard.ds_addr,
+			                    cache, true, this);
+	}
+	catch (Out_of_ram)  { return Alloc_error::OUT_OF_RAM; }
+	catch (Out_of_caps) { return Alloc_error::OUT_OF_CAPS; }
+	catch (...)         { return Alloc_error::DENIED; }
+
+	Dataspace_component &ds = *ds_ptr;
+
+	/* create native shared memory representation of dataspace */
+	try { _export_ram_ds(ds); }
+	catch (Core_virtual_memory_exhausted) {
+		warning("could not export RAM dataspace of size ", ds.size());
+
+		/* cleanup unneeded resources */
+		destroy(_ds_slab, &ds);
+		return Alloc_error::DENIED;
+	}
+
+	/*
+	 * Fill new dataspaces with zeros. For non-cached RAM dataspaces, this
+	 * function must also make sure to flush all cache lines related to the
+	 * address range used by the dataspace.
+	 */
+	_clear_ds(ds);
+
+	Dataspace_capability ds_cap = _ep.manage(&ds);
+
+	phys_alloc_guard.keep = true;
+
+	return static_cap_cast<Ram_dataspace>(ds_cap);
+}
 
 void Ram_dataspace_factory::free(Ram_dataspace_capability ds_cap)
 {
