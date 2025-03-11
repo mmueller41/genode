@@ -135,6 +135,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             /* TODO: implement */
             Genode::log("Changing cell's affinity to ", affinity);
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
+            _cip->cores_current.set(Core::platform_specific().kernel_cpu_id(affinity.location()));
             Tukija::cell_ctrl(_native_pd.sel(), Tukija::Cell_control::UPDATE_AFFINITY);
             _map_location_to_kernel(affinity);
         }
