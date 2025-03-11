@@ -183,7 +183,7 @@ namespace Tukija {
 			unsigned count()
 			{
 				unsigned count = 0;
-				for (unsigned i = 0; i < sizeof(raw); i++) {
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++) {
 					count += static_cast<unsigned>(popcount(raw[i]));
 				}
 				return count;
@@ -1325,9 +1325,9 @@ namespace Genode {
 	}
 
 	static inline void print(Output &out, Tukija::Cpuset &cpus) {
-		print(out, "CPUs [ ");
+		print(out, "[ ");
 		cpus.for_each([&](long cpu)
-					  { print(out, cpu, " "); });
+					  { print(out, cpu, ", "); });
 		print(out, "]");
 	}
 
