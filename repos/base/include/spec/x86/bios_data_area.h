@@ -42,7 +42,7 @@ class Genode::Bios_data_area : Mmio<0x12>
 		uint16_t serial_port() const
 		{
 			Equipment::access_t count = read<Equipment::Serial_count>();
-			return count ? read<Serial_base_com1>() : 0x3f8;
+			return count ? read<Serial_base_com1>() : 0x2f8;
 		}
 
 		/**
