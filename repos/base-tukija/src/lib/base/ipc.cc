@@ -45,8 +45,10 @@ Rpc_exception_code Genode::ipc_call(Native_capability dst,
 			log2_max = (uint16_t)log2(rcv_caps);
 
 			/* if this happens, the call is bogus and invalid */
-			if ((log2_max >= sizeof(rcv_caps) * 8))
+			if ((log2_max >= sizeof(rcv_caps) * 8)) {
+				error("Bogus IPC call: max order of caps too big");
 				throw Ipc_error();
+			}
 
 			if ((1UL << log2_max) < rcv_caps)
 				log2_max ++;
@@ -79,16 +81,19 @@ Rpc_exception_code Genode::ipc_call(Native_capability dst,
 	/* establish the mapping via a portal traversal */
 	uint8_t res = Tukija::call(dst.local_name());
 
-	if (res != Tukija::NOVA_OK)
+	if (res != Tukija::NOVA_OK) {
 		/* If an error occurred, reset word&item count (not done by kernel). */
+		error("IPC failed. snd_msg_buf: ", reinterpret_cast<const char *>(snd_msg.data()));
 		utcb.set_msg_word(0);
+	}
 
 	/* track potentially received caps and invalidate unused caps slots */
 	rcv_window.post_ipc(utcb, manual_rcv_sel);
 
-	if (res != Tukija::NOVA_OK)
+	if (res != Tukija::NOVA_OK) {
+		error("IPC error code=", res, " sel=", dst, "msg_buf:", reinterpret_cast<const char *>(snd_msg.data()));
 		return Rpc_exception_code(Rpc_exception_code::INVALID_OBJECT);
-
+	}
 	/* handle malformed reply from a server */
 	if (utcb.msg_words() < 1)
 		return Rpc_exception_code(Rpc_exception_code::INVALID_OBJECT);
