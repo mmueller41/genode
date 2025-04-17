@@ -31,5 +31,5 @@ inline long int bit_scan_forward (Tukija::mword_t val)
 
 inline Tukija::mword_t popcount(Tukija::mword_t bitset)
 {
-    return __builtin_popcountl(bitset);
+    return __builtin_popcountll(bitset);
 }
