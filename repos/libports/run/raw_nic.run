@@ -13,7 +13,6 @@ append config {
 		<service name="RM"/>
 		<service name="CPU"/>
 		<service name="LOG"/>
-		<service name="TOPO"/>
 	</parent-provides>
 
 	<default-route>
