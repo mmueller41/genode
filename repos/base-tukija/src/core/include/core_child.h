@@ -75,8 +75,10 @@ class Core::Core_child : public Child_policy
 				if (!service && s.name() == name)
 					service = &s; });
 
-			if (!service)
+			if (!service) {
+				Genode::error("Service ", name, " not found.");
 				throw Service_denied();
+			}
 
 			return Route { .service = *service,
 			               .label   = label,
