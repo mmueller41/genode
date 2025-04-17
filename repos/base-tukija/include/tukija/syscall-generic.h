@@ -40,6 +40,7 @@
 #include <tukija/stdint.h>
 #include <tukija/atomic.h>
 #include <tukija/bits.h>
+#include <tukija/spinlock.hpp>
 
 #include <base/affinity.h>
 
@@ -162,7 +163,7 @@ namespace Tukija {
 			inline void clear()
 			{
 				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++)
-					Atomic::clr_mask(value(i * CPUS_PER_VALUE),0UL);
+					Atomic::store(raw[i], 0UL);
 			}
 
 			template <typename T>
@@ -188,6 +189,14 @@ namespace Tukija {
 				}
 				return count;
 			}
+
+			void print(Genode::Output &out) {
+					Genode::print(out, "<");
+				for (unsigned i = 0; i < sizeof(raw) / sizeof(raw[0]); i++) {
+					Genode::print(out, raw[i]);
+				}
+					Genode::print(out, ">");
+			}
 	};
 
 	/**
@@ -208,7 +217,7 @@ namespace Tukija {
 			 * that the cell polls this flag regularly in user-space, e.g. after the execution of an MxTask.
 			 */
 			struct Worker {
-				volatile unsigned long yield_flag{0}; /* This flag will be set if a yield request has been filed */
+				unsigned long yield_flag{0}; /* This flag will be set if a yield request has been filed */
 				unsigned long padding[3];
 			};
 
@@ -231,11 +240,13 @@ namespace Tukija {
 			alignas(64) Worker worker_info[256];
 			Channels channel_info;
 
+			Spinlock lock{};
+
 			/**
 			 * @brief Contains the set of CPU cores that are currently allocated by this cell.
-			 * 
+			 *
 			 */
-			Cpuset cores_current;
+			alignas(64) Cpuset cores_current;
 
 			/**
 			 * @brief Contains the set of CPU cores this cell may lay claims to.
@@ -252,6 +263,8 @@ namespace Tukija {
 			 * 
 			 */
 			Cpuset cores_new;
+
+			Cpuset cores_reclaimed;
 
 			unsigned idx_to_phys_cpu_id[256]; /* Mapping from pager index to kernel cpu ID */
 
@@ -730,7 +743,7 @@ namespace Tukija {
 	/**
 	 * Pd operations
 	 */
-	enum Pd_op { TRANSFER_QUOTA = 0U, PD_DEBUG = 2U };
+	enum Pd_op { TRANSFER_QUOTA = 0U, PD_DEBUG = 2U, PD_DEL = 4U };
 
 	/**
 	 * Hpc operations
@@ -1325,9 +1338,10 @@ namespace Genode {
 	}
 
 	static inline void print(Output &out, Tukija::Cpuset &cpus) {
-		print(out, "[ ");
+		print(out, "[");
 		cpus.for_each([&](long cpu)
-					  { print(out, cpu, ", "); });
+					  { print(out, cpu, ","); });
+		cpus.print(out);
 		print(out, "]");
 	}
 
