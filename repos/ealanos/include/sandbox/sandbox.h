@@ -26,6 +26,8 @@ namespace Sandbox {
 	class Child;
 }
 
+namespace Ealan { class Hoitaja; }
+
 class Genode::Sandbox : Noncopyable
 {
 	public:
@@ -81,6 +83,7 @@ class Genode::Sandbox : Noncopyable
 	private:
 
 		friend class Local_service_base;
+		friend class Ealan::Hoitaja;
 
 		Heap _heap;
 
@@ -112,7 +115,7 @@ class Genode::Sandbox : Noncopyable
 		 */
 		void generate_state_report(Xml_generator &) const;
 
-		void update(::Sandbox::Child &child);
+		Xml_node* update(::Sandbox::Child &child, Xml_node *config);
 };
 
 class Genode::Sandbox::Local_service_base : public Service

@@ -19,110 +19,193 @@
 #include <base/log.h>
 #include <tukija/syscall-generic.h>
 #include <child.h>
-namespace Init {
+
+#include <ealanos/laucher/component.h>
+namespace Ealan {
 
 	using namespace Genode;
 
-	struct Main;
+	struct Hoitaja;
 }
 
 
-struct Init::Main : Genode::Sandbox::State_handler
+class Ealan::Hoitaja : Genode::Sandbox::State_handler, Genode::Sandbox::Local_service_base::Wakeup
 {
-	Env &_env;
+	private: 
+		Env &_env;
 
-	Genode::Sandbox _sandbox { _env, *this };
+		Genode::Sandbox _sandbox { _env, *this };
 
-	Attached_rom_dataspace _config { _env, "config" };
+		Attached_rom_dataspace _config { _env, "config" };
 
-	void _handle_resource_avail() { }
+		Genode::Xml_node *_habitat_config{nullptr};
 
-	Signal_handler<Main> _resource_avail_handler {
-		_env.ep(), *this, &Main::_handle_resource_avail };
+		char *_config_dataspace{nullptr};
 
-	Constructible<Reporter> _reporter { };
+		void _handle_resource_avail() { }
 
-	size_t _report_buffer_size = 0;
+		Signal_handler<Hoitaja> _resource_avail_handler {
+			_env.ep(), *this, &Hoitaja::_handle_resource_avail };
 
-	void _handle_config()
-	{
-		_config.update();
+		Constructible<Reporter> _reporter { };
 
-		Xml_node const config = _config.xml();
+		Genode::Rpc_entrypoint _ep{&_env.pd(), 4096, "launcher_ep", Genode::Affinity::Location(0, 0, 1, 1)};
 
-		bool reporter_enabled = false;
-		config.with_optional_sub_node("report", [&] (Xml_node report) {
+		Genode::Entrypoint _launcher_ep{_env, 4*4096, "launcher", Genode::Affinity::Location()};
 
-			reporter_enabled = true;
+		Genode::Sliced_heap _md_alloc{_env.ram(), _env.rm()};
 
-			/* (re-)construct reporter whenever the buffer size is changed */
-			Number_of_bytes const buffer_size =
-				report.attribute_value("buffer", Number_of_bytes(4096));
+		Genode::Heap _heap{_env.ram(), _env.rm()};
 
-			if (buffer_size != _report_buffer_size || !_reporter.constructed()) {
-				_report_buffer_size = buffer_size;
-				_reporter.construct(_env, "state", "state", _report_buffer_size);
+		using Launcher_service = Genode::Sandbox::Local_service<Ealan::Launcher_session_component>;
+		Launcher_service _launcher_service{_sandbox, *this};
+
+		size_t _report_buffer_size = 0;
+
+		void _handle_config()
+		{
+			_config.update();
+
+			if (_habitat_config) {
+				delete _habitat_config;
+				delete _config_dataspace;
 			}
-		});
 
-		if (_reporter.constructed())
-			_reporter->enabled(reporter_enabled);
+			_config_dataspace = static_cast<char*>(_heap.alloc(_config.size()*32));
+			Genode::memcpy(_config_dataspace, _config.local_addr<char*>(), _config.size());
+			_habitat_config = new (_sandbox._heap) Genode::Xml_node(_config_dataspace);
 
-		_sandbox.apply_config(config);
-	}
+			Xml_node const config = *_habitat_config;
 
-	Signal_handler<Main> _config_handler {
-		_env.ep(), *this, &Main::_handle_config };
+			bool reporter_enabled = false;
+			config.with_optional_sub_node("report", [&] (Xml_node report) {
 
-	/**
-	 * Sandbox::State_handler interface
-	 */
-	void handle_sandbox_state() override
-	{
-		try {
-			Reporter::Xml_generator xml(*_reporter, [&] () {
-				_sandbox.generate_state_report(xml); });
+				reporter_enabled = true;
+
+				/* (re-)construct reporter whenever the buffer size is changed */
+				Number_of_bytes const buffer_size =
+					report.attribute_value("buffer", Number_of_bytes(4096));
+
+				if (buffer_size != _report_buffer_size || !_reporter.constructed()) {
+					_report_buffer_size = buffer_size;
+					_reporter.construct(_env, "state", "state", _report_buffer_size);
+				}
+			});
+
+			if (_reporter.constructed())
+				_reporter->enabled(reporter_enabled);
+
+			_sandbox.apply_config(config);
 		}
-		catch (Xml_generator::Buffer_exceeded) {
 
-			error("state report exceeds maximum size");
+		Signal_handler<Hoitaja> _config_handler {
+		_env.ep(), *this, &Hoitaja::_handle_config };
 
-			/* try to reflect the error condition as state report */
-			try {
+		Hoitaja(const Hoitaja &);
+
+		Hoitaja &operator=(const Hoitaja &);
+
+	public:
+
+		/**
+		 * Sandbox::State_handler interface
+		 */
+		void handle_sandbox_state() override
+		{
+			Genode::log("Sandbox state changed");
+			try
+			{
 				Reporter::Xml_generator xml(*_reporter, [&] () {
-					xml.attribute("error", "report buffer exceeded"); });
+					_sandbox.generate_state_report(xml); });
 			}
-			catch (...) { }
+			catch (Xml_generator::Buffer_exceeded) {
+
+				error("state report exceeds maximum size");
+
+				/* try to reflect the error condition as state report */
+				try {
+					Reporter::Xml_generator xml(*_reporter, [&] () {
+						xml.attribute("error", "report buffer exceeded"); });
+				}
+				catch (...) { }
+			}
 		}
-	}
 
-	void handle_child_state(::Sandbox::Child &child) override {
-		try {
-			Genode::log("Updating sandbox state");
-			_sandbox.update(child);
-		} catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded) {
-			Genode::log("Caps exceeded while handling child state");
-			_env.parent().exit(1);
+		void handle_child_state(::Sandbox::Child &child) override {
+			bool repeat = false;
+			do
+			{
+				try {
+					Genode::log("Updating state of child ", child.name());
+					_habitat_config = _sandbox.update(child, _habitat_config);
+					Genode::log("Updated config length:", _habitat_config->content_size());
+				}
+				catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded)
+				{
+					Genode::log("Caps exceeded while handling child state");
+					_env.parent().exit(1);
+				}
+				catch (Genode::Ipc_error)
+				{
+					Genode::error("Failed to update child state for <", child.name(), ">");
+					repeat = true;
+				}
+			} while (repeat);
 		}
-	}
 
-	Main(Env &env) : _env(env)
-	{
-		_config.sigh(_config_handler);
+		void wakeup_local_service() override {
+			_launcher_service.for_each_requested_session([&](Launcher_service::Request &req)
+														{ req.deliver_session(*new (_md_alloc) Ealan::Launcher_session_component(*this, _env.ep() , req.resources, "", req.diag)); });
+		}
 
-		Genode::log("Hoitaja starting ...");
+		void add_cell_from_xml(const char *start_node){
+			char *dest = nullptr;
 
-		/* prevent init to block for resource upgrades (never satisfied by core) */
-		_env.parent().resource_avail_sigh(_resource_avail_handler);
+			_habitat_config->with_raw_content([&](char const *content, Genode::size_t)
+											  { dest = const_cast<char*>(content); });
+			dest += _habitat_config->content_size();
 
-		Tukija::Tip const *tip = Tukija::Tip::tip();
 
-		Genode::log("Found topology model of size ", tip->length, " at ", static_cast<const void *>(tip));
+			Genode::memcpy(dest, start_node, Genode::strlen(start_node));
+			dest += Genode::strlen(start_node);
+			Genode::memcpy(dest, "</config>", sizeof("</config>"));
 
-		_handle_config();
-	}
+			_sandbox._heap.free(_habitat_config, sizeof(Xml_node));
+
+			_habitat_config = new (_sandbox._heap) Xml_node(_config_dataspace);
+
+			bool repeat = false;
+			do {
+				try {
+					_sandbox.apply_config(*_habitat_config);
+				} catch (Genode::Ipc_error) {
+					Genode::error("IPC error while creating cell. Retrying.");
+					repeat = true;
+				}
+			} while (repeat);
+		}
+
+		Hoitaja(Env &env) : _env(env)
+		{
+			_config.sigh(_config_handler);
+
+			Genode::log("Hoitaja starting ...");
+
+			/* prevent init to block for resource upgrades (never satisfied by core) */
+			_env.parent().resource_avail_sigh(_resource_avail_handler);
+
+			Tukija::Tip const *tip = Tukija::Tip::tip();
+
+			Genode::log("Found topology model of size ", tip->length, " at ", static_cast<const void *>(tip));
+
+			_handle_config();
+		}
 };
 
+void Ealan::Launcher_session_component::launch(Genode::String<640> start_node)
+{
+	_hoitaja.add_cell_from_xml(start_node.string());
+}
 
-void Component::construct(Genode::Env &env) { static Init::Main main(env); }
+void Component::construct(Genode::Env &env) { static Ealan::Hoitaja main(env); }
 

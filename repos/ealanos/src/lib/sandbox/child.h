@@ -739,12 +739,12 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 		struct Resources &resources() { return _resources; }
 
         void update(Genode::Affinity affinity) {
-            Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
+            //Genode::log("Updating affinity to ", affinity.location(), " in space ", affinity.space());
             _resources.affinity = affinity;
             //Genode::log("Moving CPU session ", _env.cpu_session_cap());
             if (_child.active()) {
 				Ealan::Cell_client cell(_cell_cap);
-				Genode::log("Updating cell ", _cell_cap);
+				//Genode::log("Updating cell ", _cell_cap);
 				cell.update(affinity);
 			}
 		}

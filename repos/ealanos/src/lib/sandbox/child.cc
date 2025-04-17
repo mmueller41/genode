@@ -779,7 +779,7 @@ Sandbox::Child::Child(Env                      &env,
 	_local_services(local_services),
 	_session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm()),
 	_habitat(habitat){
-	log("Creating new cell <", _unique_name, ">");
+	//log("Creating new cell <", _unique_name, ">");
 	if (_verbose.enabled()) {
 		log("child \"",       _unique_name, "\"");
 		log("  RAM quota:  ", _resources.effective_ram_quota());

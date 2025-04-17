@@ -145,19 +145,23 @@ namespace Sandbox {
 	                       FILTER_FN const &filter_fn)
 	{
 		T *service = nullptr;
-		services.for_each([&] (T &s) {
-
+		services.for_each([&](T &s)
+						  {
 			if (service || s.name() != name || filter_fn(s))
 				return;
 
-			service = &s;
-		});
+			service = &s; });
 
-		if (!service)
+		if (!service) {
+			Genode::log("Service ", name, " not found");
 			throw Service_denied();
+		}
 
 		if (service->abandoned())
+		{
+			Genode::log("Service ", name, " abandoned.");
 			throw Service_denied();
+		}
 
 		return *service;
 	}

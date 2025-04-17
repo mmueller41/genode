@@ -257,6 +257,7 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	 */
 	Parent_service &create_parent_service(Service::Name const &name) override
 	{
+		Genode::log("Creating parent service ", name);
 		return *new (_heap) Parent_service(_parent_services, _env, name);
 	}
 
@@ -309,13 +310,56 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 
 	void maintain_cells();
 
-	void update(Child &child) {
+	Genode::Xml_node* update(Child &child, Genode::Xml_node *config) {
 		if (child.exited()) {
 			_children.remove(&child);
 			_core_allocator->free_cores_from_cell(child);
-			Genode::log("Starting new maintenance cycle");
+			/* Remove child from config */
+			try {
+				/* Find XML node for the child */
+				Xml_node node = config->sub_node("start");
+				while (node.attribute_value<Genode::Child_policy::Name>("name", Genode::Child_policy::Name()) != child.name())
+				{
+					node = node.next("start");
+				}
+
+				/* Get pointer to start of node in its parent's buffer and its length */
+				char *node_ptr = nullptr;
+				Genode::size_t len = 0;
+				node.with_raw_node([&](char const *ptr, Genode::size_t size)
+								   { node_ptr = const_cast<char*>(ptr);  len = size; });
+				char *node_end = node_ptr + len;
+				
+				/* Determine start and end address of config's buffer */
+				Genode::size_t config_len = config->size();
+				char *config_ptr = nullptr;
+				config->with_raw_node([&](char const *ptr, Genode::size_t)
+									 { config_ptr = const_cast<char*>(ptr); });
+				char *config_end = config_ptr + config_len;
+
+				/* Determine length of the tail after the child's start node */
+				Genode::size_t tail_len = static_cast<Genode::size_t>(config_end - node_end);
+
+				/* Remove child's start node with memmove */
+				Genode::memmove(node_ptr-1, node_end, tail_len);
+				*(node_ptr + tail_len) = '\0';
+
+				/* Reparse changed buffer */
+				Xml_node *new_config = new (_heap) Xml_node(config_ptr, config_len - len);
+				_heap.free(config, sizeof(Xml_node));
+				config = new_config;
+			}
+			catch (Genode::Xml_node::Nonexistent_sub_node)
+			{
+				Genode::error("Could not find child's start node");
+				return config;
+			};
+
+			Genode::log("Removed child ", child.name());
+			apply_config(*config);
 			maintain_cells();
 		}
+		return config;
 	}
 };
 
@@ -504,7 +548,7 @@ void Genode::Sandbox::Library::apply_config(Xml_node const &config)
 
 		_children.for_each_child([&] (Child &child) {
 
-			if (child.abandoned())
+			if (child.abandoned()) 
 				return;
 
 			if (child.restart_scheduled()) {
@@ -557,7 +601,6 @@ void Genode::Sandbox::Library::maintain_cells()
 	int lower_limit = _affinity_space->total() - _core_allocator->cores_available();
 	_children.for_each_child([&](Child &child)
 							 {
-                                log(child.name(), " ram: ", child.ram_quota());
 								if (!(child.is_brick()))
                                 	_core_allocator->update(child, &xpos, &lower_limit); });
 }
@@ -688,8 +731,9 @@ Genode::Sandbox::Local_service_base::Local_service_base(Sandbox    &sandbox,
 	_session_factory(sandbox._heap, Session_state::Factory::Batch_size{16}),
 	_async_wakeup(wakeup),
 	_async_service(name, _server_id_space, _session_factory, _async_wakeup)
-{ }
-
+{
+	Genode::log("Adding local service ", name);
+}
 
 /*************
  ** Sandbox **
@@ -706,9 +750,9 @@ void Genode::Sandbox::generate_state_report(Xml_generator &xml) const
 	_library.generate_state_report(xml);
 }
 
-void Genode::Sandbox::update(::Sandbox::Child &child)
+Genode::Xml_node* Genode::Sandbox::update(::Sandbox::Child &child, Genode::Xml_node *config)
 {
-	_library.update(child);
+	return _library.update(child, config);
 }
 
 Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler, Pd_intrinsics &pd_intrinsics)
