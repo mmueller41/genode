@@ -133,11 +133,13 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
         void update(Genode::Affinity &affinity) override {
             /* TODO: implement */
-            Genode::log("Changing cell's affinity to ", affinity);
+            Genode::log("Changing cell ", _session_label,"'s affinity to ", affinity);
+            _cip->cores_reserved.clear();
+            if (_cip->cores_reserved.count() != 0)
+                Genode::error("Failed clearing reserved cores");
             _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
-            _cip->cores_current.set(Core::platform_specific().kernel_cpu_id(affinity.location()));
+            Genode::log(_session_label, "'s cores: ", _cip->cores_reserved);
             Tukija::cell_ctrl(_native_pd.sel(), Tukija::Cell_control::UPDATE_AFFINITY);
-            _map_location_to_kernel(affinity);
         }
 
         bool is_brick() override {
