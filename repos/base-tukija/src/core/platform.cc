@@ -201,7 +201,7 @@ static void page_fault_handler()
 
 static addr_t core_pager_stack_top()
 {
-	enum { STACK_SIZE = 4*1024 };
+	enum { STACK_SIZE = 8*1024 };
 	static char stack[STACK_SIZE];
 	return (addr_t)&stack[STACK_SIZE - sizeof(addr_t)];
 }
@@ -810,11 +810,11 @@ Core::Platform::Platform()
 	/* add capability selector ranges to map */
 	unsigned const first_index = 0x2000;
 	unsigned index = first_index;
-	for (unsigned i = 0; i < 32; i++)
+	for (unsigned i = 0; i <  92; i++)
 	{
 		void * phys_ptr = nullptr;
 
-		ram_alloc().alloc_aligned(16*get_page_size(), get_page_size_log2()).with_result(
+		ram_alloc().alloc_aligned(48*get_page_size(), get_page_size_log2()).with_result(
 			[&] (void *ptr) { phys_ptr = ptr; },
 			[&] (Range_allocator::Alloc_error) { /* covered by nullptr test below */ });
 
@@ -822,7 +822,7 @@ Core::Platform::Platform()
 			break;
 
 		addr_t phys_addr = reinterpret_cast<addr_t>(phys_ptr);
-		addr_t core_local_addr = _map_pages(phys_addr, 16);
+		addr_t core_local_addr = _map_pages(phys_addr, 48);
 
 		if (!core_local_addr) {
 			ram_alloc().free(phys_ptr);
