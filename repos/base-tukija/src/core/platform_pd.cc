@@ -52,14 +52,15 @@ Platform_pd::Platform_pd(Allocator &, char const *label, signed, bool)
 
 Platform_pd::~Platform_pd()
 {
+	log("Destroying PD for <", _label, ">");
 	if (_pd_sel == Native_thread::INVALID_INDEX)
 		return;
 
 	/* Revoke and free cap, pd is gone */
+	Tukija::pd_destroy(_pd_sel);
 	Tukija::revoke(Tukija::Obj_crd(_pd_sel, 0));
 	cap_map().remove(_pd_sel, 0, false);
 }
-
 
 void Platform_pd::flush(addr_t remote_virt, size_t size, Core_local_addr)
 {
