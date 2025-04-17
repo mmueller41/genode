@@ -63,7 +63,7 @@ class Hoitaja::Core_allocator
 
             // Calculate affinity from global affinity space and priority
             long priority = ::Sandbox::priority_from_xml(start_node, _prio_levels);
-            priority = (priority == 0) ? 1 : priority;
+            priority = (priority >= 0) ? 1 : priority;
             _resource_coeff += (1.0/static_cast<double>(priority)); // treat priority 0 same as 1, to avoid division by zero here
 
             unsigned int cores_share = _calculate_resource_share(priority);
@@ -114,7 +114,7 @@ class Hoitaja::Core_allocator
             // TODO: Send yield request to cell
 
             if (cores_to_reclaim > 0) {
-                log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
+                //log("Need to reclaim ", cores_to_reclaim, " cores from ", cell.name());
             }
             
             cell.update(Genode::Affinity(resources.affinity.space(), location));
