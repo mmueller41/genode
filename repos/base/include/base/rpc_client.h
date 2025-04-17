@@ -149,11 +149,15 @@ namespace Genode {
 		}
 
 		/* perform RPC, unmarshal return value */
-		Rpc_exception_code const exception_code =
-			ipc_call(*this, call_buf, reply_buf, RECEIVE_CAPS);
+		try {
+			Rpc_exception_code const exception_code =
+				ipc_call(*this, call_buf, reply_buf, RECEIVE_CAPS);
 
-		if (exception_code.value == Rpc_exception_code::INVALID_OBJECT)
+		if (exception_code.value == Rpc_exception_code::INVALID_OBJECT) {
+			error("Invalid server object");
 			throw Ipc_error();
+		}
+		
 
 		Ipc_unmarshaller unmarshaller(reply_buf);
 
@@ -171,6 +175,10 @@ namespace Genode {
 		/* the return value does only exist if no exception was thrown */
 		Meta::Overload_selector<typename IF::Ret_type> ret_overloader;
 		return unmarshaller.extract(ret_overloader);
+		} catch (Genode::Ipc_error) {
+			error("IPC error: IF=", IF::name());
+			throw Genode::Ipc_error();
+		}
 	}
 }
 
