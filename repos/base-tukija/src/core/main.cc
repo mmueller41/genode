@@ -65,7 +65,7 @@ Genode::Platform &Genode::init_platform()
 {
 	init_stack_area();
 
-	static Platform platform { };
+	static Platform platform{};
 	return platform;
 }
 
@@ -87,7 +87,7 @@ void Genode::bootstrap_component(Genode::Platform &)
 	Ram_quota const avail_ram  { ram_ranges.avail() };
 	Cap_quota const avail_caps { Core::platform().max_caps() };
 
-	static constexpr size_t STACK_SIZE = 20 * 1024;
+	static constexpr size_t STACK_SIZE = 64 * 1024;
 
 	static Rpc_entrypoint ep { nullptr, STACK_SIZE, "entrypoint", Affinity::Location() };
 
@@ -107,7 +107,7 @@ void Genode::bootstrap_component(Genode::Platform &)
 	/* disable tracing within core because it is not fully implemented */
 	inhibit_tracing = true;
 
-	log("Genode ", Genode::version_string);
+	log("EalánOS 2.0 Rev. ", Genode::version_string);
 
 	static Core::Trace::Policy_registry trace_policies;
 
