@@ -37,6 +37,7 @@
 
 #include <tukija/stdint.h>
 #include <tukija/syscall-generic.h>
+#include <base/thread.h>
 
 #define ALWAYS_INLINE __attribute__((always_inline))
 
@@ -412,6 +413,12 @@ namespace Tukija {
 	}
 
 	ALWAYS_INLINE
+	inline uint8_t pd_destroy(mword_t pd)
+	{
+		return syscall_0(NOVA_PD_CTRL, Pd_op::PD_DEL, pd);
+	}
+
+	ALWAYS_INLINE
 	inline uint8_t cell_ctrl(mword_t pd, Cell_control const op)
 	{
 		return syscall_0(TUKIJA_CELL_CTRL, op, pd);
@@ -420,6 +427,9 @@ namespace Tukija {
 	ALWAYS_INLINE
 	inline uint8_t release(Tukija::Resource_type type, Tukija::Release_op op = Tukija::Release_op::RELEASE) 
 	{
+		Genode::Affinity::Location loc = Genode::Thread::myself()->affinity();
+		if (!Atomic::cmp_swap(Cip::cip()->worker_for_location(loc).yield_flag, 0UL, 2UL))
+			return syscall_0(TUKIJA_RELEASE, Tukija::Release_op::RETURN_TO_OWNER, type);
 		return syscall_0(TUKIJA_RELEASE, op, type);
 	}
 
