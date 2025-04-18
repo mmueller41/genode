@@ -2,6 +2,8 @@
 *.orig
 *.swp
 *.rej
+*.log
+/*.xml
 
 /build
 /contrib
@@ -13,6 +15,7 @@
 /repos/rpi
 /repos/world
 /repos/zynq
+/experiments
 
 repos/ealanos/.vscode/settings.json
 repos/ealanos/.vscode/c_cpp_properties.json
@@ -34,3 +37,5 @@ ealanos.code-workspace
 .vscode/settings.json
 .vscode/targets.log
 repos/base/.vscode/c_cpp_properties.json
+boot-paros
+stdcxx.S
