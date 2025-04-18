@@ -213,7 +213,7 @@ $(TARGET): $(LINK_ITEMS) $(wildcard $(LD_SCRIPTS))
 	$(MSG_LINK)$(TARGET)
 	$(VERBOSE)libs=$(LIB_CACHE_DIR); $(LD_CMD) -o $@
 
-STRIP_TARGET_CMD ?= $(STRIP) -o $@ $<
+STRIP_TARGET_CMD ?= cp $< $@ #$(STRIP) -o $@ $<
 
 $(TARGET).debug: $(TARGET)
 	$(VERBOSE)$(OBJCOPY) --only-keep-debug $< $@

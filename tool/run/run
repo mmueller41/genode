@@ -1151,7 +1151,7 @@ proc build_core_image { modules } {
 	# create core binary containing the boot modules
 	set image_elf [run_dir]/[kernel_specific_binary image.elf]
 	build_core [run_dir]/genode/$core_obj $modules $image_elf [core_link_address]
-	exec [cross_dev_prefix]strip $image_elf
+	#exec [cross_dev_prefix]strip $image_elf
 
 	# Save config part of the image.elf for easy inspection
 	exec cp -f [run_dir]/genode/config [run_dir].config
