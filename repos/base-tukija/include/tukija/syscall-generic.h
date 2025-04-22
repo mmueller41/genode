@@ -499,7 +499,7 @@ namespace Tukija {
 		}
 
 		inline static Tip const *tip() {
-			return reinterpret_cast<Tip *>(0x7fffbffe0000);
+			return reinterpret_cast<Tip *>(0x7fffbffdb000);
 		}
 	};
 
