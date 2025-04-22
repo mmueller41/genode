@@ -33,11 +33,16 @@ namespace Ealan {
     class Cell_component;
 }
 
+namespace Core {
+    class Habitat_session_component;
+}
+
 class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
                               private Genode::List<Cell_component>::Element
 {
     private:
         friend class Genode::List<Cell_component>;
+        friend class Core::Habitat_session_component;
 
         Genode::Rpc_entrypoint &_ep;
         Genode::Session_label const _session_label;
@@ -49,7 +54,8 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
         Tukija::Cip *_cip{nullptr};
 
         bool _is_brick{false};
-    
+        bool _is_dead{false};
+
         void _calculate_mask_for_location(Tukija::Cpuset *coreset, const Genode::Affinity::Location &loc)
         {
             const_cast<Genode::Affinity::Location&>(loc).for_each(
@@ -97,6 +103,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
              */
             if (Tukija::create_cell(cell_pd_sel, static_cast<Genode::uint8_t>(prio), cip_phys, cip_virt)) {
                 Genode::error("Failed to create cell at Tukija.");
+                throw Cell_creation_error();
             }
 
             /* We need to specify the pre-reserved CPU cores from this cell. 
@@ -124,7 +131,13 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
         ~Cell_component()
         {
+            Genode::log("Destroying Cell session");
+            Core::platform().region_alloc().free(_cip);
             _ep.dissolve(this);
+        }
+
+        bool is_dead() {
+            return _is_dead;
         }
 
         /********************
@@ -144,6 +157,10 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
         bool is_brick() override {
             return _is_brick;
+        }
+
+        void die() override {
+            _is_dead = true;
         }
 };
 

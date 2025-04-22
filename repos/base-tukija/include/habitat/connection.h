@@ -36,6 +36,11 @@ struct Ealan::Habitat_connection : Genode::Connection<Ealan::Habitat_session>, H
     {
         return Habitat_client::affinity();
     }
+
+    void groom() override
+    {
+        return Habitat_client::groom();
+    }
 };
 
 #endif

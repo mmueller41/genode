@@ -35,5 +35,10 @@ struct Ealan::Habitat_client : Genode::Rpc_client<Ealan::Habitat_session>
     {
         return call<Rpc_affinity>();
     }
+
+    void groom() override
+    {
+        call<Rpc_groom>();
+    }
 };
 #endif

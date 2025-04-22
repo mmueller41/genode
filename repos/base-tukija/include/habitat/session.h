@@ -27,18 +27,28 @@ struct Ealan::Habitat_session : Genode::Session
 {
     static const char *service_name() { return "Habitat"; }
 
-    enum { CAP_QUOTA = 1, RAM_QUOTA = 1024 };
+    static constexpr Genode::size_t MAX_NUM_CELLS = 256;
+     // Same as Core::Platform::MAX_SUPPORTED_CPUS;
+    static constexpr unsigned CAP_QUOTA = MAX_NUM_CELLS;
+    static constexpr Genode::size_t   RAM_QUOTA = MAX_NUM_CELLS*32*1024;
 
     /**
      * Attach cell info page to the cells virtual memory space
      */
     virtual Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) = 0;
 
+    /**
+     * @brief Clean up the habitat by removing terminated cells and freeing their memory
+     * 
+     */
+    virtual void groom() = 0;
+
     virtual Genode::Affinity affinity() = 0;
 
-    GENODE_RPC(Rpc_create_cell, Cell_capability, create_cell, Genode::Capability<Genode::Pd_session>, Genode::Affinity &, Genode::uint16_t, Genode::Session_label const &);
+    GENODE_RPC_THROW(Rpc_create_cell, Cell_capability, create_cell, GENODE_TYPE_LIST(Ealan::Cell::Cell_creation_error), Genode::Capability<Genode::Pd_session>, Genode::Affinity &, Genode::uint16_t, Genode::Session_label const &);
     GENODE_RPC(Rpc_affinity, Genode::Affinity, affinity);
+    GENODE_RPC(Rpc_groom, void, groom);
 
-    GENODE_RPC_INTERFACE(Rpc_create_cell, Rpc_affinity);
+    GENODE_RPC_INTERFACE(Rpc_create_cell, Rpc_affinity, Rpc_groom);
 };
 #endif

@@ -356,6 +356,7 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 			};
 
 			Genode::log("Removed child ", child.name());
+			_habitat->groom();
 			apply_config(*config);
 			maintain_cells();
 		}

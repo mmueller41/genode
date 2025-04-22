@@ -27,13 +27,16 @@ namespace Ealan { struct Cell;
 struct Ealan::Cell : Genode::Interface
 {
     enum { CAP_QUOTA = 1 };
+    class Cell_creation_error : public Genode::Exception {};
 
     virtual void update(Genode::Affinity &affinity) = 0;
     virtual bool is_brick() = 0;
+    virtual void die() = 0;
 
     GENODE_RPC(Rpc_update, void, update, Genode::Affinity &);
     GENODE_RPC(Rpc_is_brick, bool, is_brick);
+    GENODE_RPC(Rpc_die, void, die);
 
-    GENODE_RPC_INTERFACE(Rpc_update, Rpc_is_brick);
+    GENODE_RPC_INTERFACE(Rpc_update, Rpc_is_brick, Rpc_die);
 };
 #endif /* _INCLUDE__CELL__SESSION_H_ */

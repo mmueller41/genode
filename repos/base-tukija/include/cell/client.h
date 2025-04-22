@@ -33,6 +33,10 @@ struct Ealan::Cell_client : Genode::Rpc_client<Cell>
     bool is_brick() override {
         return call<Rpc_is_brick>();
     }
+
+    void die() override {
+        call<Rpc_die>();
+    }
 };
 
 #endif /* _INCLUDE__CELL__CLIENT_H_ */

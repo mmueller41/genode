@@ -649,7 +649,12 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 				_child.initiate_env_sessions();
 
 				if (_child.active()) {
-					 _cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name));
+					try {
+					 	_cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name));
+					} catch (Ealan::Cell::Cell_creation_error) {
+						Genode::error("Failed to create cell");
+						abandon();
+					}
 					 Genode::log("Created new cell ", _unique_name, " ", _cell_cap);
 					 _state = State::ALIVE;
 				} else
@@ -671,7 +676,9 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		void destroy_services();
 
-		void close_all_sessions() { _child.close_all_sessions(); }
+		void close_all_sessions() { 
+		
+			_child.close_all_sessions(); }
 
 		bool abandoned() const { return _state == State::ABANDONED; }
 
@@ -809,6 +816,9 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			 * printed by the default implementation of 'Child_policy::exit'.
 			 */
 			Child_policy::exit(exit_value);
+
+			Ealan::Cell_client cell_client(_cell_cap);
+			cell_client.die();
 
 			Genode::log("Notifying Hoitaja");
 			_habitat_handler.handle_child_state(*this);

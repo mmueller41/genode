@@ -20,18 +20,31 @@ namespace Core {
 
             Habitat_session_component *_create_session(char const *args, Genode::Affinity const &affinity) override {
 
+                size_t ram_quota =
+                    Arg_string::find_arg(args, "ram_quota").ulong_value(0);
+
+                if (ram_quota < Trace::Control_area::SIZE)
+                    throw Insufficient_ram_quota();
+
                 if (!affinity.valid()) {
                     Genode::error("Invalid affinity space: ", affinity);
                     throw Genode::Service_denied();
                 }
 
-                return new (md_alloc()) Habitat_session_component(session_label_from_args(args), _session_ep, _local_rm, _ram_alloc, affinity);
+                return new (md_alloc()) Habitat_session_component(
+                    *this->ep(),
+                    session_resources_from_args(args),
+                    session_label_from_args(args),
+                    session_diag_from_args(args),
+                    _ram_alloc,
+                    _local_rm,
+                    affinity);
             }
 
-            void _upgrade_session(Habitat_session_component *, const char *) override
+            void _upgrade_session(Habitat_session_component *habitat, const char *args) override
             {
-                //habitat->upgrade(Genode::ram_quota_from_args(args));
-                //habitat->upgrade(Genode::cap_quota_from_args(args));
+                habitat->upgrade(Genode::ram_quota_from_args(args));
+                habitat->upgrade(Genode::cap_quota_from_args(args));
             }
 
         public:

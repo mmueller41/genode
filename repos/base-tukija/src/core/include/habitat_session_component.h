@@ -30,12 +30,13 @@
 
 namespace Core { class Habitat_session_component; }
 
-class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat_session, Habitat_session_component>
+class Core::Habitat_session_component : public Genode::Session_object<Ealan::Habitat_session>
 {
     private:
         Genode::Region_map &_local_rm;
         Genode::Affinity const &_affinity;
         Genode::Session_label const &_label;
+        Genode::Constrained_ram_allocator _ram_alloc;
         Genode::Sliced_heap _md_alloc;
         Genode::Rpc_entrypoint &_ep;
         Genode::List<Ealan::Cell_component> _managed_cells { };
@@ -51,7 +52,7 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
         }
 
     public:
-        Habitat_session_component(Genode::Session_label const &label, Genode::Rpc_entrypoint &session_ep, Genode::Region_map &rm, Genode::Ram_allocator &alloc, Genode::Affinity const &affinity) :  _local_rm(rm), _affinity(affinity), _label(label), _md_alloc(alloc, rm), _ep(session_ep) {}
+        Habitat_session_component(Genode::Rpc_entrypoint &ep, Genode::Session::Resources const &resources, Genode::Session_label const &label, Genode::Session::Diag const &diag, Genode::Ram_allocator &ram, Genode::Region_map &rm, Genode::Affinity const &affinity) : Genode::Session_object<Ealan::Habitat_session>(ep, resources, label, diag), _local_rm(rm), _affinity(affinity), _label(label), _ram_alloc(ram, _ram_quota_guard(), _cap_quota_guard()), _md_alloc(_ram_alloc, rm), _ep(ep) {}
 
         Ealan::Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, [[maybe_unused]] Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
 
@@ -67,6 +68,28 @@ class Core::Habitat_session_component : public Genode::Rpc_object<Ealan::Habitat
             Genode::Affinity::Space const &core_space = Core::platform().affinity_space();
 
             return Genode::Affinity(core_space, _affinity.location());
+        }
+
+        void groom() override
+        {
+            Genode::List<Ealan::Cell_component> dead_cells{};
+            for (Ealan::Cell_component *cell = _managed_cells.first(); cell != nullptr; cell = cell->next())
+            {
+                if (cell->is_dead())
+                    dead_cells.insert(cell);
+            }
+
+            Genode::size_t count = 0;
+            for (Ealan::Cell_component *cell = dead_cells.first(); cell != nullptr;)
+            {
+                Ealan::Cell_component *dead_cell = cell;
+                cell = dead_cell->next();
+                _managed_cells.remove(dead_cell);
+                destroy(_md_alloc, dead_cell);
+                count++;
+            }
+
+            Genode::log("Removed ", count, " dead cells from habitat");
         }
 };
 
