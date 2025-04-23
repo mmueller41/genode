@@ -484,13 +484,13 @@ namespace Tukija {
 		 * @param region_count - number of memory regions the NUMA domain encompasses.
 		 * @return Memory_region& - The first memory region for this NUMA domain.
 		 */
-		template <typename T>
-		Memory_region &memory_for_domain(uint32_t dom_id, uint8_t *&region_count) {
-			Memory_region *mem;
+		Memory_region &memory_for_domain(uint32_t dom_id, uint8_t *region_count) {
+			Memory_region *mem = nullptr;
 
 			on_node([&](Domain &dom)
-					{ mem = &(dom.memory_regions); });
-			
+					{ mem = &(dom.memory_regions[0]); *region_count = dom.num_mem_descriptors; },
+					dom_id);
+
 			if (!mem) {
 				throw Domain_has_no_memory_regions();
 			}
