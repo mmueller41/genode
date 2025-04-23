@@ -35,7 +35,7 @@ install_config {
         </start>
         <start name="cell1" priority="-1">
             <binary name="superblock_test"/>
-            <resource name="RAM" quantum="3M"/>
+            <resource name="RAM" quantum="64M"/>
         </start>
                 <!--
                 <start name="cell2" priority="-2">
