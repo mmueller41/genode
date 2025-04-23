@@ -34,6 +34,10 @@ class Ealan::Memory::Hyperblock
 {
     public:
         Hyperblock *_next{nullptr};
+        Genode::Ram_dataspace_capability cap{};
+        void *operator new(Genode::size_t, void *p) { return p; }
+        Hyperblock *next() { return _next; }
+        void next(Hyperblock *p) { _next = p; }
 };
 
 /**
