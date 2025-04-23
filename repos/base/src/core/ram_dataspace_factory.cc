@@ -160,7 +160,7 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache, Range_allocator::R
 	Range_allocator::Alloc_result allocated_range = Allocator::Alloc_error::DENIED;
 
 	for (size_t align_log2 = log2(ds_size); align_log2 >= 12; align_log2--) {
-		_phys_alloc.alloc_aligned(ds_size, (unsigned)align_log2, range);
+		allocated_range = _phys_alloc.alloc_aligned(ds_size, (unsigned)align_log2, range);
 		if (allocated_range.ok())
 			break;
 	}
