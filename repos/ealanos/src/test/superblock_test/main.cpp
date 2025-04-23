@@ -15,6 +15,7 @@
 #include <ealanos/memory/superblock.h>
 #include <base/attached_ram_dataspace.h>
 #include <base/heap.h>
+#include <tukija/syscall-generic.h>
 
 namespace Ealan::Memory {
     class SuperblockTest;
@@ -56,7 +57,17 @@ class Ealan::Memory::SuperblockTest
     public:
         SuperblockTest(Genode::Env &env) : _env(env)
         {
-            Genode::Ram_dataspace_capability ds = _env.ram().alloc(8192);
+            Tukija::uint8_t mem_regions = 0;
+            Tukija::Tip *tip = const_cast<Tukija::Tip*>(Tukija::Tip::tip());
+            Tukija::Tip::Memory_region &region = tip->memory_for_domain(2, &mem_regions);
+            Genode::log(region.start);
+            Genode::log(region.end);
+            Genode::Ram_dataspace_capability ds = _env.pd().try_alloc_from_range(8192, Genode::CACHED, {.start = reinterpret_cast<Genode::addr_t>(region.start), .end = reinterpret_cast<Genode::addr_t>(region.end)}).convert<Genode::Ram_dataspace_capability>([&](Genode::Ram_dataspace_capability ds)
+                    { return ds; },
+                    [&](Genode::Ram_allocator::Alloc_error)
+                    { return Genode::Ram_dataspace_capability(); });
+
+
             Genode::Region_map::Attr attr{};
             attr.writeable = true;
             Genode::Region_map::Attach_result const result = _env.rm().attach(ds, attr);
