@@ -50,7 +50,7 @@ public:
      */
     [[nodiscard]] const T *end() const noexcept { return _end; }
 
-    [[nodiscard]] T *head() noexcept { return _head; }
+    [[nodiscard]] T *head() noexcept { return reinterpret_cast<T&>(_stub).next(); }
 
     /**
      * @return True, when the queue is empty.
@@ -81,8 +81,8 @@ private:
 
 template <class T> T *MPSCQueue<T>::pop_front() noexcept
 {
-    auto *tail = this->_tail;
-    auto *next = tail->next();
+    T *tail = this->_tail;
+    T *next = tail->next();
 
     if (tail == this->_end)
     {
@@ -102,7 +102,7 @@ template <class T> T *MPSCQueue<T>::pop_front() noexcept
         return tail;
     }
 
-    const auto *head = this->_head;
+    const T *head = this->_head;
     if (tail != head)
     {
         return nullptr;
