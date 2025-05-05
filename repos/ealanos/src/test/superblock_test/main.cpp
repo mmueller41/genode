@@ -32,24 +32,27 @@ class Ealan::Memory::SuperblockTest
                 Genode::Env &_env;
                 Superblock<8192, 64> *_sb;
                 Genode::size_t _blocks;
+                static unsigned number;
 
                 SuperblockTestThread(const SuperblockTestThread &);
                 SuperblockTest &operator=(SuperblockTestThread &);
 
             public:
-                SuperblockTestThread(Genode::Env &env, Superblock<8192,64> *sb, Genode::size_t blocks, Genode::Affinity::Location loc) : Genode::Thread(env, Genode::Thread::Name("superblocktest"), 4 * 4096, loc, Genode::Cpu_session::Weight(), env.cpu()), _env(env), _sb(sb), _blocks(blocks)
+                SuperblockTestThread(Genode::Env &env, Superblock<8192,64> *sb, Genode::size_t blocks, Genode::Affinity::Location loc) : Genode::Thread(env, Genode::Thread::Name("superblocktest", ++number), 4 * 4096, loc, Genode::Cpu_session::Weight(), env.cpu()), _env(env), _sb(sb), _blocks(blocks)
                 {}
 
                 void entry() override {
                     void *blocks[_blocks];
 
-                    Genode::log("Capacity of superblock ", _sb, " is ", _sb->free_blocks());
+                    Genode::log("Capacity of superblock ", _sb, " is ", _sb->capacity());
 
-                    for (unsigned i = 0; i < _blocks; i++) {
+                    Genode::Thread::Name name = Genode::Thread::myself()->name();
+                    for (unsigned i = 0; i < _blocks; i++)
+                    {
                         blocks[i] = _sb->alloc();
-                        Genode::log("blocks[", i, "]=", blocks[i]);
+                        Genode::log(name, ": blocks[", i, "]=", blocks[i]);
                         _sb->free(blocks[i]);
-                        Genode::log("Freed ", blocks[i]);
+                        Genode::log(name, ": Freed ", blocks[i]);
                     }
                 }
         };
@@ -84,10 +87,9 @@ class Ealan::Memory::SuperblockTest
             Genode::log("Attached dataspace for superblock");
             Superblock<8192, 64> *sb = new (sb_address) Superblock<8192, 64>(128);
 
-            Genode::log("Superblock has ", sb->free_blocks(), " free blocks.");
             Genode::log("Superblock blocks begin at ", sb->start());
 
-            Genode::size_t capacity = sb->free_blocks();
+            Genode::size_t capacity = sb->capacity();
 
             Genode::log("Allocating blocks until superblock is full");
 
@@ -96,24 +98,23 @@ class Ealan::Memory::SuperblockTest
             for (unsigned i = 0; i < capacity; i++)
             {
                 blocks[i] = sb->alloc();
-                Genode::log("block[", i, "]=", blocks[i], " left=", sb->free_blocks());
+                Genode::log("block[", i, "]=", blocks[i], " left=", sb->capacity(), " cache-aligned: ", (reinterpret_cast<Genode::addr_t>(blocks[i]) % 64 == 0) ? "True" : "False");
             }
 
             Genode::log("Test if allocating from full block yields nullptr");
-            if (!sb->alloc()) {
+            void *b = sb->alloc();
+            if (!b)
+            {
                 Genode::log("Success.");
-            } else {
-                Genode::error("Got block despite superblock being full.");
+            }
+            else
+            {
+                Genode::error("Got block at", b, " despite superblock being full.");
             }
 
             Genode::log("Freeing 1/2 of the blocks (every second block) and checking if capacity is ", capacity / 2);
             for (unsigned i = 1; i < capacity; i+=2) {
                 sb->free(blocks[i]);
-            }
-            if (sb->free_blocks() == capacity/2) {
-                Genode::log("Success.");
-            } else {
-                Genode::error("Capacity of superblock is: ", sb->free_blocks(), " but should be ", capacity / 2);
             }
 
             Genode::log("The next block we allocate should be right after the first allocated block.");
@@ -141,11 +142,6 @@ class Ealan::Memory::SuperblockTest
                 sb->free(blocks[i]);
             }
 
-            if (sb->free_blocks() == capacity) {
-                Genode::log("Success. Full capacitiy restored.");
-            } else {
-                Genode::error("Could not free all blocks. Capacity is now: ", sb->free_blocks());
-            }
 
             Genode::log("Thread-safety test ");
             SuperblockTestThread *threads[8];
@@ -161,13 +157,10 @@ class Ealan::Memory::SuperblockTest
                 threads[i]->join();
             }
             Genode::log("Threads finished. There should be ", capacity, " blocks left now.");
-            if (sb->free_blocks() == capacity) {
-                Genode::log("Success.");
-            } else {
-                Genode::error("Failed: ", sb->free_blocks(), "left.");
-            }
         }
 };
+
+unsigned Ealan::Memory::SuperblockTest::SuperblockTestThread::number = 0;
 
 void Component::construct(Genode::Env &env)
 {

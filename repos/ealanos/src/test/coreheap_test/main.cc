@@ -44,13 +44,12 @@ class Ealan::Memory::CoreheapTest
             log("Starting tests for Core_heap");
 
             _heap = new (_genode_heap) Core_heap<MIN, MAX>(_env.pd(), _env.rm());
-            /*Genode::log("Trying to allocate from all possible size classes");
+            Genode::log("Trying to allocate from all possible size classes");
             for (size_t sz = MIN; sz < num_size_classes*MIN; sz+=MIN) {
                 size_t size = random.value() % sz;
-                Genode::log("Allocating ", size, " bytes.");
                 void *ptr = _heap->aligned_alloc(size, 1, 16);
                 Genode::log("Allocated ", size, " bytes of sizeclass ", sz, " at ", ptr);
-            }*/
+            }
 
             Genode::log("Exhausting super block of size class ", MIN);
 
@@ -149,7 +148,7 @@ class Ealan::Memory::CoreheapTest
                 _hamstraaja->free(ptrs[i], 0);
             }
             end = Genode::Trace::timestamp();
-            Genode::log("Took ", (end - start), " cycles to free ", 2*MAX / MIN, " blocks from Core_heap");
+            Genode::log("Took ", (end - start), " cycles to free ", 2*MAX / MIN, " blocks from Hamstraaja");
             Genode::log("Testing Hamstraaja as drop-in replacement for Genode::Heap");
 
             Genode::Xml_node *xml_node = new (_hamstraaja) Xml_node("<test/>");
