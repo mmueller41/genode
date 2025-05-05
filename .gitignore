@@ -4,6 +4,7 @@
 *.rej
 *.log
 /*.xml
+*.o
 
 /build
 /contrib
