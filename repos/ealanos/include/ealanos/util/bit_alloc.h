@@ -22,6 +22,8 @@
 #include <tukija/bits.h>
 #include <tukija/atomic.h>
 #include <tukija/stdint.h>
+#include <base/stdint.h>
+#include <base/log.h>
 
 #define ACCESS_ONCE(x) (*static_cast<volatile typeof(x) *>(&(x)))
 
@@ -31,6 +33,7 @@ class Bit_alloc
     private:
         Tukija::mword_t bits[C / 8 / sizeof(Tukija::mword_t)];
         Tukija::mword_t last { 0 };
+        const Genode::size_t _capacity;
 
         enum
         {
@@ -53,6 +56,17 @@ class Bit_alloc
             return count;
         }
 
+        Genode::size_t capacity() const {
+            return _capacity;
+        }
+
+        inline void print() const
+        {
+            for (Tukija::mword_t i = 0; i < MAX; i++) {
+                Genode::log("bits[", i, "] = ", bits[i]);
+            }
+        }
+
         /**
          * @brief Return the maximum number of bits available.
          * 
@@ -60,7 +74,7 @@ class Bit_alloc
          */
         inline Tukija::mword_t max() const { return C; }
 
-        inline Bit_alloc(Tukija::mword_t count)
+        inline Bit_alloc(Tukija::mword_t count) : _capacity(count)
         {
             static_assert(MAX * BITS_CNT == C, "bit allocator");
             static_assert(INV < C, "bit allocator");
@@ -91,6 +105,9 @@ class Bit_alloc
 
                 if (bits[i] != ~0UL && last != i)
                     last = i;
+                
+                if (i*BITS_CNT+b >= _capacity)
+                    return INV;
 
                 return i * BITS_CNT + b;
             }
@@ -105,7 +122,7 @@ class Bit_alloc
          */
         inline void release(Tukija::mword_t const id)
         {
-            if (id == INV || id >= C)
+            if (id == INV || id >= _capacity)
                 return;
 
             Tukija::mword_t i = id / BITS_CNT;
