@@ -27,7 +27,6 @@ namespace Ealan::Kuori {
 class Ealan::Kuori::Main
 {
     private:
-        Env &_env;
         Heap &_heap;
 
         Ealan::Launcher_connection &_hoitaja;
@@ -286,7 +285,7 @@ class Ealan::Kuori::Main
         Lwip::Nic_netif _netif;
 
     public:
-        Main(Env &env, Genode::Heap &heap, Xml_node config, Ealan::Launcher_connection &hoitaja) : _env(env), _heap(heap), _hoitaja(hoitaja), _wakeup_scheduler(), _netif(env, _heap, config, _wakeup_scheduler) {
+        Main(Env &env, Genode::Heap &heap, Xml_node config, Ealan::Launcher_connection &hoitaja) :  _heap(heap), _hoitaja(hoitaja), _wakeup_scheduler(), _netif(env, _heap, config, _wakeup_scheduler) {
 
             _wakeup_scheduler.set_nic(&_netif);
             init();
@@ -309,9 +308,9 @@ class Ealan::Kuori::Main
                 Genode::log(cell_cfg);
                 _hoitaja.launch(cell_cfg);
 
-                Lwip::pbuf *response_buffer = Lwip::pbuf_alloc(Lwip::PBUF_TRANSPORT, Genode::strlen(msg), Lwip::PBUF_RAM);
+                Lwip::pbuf *response_buffer = Lwip::pbuf_alloc(Lwip::PBUF_TRANSPORT, static_cast<Lwip::u16_t>(Genode::strlen(msg)), Lwip::PBUF_RAM);
 
-                Lwip::pbuf_take(response_buffer, msg, Genode::strlen(msg));
+                Lwip::pbuf_take(response_buffer, msg, static_cast<Lwip::u16_t>(Genode::strlen(msg)));
 
                 state->p = response_buffer;
                 Tcp_connection::send(tpcb, state);
@@ -321,8 +320,8 @@ class Ealan::Kuori::Main
                 Genode::error("Invalid config supplied.");
                 Genode::String<100> response("Invalid cell configuration.\n");
 
-                Lwip::pbuf *response_buffer = Lwip::pbuf_alloc(Lwip::PBUF_TRANSPORT, response.length(), Lwip::PBUF_RAM);
-                Lwip::pbuf_take(response_buffer, response.string(), response.length());
+                Lwip::pbuf *response_buffer = Lwip::pbuf_alloc(Lwip::PBUF_TRANSPORT, static_cast<Lwip::u16_t>(response.length()), Lwip::PBUF_RAM);
+                Lwip::pbuf_take(response_buffer, response.string(), static_cast<Lwip::u16_t>(response.length()));
 
                 state->p = response_buffer;
                 Tcp_connection::send(tpcb, state);
@@ -338,8 +337,9 @@ void Libc::Component::construct(Libc::Env &env)
     Genode::Xml_node config = _config.xml();
 
     static Genode::Heap heap{env.ram(), env.rm()};
-    static Timer::Connection timer{env};
 
+    static Timer::Connection timer{env};
+    
     Lwip::genode_init(heap, timer);
     
     Genode::Thread *myself = Genode::Thread::myself();
