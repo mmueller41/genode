@@ -43,6 +43,9 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         Heap &_location_to_heap(Affinity::Location loc) const
         {
             size_t pos = loc.xpos() * loc.height() + loc.ypos();
+            if (!_core_heaps[pos]) {
+                Genode::error("No heap for location ", loc);
+            }
             return *_core_heaps[pos];
         }
 
@@ -51,12 +54,16 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
             return Thread::myself()->affinity();
         }
 
+        Hamstraaja &operator=(Hamstraaja &copy);
+        Hamstraaja(Hamstraaja const &copy);
+
     public:
         Hamstraaja(Genode::Pd_session &pd, Genode::Region_map &rm) : _pd(pd), _rm(rm) 
         {
             size_t num_cpus = Cip::cip()->habitat_affinity.total();
             for (size_t cpu = 0; cpu < num_cpus; cpu++) {
                 _core_heaps[cpu] = new (_backend) Core_heap<MIN, MAX>(_pd, _rm);
+                Genode::log("Size of CoreHeap for size ", MAX * 2, " with ", MIN, " blocks is: ", sizeof(Core_heap<MIN, MAX>));
             }
         }
 
@@ -92,7 +99,7 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         void *alloc(size_t size, unsigned domain_id)
         {
             _quota_used += overhead(size) + size;
-            return _location_to_heap(_my_location()).alloc(size, domain_id);
+            return _location_to_heap(_my_location()).aligned_alloc(size, 0, domain_id);
         }
 
         /**
@@ -104,6 +111,7 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         void *alloc(size_t size) 
         {
             _quota_used += overhead(size) + size;
+            //Genode::log("Allocating ", size, " bytes.");
             return _location_to_heap(_my_location()).alloc(size);
         }
 
@@ -116,6 +124,10 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
          */
         void free(void *ptr, size_t alignment, size_t size)
         {
+            if (!ptr) {
+                Genode::warning("Tried to free nullptr");
+                return;
+            }
             _quota_used -= overhead(size) + size;
             return _location_to_heap(_my_location()).free(ptr, alignment);
         }
@@ -154,7 +166,7 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
             }
         }
 
-        void free(void *ptr, size_t size) override { free(ptr, 0, size); }
+        void free(void *ptr, size_t size=0) override { free(ptr, 0, size); }
         size_t       consumed()            const override { return _quota_used; }
 		size_t       overhead(size_t size) const override 
         {

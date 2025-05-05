@@ -52,34 +52,50 @@ class Ealan::Memory::Core_heap
         {
             Tukija::uint8_t mem_regions = 0;
             _tip = const_cast<Tip *>(Tip::tip());
-            Tip::Memory_region &region = _tip->memory_for_domain(domain_id, &mem_regions);
-            Range_allocator::Range range = {.start = reinterpret_cast<addr_t>(region.start), .end = reinterpret_cast<addr_t>(region.end)};
+            try {
+                Tip::Memory_region &region = _tip->memory_for_domain(domain_id, &mem_regions);
+                Range_allocator::Range range = {.start = reinterpret_cast<addr_t>(region.start), .end = reinterpret_cast<addr_t>(region.end)};
 
-            Ram_dataspace_capability ds_cap = _pd.try_alloc_from_range(size, Genode::CACHED, range).convert<Ram_dataspace_capability>(
-                [&](Ram_dataspace_capability cap) { return cap; },
-                [&](Ram_allocator::Alloc_error) { return Ram_dataspace_capability(); });
+                Ram_dataspace_capability ds_cap = _pd.try_alloc_from_range(size, Genode::CACHED, range).convert<Ram_dataspace_capability>([&](Ram_dataspace_capability cap)
+                                                                                                                                        { return cap; },
+                                                                                                                                        [&](Ram_allocator::Alloc_error err)
+                                                                                                                                        { 
+                        Genode::error("Failed to allocate phyiscal memory in domain ", domain_id, ":", err);
+                        return Ram_dataspace_capability(); });
 
-            if (!ds_cap.valid())
+                if (!ds_cap.valid()) {
+                    Genode::warning("Failed to allocate physical memory for hyperblock");
+                    return nullptr;
+                }
+
+                Region_map::Attr attr{};
+                attr.writeable = true;
+                void *hb = _rm.attach(ds_cap, attr).convert<void *>(
+                    [&](Region_map::Range r) { return reinterpret_cast<void *>(r.start); },
+                    [&](Region_map::Attach_error) { return nullptr; });
+
+                if (!hb) {
+                    Genode::warning("Failed to obtain regionmap for hyperblock");
+                    return nullptr;
+                }
+
+                Hyperblock *hyperblock = new (hb) Hyperblock();
+                hyperblock->cap = ds_cap;
+
+                return hyperblock;
+            } catch (Tukija::Tip::Domain_has_no_memory_regions) {
+                Genode::error("Domain ", domain_id, " has no memory regions.");
                 return nullptr;
-
-            Region_map::Attr attr{};
-            attr.writeable = true;
-            void *hb = _rm.attach(ds_cap, attr).convert<void *>(
-                [&](Region_map::Range r) { return reinterpret_cast<void *>(r.start); },
-                [&](Region_map::Attach_error) { return nullptr; });
-
-            if (!hb)
-                return nullptr;
-
-            Hyperblock *hyperblock = new (hb) Hyperblock();
-            hyperblock->cap = ds_cap;
-
-            return hyperblock;
+            }
         }
 
         Sb *_allocate_superblock(unsigned domain_id, Genode::size_t sz_class)
         {
             Hyperblock *hb = _allocate_hyperblock(domain_id, MAX * 2);
+            if (!hb) {
+                Genode::warning("Failed to allocate superblock for size class ", sz_class, " in domain ", domain_id);
+                return nullptr;
+            }
             return new (static_cast<void *>(hb)) Superblock<MAX * 2, MIN>(sz_class);
         }
 
@@ -87,7 +103,11 @@ class Ealan::Memory::Core_heap
         Core_heap &operator=(Core_heap &);
 
     public:
-        Core_heap(Pd_session &pd, Region_map &rm) : _pd(pd), _rm(rm) {}
+        Core_heap(Pd_session &pd, Region_map &rm) : _pd(pd), _rm(rm) {
+            Genode::log("Size of superblock array is ", sizeof(_superblocks));
+            Genode::log("Individual superblock size is: ", sizeof(Sb));
+            Genode::log("Size of individual ist of superblocks: ", sizeof(Ealan::util::MPSCQueue<Sb>));
+        }
 
         ~Core_heap()
         {
@@ -106,7 +126,10 @@ class Ealan::Memory::Core_heap
 
         void *aligned_alloc(Genode::size_t size, unsigned domain_id, Genode::size_t alignment)
         {
-            if (size > MAX) {
+            void *ptr = nullptr;
+
+            if (size > MAX)
+            {
                 /* directly allocate a hyperblock */
                 Hyperblock *hb = _allocate_hyperblock(domain_id, size+sizeof(Hyperblock*) + sizeof(Ram_dataspace_capability));
                 hb->_next = reinterpret_cast<Hyperblock*>(magic_num);
@@ -118,18 +141,26 @@ class Ealan::Memory::Core_heap
 
             if (!sb) {
                 sb = _allocate_superblock(domain_id, sz_class);
+                if (!sb)
+                    return nullptr;
                 _superblocks[sz_class / MIN - 1][domain_id].push_back(sb);
-            } else if (sb->free_blocks() == 0) {
-                for (; sb && sb->free_blocks() == 0; sb = static_cast<Sb*>(sb->next()))
-                    ;
-                if (!sb) {
-                    Sb *new_sb = _allocate_superblock(domain_id, sz_class);
-                    _superblocks[sz_class / MIN - 1][domain_id].push_back(new_sb);
-                    sb = new_sb;
-                }
+            } 
+            
+            for (; sb != nullptr ; sb = static_cast<Sb*>(sb->next())) {
+                ptr = sb->aligned_alloc(alignment);
+                if (ptr)
+                    return ptr;
+            }
+            
+            if (!sb) {
+                sb = _allocate_superblock(domain_id, sz_class);
+                if (!sb)
+                    return nullptr;
+                _superblocks[sz_class / MIN - 1][domain_id].push_back(sb);
+                return sb->aligned_alloc(alignment);
             }
 
-            return sb->aligned_alloc(alignment);
+            return ptr;
         }
 
         void *aligned_alloc(Genode::size_t size, Genode::size_t alignment)
@@ -152,6 +183,10 @@ class Ealan::Memory::Core_heap
 
         void free(void *ptr, Genode::size_t alignment = 0)
         {
+            if (!ptr) {
+                Genode::warning("Tried to free nullptr");
+                return;
+            }
             void *p = reinterpret_cast<void *>((reinterpret_cast<addr_t>(ptr) - sizeof(Hyperblock *) - sizeof(Ram_dataspace_capability)));
             Hyperblock *hb = reinterpret_cast<Hyperblock *>(p);
 
@@ -166,8 +201,16 @@ class Ealan::Memory::Core_heap
 
             Block *b = Block::metadata(p);
 
+            if (!b) {
+                Genode::warning("Invalid block. Not freeing.");
+                return;
+            }
             Sb *sb = static_cast<Sb*>(b->_superblock);
-            sb->free(ptr);
+            if (!sb) {
+                Genode::warning("Corrupt or invalid memory block.");
+                return;
+            }
+            sb->free(p);
         }
 
         void reserve_superblocks(size_t count, unsigned domain_id, size_t sz_class)
