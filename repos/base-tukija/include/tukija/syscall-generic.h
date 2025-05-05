@@ -43,6 +43,7 @@
 #include <tukija/spinlock.hpp>
 
 #include <base/affinity.h>
+#include <base/thread.h>
 
 namespace Tukija {
 
@@ -283,8 +284,23 @@ namespace Tukija {
 				Genode::Affinity::Location loc_in_habitat = loc.transpose(location.xpos(), location.ypos());
 				unsigned idx = (loc_in_habitat.xpos() * habitat_affinity.height() + loc_in_habitat.ypos()) % habitat_affinity.total();
 				return idx_to_phys_cpu_id[idx];
-			}
+            }
 
+            unsigned location_to_index(Genode::Affinity::Location const &loc)
+			{
+				Genode::Affinity::Location loc_in_habitat =
+					loc.transpose(location.xpos(), location.ypos());
+				return (loc_in_habitat.xpos() * habitat_affinity.height() +
+				        loc_in_habitat.ypos()) %
+				       habitat_affinity.total();	
+            }
+
+			unsigned get_cpu_index()
+			{
+				Genode::Affinity::Location loc = Genode::Thread::myself()->affinity();
+				return location_to_index(loc);
+			}
+			
 			/**
 			 * @brief Return the worker information structure for the workers at the given location
 			 *
@@ -313,7 +329,7 @@ namespace Tukija {
 			static Cip *
 			cip()
 			{
-				return reinterpret_cast<Cip *>(0x7FFFBFFDC000);
+				return reinterpret_cast<Cip *>(0x7fffbffd7000);
 			}
 	};
 
@@ -406,6 +422,12 @@ namespace Tukija {
 		Domain nodes[]; /* Set of detected NUMA domains */
 
 		/* Parsing functions */
+
+		uint8_t num_domains() const
+		{
+			return (reinterpret_cast<mword_t>(&nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain);
+		}
+
 		/**
 		 * @brief Applies the function fn to all detected NUMA domain structures
 		 * 
@@ -470,8 +492,10 @@ namespace Tukija {
 					break;
 			}
 
-			if (dom->id != id)
-				return;
+			if (dom->id != id) {
+				Genode::error("Domain ", id, " does not exist.");
+				throw Domain_not_found();
+			}
 
 			fn(*dom);
 		}
@@ -498,6 +522,18 @@ namespace Tukija {
 			return *mem;
 		}
 
+		uint8_t domain_of_loc(Genode::Affinity::Location const &loc) const
+		{
+			unsigned cpu = Cip::cip()->location_to_kernel_cpu(loc);
+			return static_cast<uint8_t>(cpu_to_domain[cpu]);
+		}
+
+		uint8_t domain_of_idx(unsigned idx) const
+		{
+			unsigned cpu = Cip::cip()->idx_to_phys_cpu_id[idx];
+			return static_cast<uint8_t>(cpu_to_domain[cpu]);
+		}
+		
 		inline static Tip const *tip() {
 			return reinterpret_cast<Tip *>(0x7fffbffdb000);
 		}
