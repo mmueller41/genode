@@ -17,6 +17,7 @@
 /repos/zynq
 /experiments
 
+.cache/
 repos/ealanos/.vscode/settings.json
 repos/ealanos/.vscode/c_cpp_properties.json
 repos/base-tukija/.vscode/c_cpp_properties.json
