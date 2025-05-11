@@ -165,6 +165,30 @@ Ram_dataspace_factory::try_alloc(size_t ds_size, Cache cache, Range_allocator::R
 			break;
 	}
 
+	/*
+	 * If no physical constraint exists or constraints failed, try to allocate
+	 * physical memory at high locations (3G for 32-bit / 4G for 64-bit platforms)
+	 * in order to preserve lower physical regions for device drivers, which may
+	 * have DMA constraints.
+	 */
+	if (!allocated_range.ok()) {
+		addr_t const     high_start = (sizeof(void *) == 4 ? 3UL : 4UL) << 30;
+		Phys_range const range{.start = high_start, .end = ~0UL};
+
+		for (size_t align_log2 = log2(ds_size); align_log2 >= 12; align_log2--) {
+			allocated_range = _phys_alloc.alloc_aligned(ds_size, (unsigned)align_log2, range);
+			if (allocated_range.ok()) break;
+		}
+	}
+
+	/* retry if larger non-constrained memory allocation failed */
+	if (!allocated_range.ok()) {
+		for (size_t align_log2 = log2(ds_size); align_log2 >= 12; align_log2--) {
+			allocated_range = _phys_alloc.alloc_aligned(ds_size, (unsigned)align_log2, _phys_range);
+			if (allocated_range.ok()) break;
+		}
+	}
+
 	if (allocated_range.failed()) {
 		error("out of physical memory while allocating ", ds_size, " bytes ",
 		      "in range [", Hex(_phys_range.start), "-", Hex(_phys_range.end), "]");
