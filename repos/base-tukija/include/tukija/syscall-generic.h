@@ -425,7 +425,7 @@ namespace Tukija {
 
 		uint8_t num_domains() const
 		{
-			return (reinterpret_cast<mword_t>(&nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain);
+			return static_cast<uint8_t>((reinterpret_cast<mword_t>(&nodes) + length - reinterpret_cast<mword_t>(nodes)) / sizeof(Domain));
 		}
 
 		/**
@@ -534,7 +534,7 @@ namespace Tukija {
 			return static_cast<uint8_t>(cpu_to_domain[cpu]);
 		}
 		
-		inline static Tip const *tip() {
+		inline static Tip *tip() {
 			return reinterpret_cast<Tip *>(0x7fffbffdb000);
 		}
 	};
