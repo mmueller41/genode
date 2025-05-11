@@ -147,12 +147,12 @@ public:
     /**
      * @return The annotation of the task.
      */
-    [[nodiscard]] const annotation &annotation() const noexcept { return _annotation; }
+    [[nodiscard]] const Annotation &annotation() const noexcept { return _annotation; }
 
     /**
      * @return The annotation of the task.
      */
-    [[nodiscard]] class annotation &annotation() noexcept { return _annotation; }
+    [[nodiscard]] class Annotation &annotation() noexcept { return _annotation; }
 
     /**
      * Annotate the task with a resource the task will work on.
@@ -234,7 +234,7 @@ public:
      *
      * @param execution_destination Destination to execute on.
      */
-    void annotate(const annotation::execution_destination execution_destination) noexcept
+    void annotate(const Annotation::execution_destination execution_destination) noexcept
     {
         _annotation.set(execution_destination);
     }
@@ -244,7 +244,7 @@ public:
      *
      * @param is_readonly True, when the task is read only (false by default).
      */
-    void annotate(const annotation::access_intention access_intention) noexcept { _annotation.set(access_intention); }
+    void annotate(const Annotation::access_intention access_intention) noexcept { _annotation.set(access_intention); }
 
     /**
      * @return Pointer to the next task in spawn queue.
@@ -262,7 +262,7 @@ private:
     TaskInterface *_next{nullptr};
 
     /// Tasks annotations.
-    class annotation _annotation
+    class Annotation _annotation
     {
     };
 };

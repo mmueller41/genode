@@ -33,7 +33,7 @@ TaskResult TaskSquadSpawnTask::execute(std::uint16_t worker_id)
         }
         else
         {
-            first->annotate(annotation::execution_destination::local);
+            first->annotate(Annotation::execution_destination::local);
             runtime::spawn(*first, worker_id);
         }
     }

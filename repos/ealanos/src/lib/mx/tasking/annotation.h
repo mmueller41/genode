@@ -16,7 +16,7 @@ class TaskSquad;
  * and synchronization of concurrent accesses to the same data
  * object, done by tasks.
  */
-class annotation
+class Annotation
 {
 public:
     enum execution_destination : std::uint8_t
@@ -36,25 +36,25 @@ public:
         mixed = 2U
     };
 
-    constexpr annotation() noexcept = default;
-    explicit constexpr annotation(const std::uint16_t worker_id) noexcept : _destination(worker_id) {}
-    explicit constexpr annotation(const execution_destination destination) noexcept : _destination(destination) {}
-    constexpr annotation(const enum access_intention access_intention, const resource::ptr resource) noexcept
+    constexpr Annotation() noexcept = default;
+    explicit constexpr Annotation(const std::uint16_t worker_id) noexcept : _destination(worker_id) {}
+    explicit constexpr Annotation(const execution_destination destination) noexcept : _destination(destination) {}
+    constexpr Annotation(const enum access_intention access_intention, const resource::ptr resource) noexcept
         : _access_intention(access_intention), _destination(resource)
     {
     }
-    constexpr annotation(const enum access_intention access_intention, const resource::ptr resource,
+    constexpr Annotation(const enum access_intention access_intention, const resource::ptr resource,
                          const PrefetchDescriptor prefetch_descriptor) noexcept
         : _access_intention(access_intention), _destination(resource),
           _prefetch_hint(PrefetchHint{prefetch_descriptor, resource})
     {
     }
-    constexpr annotation(const annotation &) noexcept = default;
-    constexpr annotation(annotation &&) noexcept = default;
-    ~annotation() = default;
+    constexpr Annotation(const Annotation &) noexcept = default;
+    constexpr Annotation(Annotation &&) noexcept = default;
+    ~Annotation() = default;
 
-    annotation &operator=(const annotation &) noexcept = default;
-    annotation &operator=(annotation &&) noexcept = default;
+    Annotation &operator=(const Annotation &) noexcept = default;
+    Annotation &operator=(Annotation &&) noexcept = default;
 
     [[nodiscard]] bool is_readonly() const noexcept { return _access_intention == access_intention::readonly; }
     [[nodiscard]] priority priority() const noexcept { return _priority; }
@@ -94,7 +94,7 @@ public:
     void set(const PrefetchHint prefetch_hint) noexcept { _prefetch_hint = prefetch_hint; }
     void cycles(const std::uint16_t cycles) noexcept { _cycles = cycles; }
 
-    bool operator==(const annotation &other) const noexcept
+    bool operator==(const Annotation &other) const noexcept
     {
         return _access_intention == other._access_intention && _priority == other._priority &&
                _destination == other._destination && _prefetch_hint == other._prefetch_hint;

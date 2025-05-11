@@ -26,7 +26,7 @@ public:
      */
 	static constexpr bool local_garbage_collection() { return false; }
 
-	static constexpr std::size_t min_block_size() { return 2048; }
+	static constexpr std::size_t min_block_size() { return 64; }
 	static constexpr std::size_t superblock_cutoff() { return 1024 * min_block_size();}
 };
 } // namespace mx::memory

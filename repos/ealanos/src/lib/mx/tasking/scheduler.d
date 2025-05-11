@@ -203,6 +203,7 @@
   /home/mml/genode-igb/contrib/stdcxx-4eddc2a55a80ed5d3a50fee3f5c25e7ac42afd72/include/stdcxx/std/set \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/util/maybe_atomic.h \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/tasking/profiling/idle_profiler.h \
+  /home/mml/genode-igb/repos/ealanos/src/lib/mx/util/logger.h \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/tasking/runtime.h \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/io/network/server.h \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/io/network/config.h \
@@ -211,7 +212,6 @@
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/resource/builder.h \
   /home/mml/genode-igb/repos/ealanos/src/lib/mx/system/thread.h \
   /home/mml/genode-igb/contrib/libc-ec685e91ee80735b4a067fea4582aa7f5d06c192/include/libc/pthread.h \
-  /home/mml/genode-igb/repos/ealanos/src/lib/mx/util/logger.h \
   /home/mml/genode-igb/repos/libports/include/libc/component.h
 
 /home/mml/genode-igb/repos/ealanos/src/lib/mx/tasking/scheduler.h:
@@ -620,6 +620,8 @@
 
 /home/mml/genode-igb/repos/ealanos/src/lib/mx/tasking/profiling/idle_profiler.h:
 
+/home/mml/genode-igb/repos/ealanos/src/lib/mx/util/logger.h:
+
 /home/mml/genode-igb/repos/ealanos/src/lib/mx/tasking/runtime.h:
 
 /home/mml/genode-igb/repos/ealanos/src/lib/mx/io/network/server.h:
@@ -635,7 +637,5 @@
 /home/mml/genode-igb/repos/ealanos/src/lib/mx/system/thread.h:
 
 /home/mml/genode-igb/contrib/libc-ec685e91ee80735b4a067fea4582aa7f5d06c192/include/libc/pthread.h:
-
-/home/mml/genode-igb/repos/ealanos/src/lib/mx/util/logger.h:
 
 /home/mml/genode-igb/repos/libports/include/libc/component.h:

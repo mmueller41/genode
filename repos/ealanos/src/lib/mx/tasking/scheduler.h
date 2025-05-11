@@ -60,7 +60,7 @@ public:
      * @param local_worker_id Channel, the request came from.
      * @return Worker ID where the task was dispatched to.
      */
-    std::uint16_t dispatch(mx::resource::ptr squad, enum annotation::resource_boundness boundness,
+    std::uint16_t dispatch(mx::resource::ptr squad, enum Annotation::resource_boundness boundness,
                            std::uint16_t local_worker_id) noexcept;
 
     /**
@@ -213,12 +213,12 @@ private:
         PhysicalCoreResourceWorkerIds &operator=(const PhysicalCoreResourceWorkerIds &) noexcept = default;
         PhysicalCoreResourceWorkerIds &operator=(PhysicalCoreResourceWorkerIds &&) noexcept = default;
 
-        [[nodiscard]] std::uint16_t operator[](const enum annotation::resource_boundness boundness) const noexcept
+        [[nodiscard]] std::uint16_t operator[](const enum Annotation::resource_boundness boundness) const noexcept
         {
             return _worker_ids[boundness];
         }
 
-        [[nodiscard]] std::uint16_t &operator[](const enum annotation::resource_boundness boundness) noexcept
+        [[nodiscard]] std::uint16_t &operator[](const enum Annotation::resource_boundness boundness) noexcept
         {
             return _worker_ids[boundness];
         }

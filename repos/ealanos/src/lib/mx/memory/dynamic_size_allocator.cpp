@@ -1,10 +1,13 @@
 #include "dynamic_size_allocator.h"
+#include "ealanos/memory/hamstraaja.h"
 #include "global_heap.h"
 #include <algorithm>
 #include <cassert>
 #include <mx/system/cpu.h>
 
 using namespace mx::memory::dynamic;
+
+Ealan::Memory::Hamstraaja<mx::memory::config::min_block_size(), mx::memory::config::superblock_cutoff()> *mx::memory::GlobalHeap::_heap;
 
 AllocationBlock::AllocationBlock(const std::uint32_t id, const std::uint8_t numa_node_id, const std::size_t size)
     : _id(id), _numa_node_id(numa_node_id), _size(size), _available_size(size)

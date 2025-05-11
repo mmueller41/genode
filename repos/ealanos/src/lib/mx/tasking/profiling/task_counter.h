@@ -94,7 +94,7 @@ public:
     {
     }
 
-    ~TaskCounter() noexcept { delete[] this->_counter; }
+    ~TaskCounter() noexcept { mx::memory::GlobalHeap::free(this->_counter,0,0); }
 
     TaskCounter &operator=(const TaskCounter &) = delete;
 

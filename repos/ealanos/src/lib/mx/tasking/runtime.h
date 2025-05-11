@@ -66,8 +66,9 @@ public:
         if (_resource_allocator == nullptr)
         {
             /// Only called the first time.
-            _resource_allocator.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(
-                sizeof(memory::dynamic::local::Allocator))) memory::dynamic::local::Allocator(core_set));
+			_resource_allocator.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(sizeof(
+				memory::dynamic::local::Allocator))) memory::dynamic::local::Allocator(core_set));
+            util::Logger::info_if(system::Environment::is_debug(), "Created resource allocator");
         }
         else if (_resource_allocator->is_free())
         {
@@ -86,8 +87,10 @@ public:
         // Create a new task allocator.
         if (use_system_allocator)
         {
-            _task_allocator.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(sizeof(
-                memory::SystemTaskAllocator<config::task_size()>))) memory::SystemTaskAllocator<config::task_size()>());
+			_task_allocator.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(
+				sizeof(memory::SystemTaskAllocator<config::task_size()>)))
+					                  memory::SystemTaskAllocator<config::task_size()>());
+			util::Logger::info_if(system::Environment::is_debug(), "Created task allocator");
         }
         else
         {
@@ -100,8 +103,9 @@ public:
         const auto need_new_scheduler = _scheduler == nullptr || *_scheduler != core_set;
         if (need_new_scheduler)
         {
-            _scheduler.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(sizeof(Scheduler)))
-                                 Scheduler(core_set, prefetch_distance, *_resource_allocator));
+			_scheduler.reset(new (memory::GlobalHeap::allocate_cache_line_aligned(
+				sizeof(Scheduler))) Scheduler(core_set, prefetch_distance, *_resource_allocator));
+			util::Logger::info_if(system::Environment::is_debug(), "Created new task scheduler and worker thread pool");
         }
         else
         {
@@ -113,6 +117,7 @@ public:
         {
             _resource_builder = std::make_unique<mx::resource::Builder>(*_scheduler, *_resource_allocator);
         }
+        util::Logger::info_if(system::Environment::is_debug(), "Started MxTasking in DEBUG mode.");
 
         return true;
     }
@@ -155,7 +160,7 @@ public:
      */
     static std::uint16_t spawn(const mx::resource::ptr squad, const std::uint16_t local_worker_id) noexcept
     {
-        return spawn(squad, annotation::resource_boundness::mixed, local_worker_id);
+        return spawn(squad, Annotation::resource_boundness::mixed, local_worker_id);
     }
 
     /**
@@ -165,7 +170,7 @@ public:
      * @param boundness Boundness of the squad.
      * @param local_worker_id Worker, the spawn request came from.
      */
-    static std::uint16_t spawn(const mx::resource::ptr squad, const enum annotation::resource_boundness boundness,
+    static std::uint16_t spawn(const mx::resource::ptr squad, const enum Annotation::resource_boundness boundness,
                                const std::uint16_t local_worker_id) noexcept
     {
         return _scheduler->dispatch(squad, boundness, local_worker_id);

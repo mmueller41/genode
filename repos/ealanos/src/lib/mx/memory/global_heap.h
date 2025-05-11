@@ -34,7 +34,8 @@ public:
      */
     static void *allocate(const std::uint8_t numa_node_id, const std::size_t size)
     {
-        return _heap->alloc(size, numa_node_id); //numa_alloc_onnode(size, numa_node_id);
+		void *ptr = _heap->alloc(size, numa_node_id); // numa_alloc_onnode(size, numa_node_id);
+		return ptr;
     }
 
     /**

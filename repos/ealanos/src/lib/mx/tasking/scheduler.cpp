@@ -1,11 +1,16 @@
 #include "scheduler.h"
+#include "mx/system/environment.h"
+#include "mx/util/logger.h"
 #include "runtime.h"
 #include <mx/memory/global_heap.h>
 #include <mx/synchronization/synchronization.h>
 #include <mx/system/cpu.h>
 #include <mx/system/thread.h>
+#include <string>
 #include <thread>
 #include <vector>
+#include <iostream>
+
 
 using namespace mx::tasking;
 
@@ -26,7 +31,9 @@ Scheduler::Scheduler(const mx::util::core_set &core_set, const PrefetchDistance 
         this->_task_tracer.emplace(profiling::TaskTracer{this->_core_set.count_cores()});
     }
 
-    /// Create worker.
+	/// Create worker.
+    std::cout << "Creating workers for coreset " << this->_core_set << std::endl;
+	
     for (auto worker_id = std::uint16_t(0U); worker_id < this->_core_set.count_cores(); ++worker_id)
     {
         /// The core the worker is binded to.
@@ -36,10 +43,15 @@ Scheduler::Scheduler(const mx::util::core_set &core_set, const PrefetchDistance 
         const auto numa_node_id = system::cpu::node_id(core_id);
         this->_worker_numa_node_map[worker_id] = numa_node_id;
 
-        this->_worker[worker_id] = new (memory::GlobalHeap::allocate(numa_node_id, sizeof(Worker)))
-            Worker(this->_core_set.count_cores(), worker_id, core_id, this->_is_running, prefetch_distance,
-                   this->_epoch_manager[worker_id], this->_epoch_manager.global_epoch(), this->_task_counter,
-                   this->_task_tracer);
+		this->_worker[worker_id] = static_cast<Worker*>(memory::GlobalHeap::allocate(numa_node_id, sizeof(Worker)));
+
+        std::cout << "Creating worker " << worker_id << " at " << this->_worker[worker_id];
+		
+		new (static_cast<void *>(this->_worker[worker_id]))
+			Worker(this->_core_set.count_cores(), worker_id, core_id, this->_is_running,
+		           prefetch_distance, this->_epoch_manager[worker_id],
+		           this->_epoch_manager.global_epoch(), this->_task_counter, this->_task_tracer);
+	    util::Logger::info_if(system::Environment::is_debug(), "Created worker threads");
     }
 }
 
@@ -62,6 +74,7 @@ void Scheduler::start_and_wait()
         auto *worker = this->_worker[worker_id];
         worker_threads[worker_id] = std::thread([worker] { worker->execute(); });
 
+        util::Logger::info_if(system::Environment::is_debug(), "Created worker thread " + std::to_string(worker_id) + " of size " + std::to_string(sizeof(std::thread)));
         //system::thread::pin(worker_threads[worker_id], worker->core_id());
         //system::thread::name(worker_threads[worker_id], "mx::worker#" + std::to_string(worker_id));
     }
@@ -262,7 +275,7 @@ std::uint16_t Scheduler::dispatch(TaskInterface &first, TaskInterface &last, con
     return local_worker_id;
 }
 
-std::uint16_t Scheduler::dispatch(const mx::resource::ptr squad, const enum annotation::resource_boundness boundness,
+std::uint16_t Scheduler::dispatch(const mx::resource::ptr squad, const enum Annotation::resource_boundness boundness,
                                   const std::uint16_t local_worker_id) noexcept
 {
     auto *dispatch_task = runtime::new_task<TaskSquadSpawnTask>(local_worker_id, *squad.get<TaskSquad>());

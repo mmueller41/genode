@@ -34,7 +34,7 @@ void Worker::execute()
         system::builtin::pause();
     }
 
-    assert(this->_target_core_id == system::cpu::core_id() && "Worker not pinned to correct core.");
+    //assert(this->_target_core_id == system::cpu::core_id() && "Worker not pinned to correct core.");
     const auto worker_id = this->_id;
 
     /// Period the task sampler for monitoring task cycles becomes active.

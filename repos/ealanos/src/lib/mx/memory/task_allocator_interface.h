@@ -59,7 +59,7 @@ public:
      * Frees the given memory using systems free.
      * @param address Memory to free.
      */
-    void free(const std::uint16_t /*worker_id*/, void *address) noexcept override { std::free(address); }
+    void free(const std::uint16_t /*worker_id*/, void *address) noexcept override { memory::GlobalHeap::free(address, 0, 0); }
 
     [[nodiscard]] std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>>
     allocated_chunks() override
