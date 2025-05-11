@@ -60,7 +60,7 @@ class Ealan::Memory::Core_heap
                                                                                                                                         { return cap; },
                                                                                                                                         [&](Ram_allocator::Alloc_error err)
                                                                                                                                         { 
-                        Genode::error("Failed to allocate phyiscal memory in domain ", domain_id, ":", err);
+                        Genode::error("Failed to allocate phyiscal memory in domain ", domain_id, ":", err, " avail quota: ", _pd.avail_ram());
                         return Ram_dataspace_capability(); });
 
                 if (!ds_cap.valid()) {
@@ -104,9 +104,6 @@ class Ealan::Memory::Core_heap
 
     public:
         Core_heap(Pd_session &pd, Region_map &rm) : _pd(pd), _rm(rm) {
-            Genode::log("Size of superblock array is ", sizeof(_superblocks));
-            Genode::log("Individual superblock size is: ", sizeof(Sb));
-            Genode::log("Size of individual ist of superblocks: ", sizeof(Ealan::util::MPSCQueue<Sb>));
         }
 
         ~Core_heap()
@@ -131,7 +128,12 @@ class Ealan::Memory::Core_heap
             if (size > MAX)
             {
                 /* directly allocate a hyperblock */
-                Hyperblock *hb = _allocate_hyperblock(domain_id, size+sizeof(Hyperblock*) + sizeof(Ram_dataspace_capability));
+				Hyperblock *hb = _allocate_hyperblock(
+					domain_id, size + sizeof(Hyperblock *) + sizeof(Ram_dataspace_capability));
+				if (!hb) {
+					Genode::warning("Failed to allocate hyperblock of size ", size);
+					return nullptr;
+				}
                 hb->_next = reinterpret_cast<Hyperblock*>(magic_num);
                 return reinterpret_cast<char *>(hb) + sizeof(Hyperblock *) + sizeof(Ram_dataspace_capability);
             }

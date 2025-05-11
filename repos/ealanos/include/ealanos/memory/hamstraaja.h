@@ -63,8 +63,8 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
             size_t num_cpus = Cip::cip()->habitat_affinity.total();
             for (size_t cpu = 0; cpu < num_cpus; cpu++) {
                 _core_heaps[cpu] = new (_backend) Core_heap<MIN, MAX>(_pd, _rm);
-                Genode::log("Size of CoreHeap for size ", MAX * 2, " with ", MIN, " blocks is: ", sizeof(Core_heap<MIN, MAX>));
-            }
+			}
+			Genode::log("Hamstraaja initialized");
         }
 
         ~Hamstraaja() 
@@ -98,8 +98,8 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
          */
         void *alloc(size_t size, unsigned domain_id)
         {
-            _quota_used += overhead(size) + size;
-            return _location_to_heap(_my_location()).aligned_alloc(size, 0, domain_id);
+			_quota_used += overhead(size) + size;
+            return _location_to_heap(_my_location()).aligned_alloc(size, domain_id, 0);
         }
 
         /**
@@ -111,7 +111,6 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         void *alloc(size_t size) 
         {
             _quota_used += overhead(size) + size;
-            //Genode::log("Allocating ", size, " bytes.");
             return _location_to_heap(_my_location()).alloc(size);
         }
 

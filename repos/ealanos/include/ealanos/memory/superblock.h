@@ -93,13 +93,13 @@ class Ealan::Memory::Superblock : public Hyperblock
             if (_size_class > SIZE) {
                 Genode::error("Size class ", _size_class, " is bigger than superblock size ", SIZE);
             }
-            /*Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
+            Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
             Genode::log("Block metadata size is ", sizeof(Block));
             Genode::log("Size class of superblock is ", _size_class);
             Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE);
             Genode::log("Superblock ends at ", end);
             Genode::log("Capacity is ", capacity());
-            Genode::log("-------------------");*/
+            Genode::log("-------------------");
         }
 
         /**
