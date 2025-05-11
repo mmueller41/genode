@@ -17,6 +17,7 @@
 #include <base/tslab.h>
 
 #include <ealanos/memory/hamstraaja.h>
+#include <tukija/syscall-generic.h>
 
 namespace Ealan::Memory {
     class CoreheapTest;
@@ -147,7 +148,14 @@ class Ealan::Memory::CoreheapTest
             for (unsigned i = 0; i < 2*MAX / MIN; i++) {
                 _hamstraaja->free(ptrs[i], 0);
             }
-            end = Genode::Trace::timestamp();
+			end = Genode::Trace::timestamp();
+
+			Genode::log("Trying to get memory from each NUMA region");
+			Tukija::Tip::tip()->for_each([&](Tukija::Tip::Domain &dom) {
+				void *ptr = _hamstraaja->aligned_alloc(64, 0, dom.id);
+				Genode::log("[node ", dom.id, "] ", ptr);
+			});
+			
             Genode::log("Took ", (end - start), " cycles to free ", 2*MAX / MIN, " blocks from Hamstraaja");
             Genode::log("Testing Hamstraaja as drop-in replacement for Genode::Heap");
 
