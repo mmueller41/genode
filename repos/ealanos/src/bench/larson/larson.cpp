@@ -155,8 +155,8 @@ void operator delete[](void *pUserData )
 #endif
 
 #ifndef CUSTOM_MALLOC
-#define CUSTOM_MALLOC malloc //_alloc->alloc
-#define CUSTOM_FREE   free //_alloc->free
+#define CUSTOM_MALLOC _alloc->alloc
+#define CUSTOM_FREE   _alloc->free
 #endif
 
 
