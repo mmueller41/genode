@@ -18,6 +18,7 @@
 /repos/zynq
 /experiments
 
+compile_commands.json
 .cache/
 repos/ealanos/.vscode/settings.json
 repos/ealanos/.vscode/c_cpp_properties.json
