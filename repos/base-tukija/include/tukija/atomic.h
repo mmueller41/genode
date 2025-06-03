@@ -40,7 +40,7 @@ class Atomic
         static inline bool test_set_bit (T &val, unsigned long bit)
         {
             bool ret;
-            asm volatile ("lock; bts%z1 %2, %1; setc %0" : "=q" (ret), "+m" (val) : "ir" (bit) : "cc");
+            asm volatile ("lock; bts %2, %1; setc %0" : "=q" (ret), "+m" (val) : "ir" (bit) : "cc");
             return ret;
         }
 
@@ -48,7 +48,7 @@ class Atomic
         static inline bool test_clr_bit (T &val, unsigned long bit)
         {
             bool ret;
-            asm volatile ("lock; btr%z1 %2, %1; setc %0" : "=q" (ret), "+m" (val) : "ir" (bit) : "cc");
+            asm volatile ("lock; btr %2, %1; setc %0" : "=q" (ret), "+m" (val) : "ir" (bit) : "cc");
             return ret;
         }
 
