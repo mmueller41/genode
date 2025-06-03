@@ -12,7 +12,7 @@
 #ifndef __INCLUDE__EALANOS__MEMORY__SUPERBLOCK_H_
 #define __INCLUDE__EALANOS__MEMORY__SUPERBLOCK_H_
 
-#include <ealanos/util/bit_alloc.h>
+#include <ealanos/util/lifo_queue.h>
 #include <base/stdint.h>
 #include <base/ram_allocator.h>
 
@@ -45,10 +45,11 @@ class Ealan::Memory::Hyperblock
  * @brief A block of memory
  * 
  */
-struct Ealan::Memory::Block
-{
-    void *_superblock{nullptr}; /* Pointer to the superblock, this block was allocated from. */
-    char _padding[56];
+struct Ealan::Memory::Block {
+	Block *_next{nullptr};
+	void  *_superblock{nullptr};/* Pointer to the superblock, this block was allocated from. */
+	char   _padding[48];
+	
 
     /**
         * @brief Return a pointer to the metadata of this block
@@ -65,9 +66,10 @@ struct Ealan::Memory::Block
         return __atomic_compare_exchange_n(&_superblock, &expect, sb, false, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
     }
 
-    void free() {
-        __atomic_store_n(&_superblock, nullptr, __ATOMIC_RELEASE);
-    }
+	void free() { __atomic_store_n(&_superblock, nullptr, __ATOMIC_RELEASE); }
+
+	void next(Block *ptr) { _next = ptr; }
+	Block* next() { return _next; }
 };
 
 /**
@@ -84,42 +86,62 @@ template <int SIZE, unsigned BASE>
 class Ealan::Memory::Superblock : public Hyperblock
 {
     private:
-        Genode::size_t _size_class;
-        alignas(64) Genode::addr_t _start{0}; /* Start address of the blocks */
+
+		Genode::size_t _size_class;
+        alignas(64) Ealan::util::Lifo_queue<Block> _blocks{};
+		alignas(64) Genode::addr_t _start{0}; /* Start address of the blocks */
 
     public:
         Superblock(Genode::size_t sz) : _size_class(sz)
         {
             if (_size_class > SIZE) {
                 Genode::error("Size class ", _size_class, " is bigger than superblock size ", SIZE);
-            }
-            Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
+			}
+            /*Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
             Genode::log("Block metadata size is ", sizeof(Block));
             Genode::log("Size class of superblock is ", _size_class);
-            Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE);
-            Genode::log("Superblock ends at ", end);
+            Genode::log("Superblock ends at ", reinterpret_cast<void*>(_end));
             Genode::log("Capacity is ", capacity());
-            Genode::log("-------------------");
-        }
+            Genode::log("-------------------");*/
+
+			Genode::addr_t end = reinterpret_cast<Genode::addr_t>(this) + SIZE - sizeof(Block) - _size_class;
+			for (Genode::addr_t block = reinterpret_cast<Genode::addr_t>(&_start); block < end; block += sizeof(Block) + _size_class) {
+				Block *b = reinterpret_cast<Block *>(block);
+				b->_superblock = this;
+				_blocks.enqueue(b);
+			}
+		}
 
         /**
          * @brief Allocate a block of SIZE-8 bytes from this superblock
          * 
          * @return void* - pointer to the allocated block
          */
-        void *alloc() {
-            Block *block = reinterpret_cast<Block *>(&_start);
+		void *alloc()
+		{
+			Block *block = _blocks.dequeue();
+			if (block)
+                return reinterpret_cast<Block*>(reinterpret_cast<Genode::addr_t>(block)+64);
+			/*if (block != nullptr) {
+				if (block->reserve(this)) {
+					__atomic_compare_exchange_n(&last_freed_block, &block, nullptr, false,
+					                            __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+					return reinterpret_cast<void*>(reinterpret_cast<Genode::addr_t>(block)+64);
+				}
+			}
+
+			Block *block = reinterpret_cast<Block *>(&_start);
             Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE - 64);
             while (block < end) {
-                if (block->_superblock == nullptr) {
-                    if (block->reserve(this))
-                    {
-                        return reinterpret_cast<void*>(reinterpret_cast<Genode::addr_t>(block)+64);
-                    }
-                }
                 Genode::addr_t next = reinterpret_cast<Genode::addr_t>(block) + sizeof(Block) + _size_class;
-                block = reinterpret_cast<Block *>(next);
-            }
+                if (block->_superblock == nullptr) {
+					if (block->reserve(this)) {
+						return reinterpret_cast<void *>(reinterpret_cast<Genode::addr_t>(block) +
+						                                64);
+					}
+				}
+				block = reinterpret_cast<Block *>(next);
+			}*/
             return nullptr;
         }
 
@@ -159,9 +181,8 @@ class Ealan::Memory::Superblock : public Hyperblock
             Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE);
             if (b > --end)
                 return;
-
-            b->free();
-        }
+			_blocks.enqueue(b);
+		}
 
         /**
          * @brief Return the address of the first memory block in this superblock

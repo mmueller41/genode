@@ -12,7 +12,7 @@
 #define __INCLUDE__EALANOS__MEMORY__COREHEAP_H_
 
 #include <ealanos/memory/superblock.h>
-#include <ealanos/util/mpsc_queue.h>
+#include <ealanos/util/lifo_queue.h>
 #include <tukija/syscall-generic.h>
 #include <base/attached_ram_dataspace.h>
 #include <pd_session/pd_session.h>
@@ -37,7 +37,7 @@ class Ealan::Memory::Core_heap
         static constexpr const Genode::size_t num_size_classes = MAX / MIN;
         static constexpr const unsigned num_numa_domains = 64;
         static constexpr const unsigned long magic_num = 0xdeadbeefUL;
-        Ealan::util::MPSCQueue<Sb> _superblocks[num_size_classes][num_numa_domains];
+        alignas(64) Ealan::util::Lifo_queue<Sb> _superblocks[num_size_classes][num_numa_domains];
         Pd_session &_pd;
         Region_map &_rm;
         Tip *_tip{const_cast<Tip *>(Tip::tip())};
@@ -91,7 +91,8 @@ class Ealan::Memory::Core_heap
 
         Sb *_allocate_superblock(unsigned domain_id, Genode::size_t sz_class)
         {
-            Hyperblock *hb = _allocate_hyperblock(domain_id, MAX * 2);
+			Hyperblock *hb = _allocate_hyperblock(domain_id, MAX * 2);
+			Genode::log("Need new superblock for sizeclass ", sz_class, " in domain ", domain_id);
             if (!hb) {
                 Genode::warning("Failed to allocate superblock for size class ", sz_class, " in domain ", domain_id);
                 return nullptr;
@@ -111,7 +112,7 @@ class Ealan::Memory::Core_heap
             for (size_t sz_class = 0; sz_class < num_size_classes; sz_class++) {
                 for (unsigned domain_id = 0; domain_id < num_numa_domains; domain_id++) {
                     Sb *sb;
-                    while ((sb = _superblocks[sz_class][domain_id].pop_front()) != nullptr)
+                    while ((sb = _superblocks[sz_class][domain_id].dequeue()) != nullptr)
                     {
                         Ram_dataspace_capability cap = sb->cap;
                         _rm.detach(reinterpret_cast<addr_t>(sb));
@@ -141,11 +142,14 @@ class Ealan::Memory::Core_heap
             Genode::size_t sz_class = _calculate_size_class(size+alignment);
             Sb *sb = _superblocks[sz_class / MIN - 1][domain_id].head();
 
-            if (!sb) {
+			//if (size == 128)
+			  //  Genode::log("Allocating task object from superblock ", sb, " sz_class=", sz_class, " node_id = ", domain_id);
+
+			if (!sb) {
                 sb = _allocate_superblock(domain_id, sz_class);
                 if (!sb)
                     return nullptr;
-                _superblocks[sz_class / MIN - 1][domain_id].push_back(sb);
+                _superblocks[sz_class / MIN - 1][domain_id].enqueue(sb);
             } 
             
             for (; sb != nullptr ; sb = static_cast<Sb*>(sb->next())) {
@@ -158,7 +162,7 @@ class Ealan::Memory::Core_heap
                 sb = _allocate_superblock(domain_id, sz_class);
                 if (!sb)
                     return nullptr;
-                _superblocks[sz_class / MIN - 1][domain_id].push_back(sb);
+                _superblocks[sz_class / MIN - 1][domain_id].enqueue(sb);
                 return sb->aligned_alloc(alignment);
             }
 
@@ -209,7 +213,7 @@ class Ealan::Memory::Core_heap
             }
             Sb *sb = static_cast<Sb*>(b->_superblock);
             if (!sb) {
-                Genode::warning("Corrupt or invalid memory block.");
+                Genode::warning("Corrupt or invalid memory block: ", p);
                 return;
             }
             sb->free(p);
@@ -219,7 +223,7 @@ class Ealan::Memory::Core_heap
         {
             for (size_t i = 0; i < count; i++) {
                 Sb *sb = _allocate_superblock(domain_id, sz_class);
-                _superblocks[sz_class / MIN - 1][domain_id].push_back(sb);
+                _superblocks[sz_class / MIN - 1][domain_id].enqueue(sb);
             }
         }
 };

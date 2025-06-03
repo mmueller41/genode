@@ -11,6 +11,7 @@
 #ifndef __INCLUDE__EALANOS__MEMORY__HAMSTRAAJA_H_
 #define __INCLUDE__EALANOS__MEMORY__HAMSTRAAJA_H_
 
+#include "base/log.h"
 #include <ealanos/memory/coreheap.h>
 #include <tukija/syscall-generic.h>
 #include <base/affinity.h>
@@ -41,7 +42,7 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         size_t _quota_used{0};
 
         Heap &_location_to_heap(Affinity::Location loc) const
-        {
+		{
             size_t pos = loc.xpos() * loc.height() + loc.ypos();
             if (!_core_heaps[pos]) {
                 Genode::error("No heap for location ", loc);
@@ -61,10 +62,11 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         Hamstraaja(Genode::Pd_session &pd, Genode::Region_map &rm) : _pd(pd), _rm(rm) 
         {
             size_t num_cpus = Cip::cip()->habitat_affinity.total();
-            for (size_t cpu = 0; cpu < num_cpus; cpu++) {
+			for (size_t cpu = 0; cpu < num_cpus; cpu++) {
                 _core_heaps[cpu] = new (_backend) Core_heap<MIN, MAX>(_pd, _rm);
 			}
 			Genode::log("Hamstraaja initialized");
+			Genode::log("Size of CoreHeap is ", sizeof(Heap));
         }
 
         ~Hamstraaja() 
@@ -87,9 +89,14 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         {
             _quota_used += overhead(size) + size;
             return _location_to_heap(_my_location()).aligned_alloc(size, domain_id, alignment);
-        }
+		}
 
-        /**
+		void *aligned_alloc(size_t size, size_t alignment)
+		{
+            return _location_to_heap(_my_location()).aligned_alloc(size, alignment);
+		}
+
+		/**
          * @brief Allocate a chunk of memory from a NUMA domain without alignment
          * 
          * @param size - amount of memory to allocate
@@ -99,6 +106,8 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         void *alloc(size_t size, unsigned domain_id)
         {
 			_quota_used += overhead(size) + size;
+			//if (size == 128)
+            //    Genode::log("Allocate task on core ", _my_location(), " for Node ", domain_id);
             return _location_to_heap(_my_location()).aligned_alloc(size, domain_id, 0);
         }
 
@@ -111,8 +120,13 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         void *alloc(size_t size) 
         {
             _quota_used += overhead(size) + size;
-            return _location_to_heap(_my_location()).alloc(size);
-        }
+			void *ptr    = _location_to_heap(_my_location()).aligned_alloc(size, 0);
+			if (ptr >= reinterpret_cast<void *>(0x7FFF80000000UL)) {
+				Genode::error("Hamstraaja returned non-canonical address");
+				return nullptr;
+			}
+			return ptr;
+		}
 
         /**
          * @brief Free a chunk of memory
@@ -147,6 +161,12 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
         {
             _location_to_heap(loc).reserve_superblocks(count, domain_id, sz_class);
         }
+
+		Genode::size_t size_class(Genode::size_t size) const
+        {
+            return (size / MIN + 1) * MIN;
+        }
+
 		
         /*************************
 		 ** Allocator interface **
@@ -154,13 +174,10 @@ class Ealan::Memory::Hamstraaja : public Genode::Allocator
 
 		Alloc_result try_alloc(size_t size)          override
         {
-            void *ptr = nullptr;
-            if ((ptr = alloc(size)) != nullptr)
-            {
+			void *ptr = nullptr;
+			if ((ptr = alloc(size)) != nullptr) {
                 return Alloc_result(ptr);
-            }
-            else
-            {
+            } else {
                 return Alloc_result(Alloc_error::OUT_OF_RAM);
             }
         }
