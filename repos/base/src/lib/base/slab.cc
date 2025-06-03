@@ -14,6 +14,7 @@
 #include <base/slab.h>
 #include <util/construct_at.h>
 #include <util/misc_math.h>
+#include <os/backtrace.h>
 
 using namespace Genode;
 
@@ -425,6 +426,7 @@ void Slab::_free(void *addr)
 
 	if (!e->used()) {
 		error("slab address ", addr, " freed which is unused");
+		Genode::backtrace();
 		return;
 	}
 

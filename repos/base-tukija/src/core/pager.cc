@@ -15,6 +15,7 @@
 
 /* Genode includes */
 #include <rm_session/rm_session.h>
+#include <os/backtrace.h>
 
 /* base-internal includes */
 #include <base/internal/native_thread.h>
@@ -102,18 +103,29 @@ struct Page_fault_info
 
 	void print(Genode::Output &out) const
 	{
-		Genode::print(out, "pd='",     pd,      "' "
-		                   "thread='", thread,  "' "
-		                   "cpu=",     cpu,     " "
-		                   "ip=",      Hex(ip), " "
-		                   "address=", Hex(addr), " "
-		                   "stack pointer=", Hex(sp), " "
-		                   "qualifiers=", Hex(pf_type), " ",
-		                   pf_type & Ipc_pager::ERR_I ? "I" : "i",
-		                   pf_type & Ipc_pager::ERR_R ? "R" : "r",
-		                   pf_type & Ipc_pager::ERR_U ? "U" : "u",
-		                   pf_type & Ipc_pager::ERR_W ? "W" : "w",
-		                   pf_type & Ipc_pager::ERR_P ? "P" : "p");
+		Genode::print(
+			out, "pd='", pd,
+			"' "
+			"thread='",
+			thread,
+			"' "
+			"cpu=",
+			cpu,
+			" "
+			"ip=",
+			Hex(ip),
+			" "
+			"address=",
+			Hex(addr),
+			" "
+			"stack pointer=",
+			Hex(sp),
+			" "
+			"qualifiers=",
+			Hex(pf_type), " ", pf_type & Ipc_pager::ERR_I ? "I" : "i",
+			pf_type & Ipc_pager::ERR_R ? "R" : "r", pf_type & Ipc_pager::ERR_U ? "U" : "u",
+			pf_type & Ipc_pager::ERR_W ? "W" : "w", pf_type & Ipc_pager::ERR_P ? "P" : "p");
+		Genode::backtrace();
 	}
 };
 
@@ -236,6 +248,8 @@ void Pager_object::exception(uint8_t exit_id)
 		        res == 0xFF ? "no signal handler"
 		                    : (res == NOVA_OK ? "" : "recall failed"));
 
+		Genode::backtrace();
+		
 		Tukija::revoke(Obj_crd(exc_pt_sel_client(), NUM_INITIAL_PT_LOG2));
 
 		enum { TRAP_BREAKPOINT = 3 };

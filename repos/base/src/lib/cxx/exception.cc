@@ -23,6 +23,8 @@
 /* base-internal includes */
 #include <base/internal/globals.h>
 
+#include <os/backtrace.h>
+
 extern "C" char __eh_frame_start__[];                  /* from linker script */
 extern "C" void __register_frame (const void *begin);  /* from libgcc_eh     */
 extern "C" char *__cxa_demangle(const char *mangled_name,
@@ -63,9 +65,12 @@ static void terminate_handler()
 		Genode::error("Uncaught exception of type "
 		              "'", Genode::Cstring(demangled_name), "'");
 		free(demangled_name);
+		Genode::backtrace();
 	} else {
-		Genode::error("Uncaught exception of type '", t->name(), "' "
+		Genode::error("Uncaught exception of type '", t->name(),
+		              "' "
 		              "(use 'c++filt -t' to demangle)");
+		Genode::backtrace();
 	}
 }
 
