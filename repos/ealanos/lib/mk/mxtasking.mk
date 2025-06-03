@@ -16,6 +16,7 @@ CUSTOM_CC = /usr/local/genode/tool/bin/clang
 CUSTOM_CXX_LIB := $(CROSS_DEV_PREFIX)g++
 CUSTOM_LD := $(CROSS_DEV_PREFIX)/g++
 
+CC_OPT += -DNDEBUG
 CC_OPT += --target=x86_64-genode --sysroot=/does/not/exist --gcc-toolchain=$(GENODE_GCC_TOOLCHAIN_DIR) -DCLANG_CXX11_ATOMICS 
 CC_OPT += -std=c++20 -pedantic -femulated-tls -Wall \
  -Wno-invalid-offsetof -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization \
