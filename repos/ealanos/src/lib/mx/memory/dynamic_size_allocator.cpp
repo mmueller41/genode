@@ -1,20 +1,16 @@
 #include "dynamic_size_allocator.h"
-#include "ealanos/memory/hamstraaja.h"
 #include "global_heap.h"
 #include <algorithm>
 #include <cassert>
-#include <mx/system/cpu.h>
+#include <mx/system/topology.h>
+
 
 using namespace mx::memory::dynamic;
-
-Ealan::Memory::Hamstraaja<mx::memory::config::min_block_size(), mx::memory::config::superblock_cutoff()> *mx::memory::GlobalHeap::_heap;
-
 AllocationBlock::AllocationBlock(const std::uint32_t id, const std::uint8_t numa_node_id, const std::size_t size)
     : _id(id), _numa_node_id(numa_node_id), _size(size), _available_size(size)
 {
     this->_allocated_block = GlobalHeap::allocate(numa_node_id, size);
     this->_free_elements.emplace_back(FreeHeader{reinterpret_cast<std::uintptr_t>(this->_allocated_block), size});
-    this->_lock.unlock();
 }
 
 AllocationBlock::AllocationBlock(AllocationBlock &&other) noexcept
@@ -22,7 +18,6 @@ AllocationBlock::AllocationBlock(AllocationBlock &&other) noexcept
       _allocated_block(std::exchange(other._allocated_block, nullptr)), _free_elements(std::move(other._free_elements)),
       _available_size(other._available_size)
 {
-    this->_lock.unlock();
 }
 
 AllocationBlock &AllocationBlock::operator=(AllocationBlock &&other) noexcept
@@ -33,7 +28,6 @@ AllocationBlock &AllocationBlock::operator=(AllocationBlock &&other) noexcept
     this->_allocated_block = std::exchange(other._allocated_block, nullptr);
     this->_free_elements = std::move(other._free_elements);
     this->_available_size = other._available_size;
-    this->_lock.unlock();
     return *this;
 }
 
@@ -41,7 +35,7 @@ AllocationBlock::~AllocationBlock()
 {
     if (this->_allocated_block != nullptr)
     {
-        GlobalHeap::free(this->_allocated_block, this->_size, this->_numa_node_id);
+        GlobalHeap::free(this->_allocated_block);
     }
 }
 
@@ -56,31 +50,29 @@ void *AllocationBlock::allocate(const std::size_t alignment, const std::size_t s
         return nullptr;
     }
 
-    const auto block = this->find_block(alignment, size);
-    if (block.has_value() == false)
+    auto [free_element_iterator, aligned_size_including_header] = this->find_block(alignment, size);
+    if (free_element_iterator == this->_free_elements.end())
     {
         this->_lock.unlock();
         return nullptr;
     }
 
-    const auto [free_block_index, aligned_size_including_header] = block.value();
-    auto &free_block = this->_free_elements[free_block_index];
+    const auto free_block_start = free_element_iterator->start();
+    const auto free_block_end = free_block_start + free_element_iterator->size();
+    const auto remaining_size = free_element_iterator->size() - aligned_size_including_header;
 
-    const auto free_block_start = free_block.start();
-    const auto free_block_end = free_block_start + free_block.size();
-    const auto remaining_size = free_block.size() - aligned_size_including_header;
-
-    auto size_before_header = std::uint16_t{0U};
+    std::uint16_t size_before_header{0U};
     if (remaining_size >= 256U)
     {
-        free_block.contract(aligned_size_including_header);
+        const auto index = std::distance(this->_free_elements.begin(), free_element_iterator);
+        this->_free_elements[index].contract(aligned_size_including_header);
         this->_available_size -= aligned_size_including_header;
     }
     else
     {
         size_before_header = remaining_size;
-        this->_available_size -= free_block.size();
-        this->_free_elements.erase(this->_free_elements.begin() + free_block_index);
+        this->_free_elements.erase(free_element_iterator);
+        this->_available_size -= free_element_iterator->size();
     }
     this->_lock.unlock();
 
@@ -115,7 +107,7 @@ void AllocationBlock::free(AllocatedHeader *allocation_header) noexcept
         assert(index >= 0 && "Index is negative");
         const auto real_index = std::size_t(index);
 
-        // Try to merge to the right.
+        // Try merge to the right.
         if (real_index < this->_free_elements.size() && free_element.borders(this->_free_elements[real_index]))
         {
             this->_free_elements[real_index].merge(free_element);
@@ -145,8 +137,8 @@ void AllocationBlock::free(AllocatedHeader *allocation_header) noexcept
     this->_lock.unlock();
 }
 
-std::optional<std::pair<std::size_t, std::size_t>> AllocationBlock::find_block(const std::size_t alignment,
-                                                                               const std::size_t size) const noexcept
+std::pair<std::vector<FreeHeader>::iterator, std::size_t> AllocationBlock::find_block(const std::size_t alignment,
+                                                                                      const std::size_t size) noexcept
 {
     /**
      * Check each block of the free list for enough space to include the wanted space.
@@ -165,9 +157,9 @@ std::optional<std::pair<std::size_t, std::size_t>> AllocationBlock::find_block(c
 
     const auto size_including_header = size + sizeof(AllocatedHeader);
 
-    for (auto index = 0U; index < this->_free_elements.size(); ++index)
+    for (auto iterator = this->_free_elements.begin(); iterator != this->_free_elements.end(); iterator++)
     {
-        const auto &free_element = this->_free_elements[index];
+        const auto &free_element = *iterator;
         if (free_element >= size_including_header)
         {
             const auto start = free_element.start();
@@ -188,12 +180,12 @@ std::optional<std::pair<std::size_t, std::size_t>> AllocationBlock::find_block(c
             if (free_element >= aligned_size_including_header)
             {
                 // aligned_size_including_header
-                return std::make_optional(std::make_pair(index, aligned_size_including_header));
+                return std::make_pair(iterator, aligned_size_including_header);
             }
         }
     }
 
-    return std::nullopt;
+    return std::make_pair(this->_free_elements.end(), 0U);
 }
 
 Allocator::Allocator()
@@ -209,7 +201,7 @@ void *Allocator::allocate(const std::uint8_t numa_node_id, const std::size_t ali
     if (memory == nullptr)
     {
         // This will be allocated default...
-        constexpr auto default_alloc_size = std::size_t(1ULL << 28U);
+        constexpr auto default_alloc_size = 1UL << 28U;
 
         // ... but if the requested size is higher, allocate more.
         const auto size_to_alloc = std::max(default_alloc_size, alignment_helper::next_multiple(size, 64UL));
@@ -279,7 +271,7 @@ void Allocator::free(void *pointer) noexcept
 void Allocator::defragment() noexcept
 {
     // Remove all blocks that are unused to free as much memory as possible.
-    for (auto i = 0U; i <= system::cpu::max_node_id(); ++i)
+    for (auto i = 0U; i <= system::topology::max_node_id(); ++i)
     {
         auto &numa_blocks = this->_numa_allocation_blocks[i];
         numa_blocks.erase(
@@ -295,7 +287,7 @@ void Allocator::initialize_empty()
 {
     // For performance reasons: Each list must contain at least
     // one block. This way, we do not have to check every time.
-    for (auto i = 0U; i <= system::cpu::max_node_id(); ++i)
+    for (auto i = 0U; i <= system::topology::max_node_id(); ++i)
     {
         auto &blocks = this->_numa_allocation_blocks[i];
         if (blocks.empty())
@@ -308,7 +300,7 @@ void Allocator::initialize_empty()
 
 bool Allocator::is_free() const noexcept
 {
-    for (auto i = 0U; i <= system::cpu::max_node_id(); ++i)
+    for (auto i = 0U; i <= system::topology::max_node_id(); ++i)
     {
         const auto &numa_blocks = this->_numa_allocation_blocks[i];
         const auto iterator = std::find_if(numa_blocks.cbegin(), numa_blocks.cend(), [](const auto &allocation_block) {
@@ -326,7 +318,7 @@ bool Allocator::is_free() const noexcept
 
 void Allocator::release_allocated_memory() noexcept
 {
-    for (auto i = 0U; i <= system::cpu::max_node_id(); ++i)
+    for (auto i = 0U; i <= system::topology::max_node_id(); ++i)
     {
         this->_numa_allocation_blocks[i].clear();
         this->_next_allocation_id[i].value().store(0U);

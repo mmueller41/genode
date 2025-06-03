@@ -167,12 +167,10 @@ class RWSpinLock
     };
 
 public:
-    constexpr RWSpinLock() noexcept = default;
+    constexpr RWSpinLock() : bits_(0) {}
 
     RWSpinLock(RWSpinLock const &) = delete;
     RWSpinLock &operator=(RWSpinLock const &) = delete;
-
-    void initialize() { _bits = 0; }
 
     // Lockable Concept
     void lock() noexcept
@@ -187,7 +185,7 @@ public:
     void unlock() noexcept
     {
         static_assert(READER > WRITER + UPGRADED, "wrong bits!");
-        __atomic_fetch_and(&_bits, ~(WRITER | UPGRADED), __ATOMIC_RELEASE);
+        bits_.fetch_and(~(WRITER | UPGRADED), std::memory_order_release);
     }
 
     // SharedLockable Concept
@@ -199,12 +197,12 @@ public:
         }
     }
 
-    void unlock_shared() noexcept { __atomic_fetch_add(&_bits, -READER, __ATOMIC_RELEASE); }
+    void unlock_shared() noexcept { bits_.fetch_add(-READER, std::memory_order_release); }
 
     // Downgrade the lock from writer status to reader status.
     void unlock_and_lock_shared() noexcept
     {
-        __atomic_fetch_add(&_bits, READER, __ATOMIC_ACQUIRE);
+        bits_.fetch_add(READER, std::memory_order_acquire);
         unlock();
     }
 
@@ -217,7 +215,7 @@ public:
         }
     }
 
-    void unlock_upgrade() noexcept { __atomic_fetch_add(&_bits, -UPGRADED, __ATOMIC_ACQ_REL); }
+    void unlock_upgrade() noexcept { bits_.fetch_add(-UPGRADED, std::memory_order_acq_rel); }
 
     // unlock upgrade and try to acquire write lock
     void unlock_upgrade_and_lock() noexcept
@@ -229,22 +227,22 @@ public:
     }
 
     // unlock upgrade and read lock atomically
-    void unlock_upgrade_and_lock_shared() noexcept { __atomic_fetch_add(&_bits, READER - UPGRADED, __ATOMIC_ACQ_REL); }
+    void unlock_upgrade_and_lock_shared() noexcept { bits_.fetch_add(READER - UPGRADED, std::memory_order_acq_rel); }
 
     // write unlock and upgrade lock atomically
     void unlock_and_lock_upgrade() noexcept
     {
         // need to do it in two steps here -- as the UPGRADED bit might be OR-ed at
         // the same time when other threads are trying do try_lock_upgrade().
-        __atomic_fetch_or(&_bits, UPGRADED, __ATOMIC_ACQUIRE);
-        __atomic_fetch_add(&_bits, -WRITER, __ATOMIC_RELEASE);
+        bits_.fetch_or(UPGRADED, std::memory_order_acquire);
+        bits_.fetch_add(-WRITER, std::memory_order_release);
     }
 
     // Attempt to acquire writer permission. Return false if we didn't get it.
     bool try_lock() noexcept
     {
-        auto expect = std::int32_t{0};
-        return __atomic_compare_exchange_n(&_bits, &expect, WRITER, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL);
+        int32_t expect = 0;
+        return bits_.compare_exchange_strong(expect, WRITER, std::memory_order_acq_rel);
     }
 
     // Try to get reader permission on the lock. This can fail if we
@@ -257,10 +255,10 @@ public:
     {
         // fetch_add is considerably (100%) faster than compare_exchange,
         // so here we are optimizing for the common (lock success) case.
-        const auto value = __atomic_fetch_add(&_bits, READER, __ATOMIC_ACQUIRE);
-        if (static_cast<bool>(value & (WRITER | UPGRADED)))
+        int32_t value = bits_.fetch_add(READER, std::memory_order_acquire);
+        if (value & (WRITER | UPGRADED))
         {
-            __atomic_fetch_add(&_bits, -READER, __ATOMIC_RELEASE);
+            bits_.fetch_add(-READER, std::memory_order_release);
             return false;
         }
         return true;
@@ -269,14 +267,14 @@ public:
     // try to unlock upgrade and write lock atomically
     bool try_unlock_upgrade_and_lock() noexcept
     {
-        auto expect = std::int32_t{UPGRADED};
-        return __atomic_compare_exchange_n(&_bits, &expect, WRITER, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQ_REL);
+        int32_t expect = UPGRADED;
+        return bits_.compare_exchange_strong(expect, WRITER, std::memory_order_acq_rel);
     }
 
     // try to acquire an upgradable lock.
     bool try_lock_upgrade() noexcept
     {
-        const auto value = __atomic_fetch_or(&_bits, UPGRADED, __ATOMIC_ACQUIRE);
+        int32_t value = bits_.fetch_or(UPGRADED, std::memory_order_acquire);
 
         // Note: when failed, we cannot flip the UPGRADED bit back,
         // as in this case there is either another upgrade lock or a write lock.
@@ -286,9 +284,9 @@ public:
     }
 
     // mainly for debugging purposes.
-    [[nodiscard]] int32_t bits() const noexcept { return __atomic_load_n(&_bits, __ATOMIC_ACQUIRE); }
+    [[nodiscard]] int32_t bits() const noexcept { return bits_.load(std::memory_order_acquire); }
 
 private:
-    std::int32_t _bits;
+    std::atomic<int32_t> bits_;
 };
 } // namespace mx::synchronization

@@ -6,8 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mx/memory/config.h>
-#include <mx/memory/worker_local_dynamic_size_allocator.h>
-#include <mx/queue/mpsc.h>
+#include <mx/memory/dynamic_size_allocator.h>
 #include <mx/resource/resource_interface.h>
 #include <mx/system/builtin.h>
 #include <mx/tasking/config.h>
@@ -15,6 +14,7 @@
 #include <mx/util/aligned_t.h>
 #include <mx/util/core_set.h>
 #include <mx/util/maybe_atomic.h>
+#include <mx/util/mpsc_queue.h>
 #include <thread>
 
 namespace mx::memory::reclamation {
@@ -58,7 +58,7 @@ private:
 class EpochManager
 {
 public:
-    EpochManager(const std::uint16_t count_channels, dynamic::local::Allocator &allocator,
+    EpochManager(const std::uint16_t count_channels, dynamic::Allocator &allocator,
                  util::maybe_atomic<bool> &is_running) noexcept
         : _count_channels(count_channels), _is_running(is_running), _allocator(allocator)
     {
@@ -68,7 +68,7 @@ public:
 
     ~EpochManager() = default;
 
-    LocalEpoch &operator[](const std::uint16_t worker_id) noexcept { return _local_epochs[worker_id]; }
+    LocalEpoch &operator[](const std::uint16_t channel_id) noexcept { return _local_epochs[channel_id]; }
 
     /**
      * @return Access to read to global epoch.
@@ -81,9 +81,9 @@ public:
     [[nodiscard]] epoch_t min_local_epoch() const noexcept
     {
         auto min_epoch = _local_epochs[0U]();
-        for (auto worker_id = 1U; worker_id < _count_channels; ++worker_id)
+        for (auto channel_id = 1U; channel_id < _count_channels; ++channel_id)
         {
-            min_epoch = std::min(min_epoch, _local_epochs[worker_id]());
+            min_epoch = std::min(min_epoch, _local_epochs[channel_id]());
         }
 
         return min_epoch;
@@ -94,13 +94,13 @@ public:
      * @param resource Resource to logically delete.
      */
     void add_to_garbage_collection(resource::ResourceInterface *resource,
-                                   [[maybe_unused]] const std::uint16_t owning_worker_id) noexcept
+                                   [[maybe_unused]] const std::uint16_t owning_channel_id) noexcept
     {
-        resource->remove_epoch(_global_epoch.load());
+        resource->remove_epoch(_global_epoch.load(std::memory_order_acq_rel));
 
         if constexpr (config::local_garbage_collection())
         {
-            _local_garbage_queues[owning_worker_id].value().push_back(resource);
+            _local_garbage_queues[owning_channel_id].value().push_back(resource);
         }
         else
         {
@@ -113,6 +113,11 @@ public:
      */
     void enter_epoch_periodically();
 
+    static void *enter(void *args) { EpochManager *mgr = static_cast<EpochManager *>(args);
+        mgr->enter_epoch_periodically();
+        return nullptr;
+    }
+
     /**
      * Reclaims all garbage, mainly right before shut down tasking.
      */
@@ -121,12 +126,12 @@ public:
     /**
      * Grants access to the local garbage queue of a specific channel.
      *
-     * @param worker_id Channel Id.
+     * @param channel_id Channel Id.
      * @return Local garbage queue.
      */
-    [[nodiscard]] queue::MPSC<resource::ResourceInterface> &local_garbage(const std::uint16_t worker_id) noexcept
+    [[nodiscard]] util::MPSCQueue<resource::ResourceInterface> &local_garbage(const std::uint16_t channel_id) noexcept
     {
-        return _local_garbage_queues[worker_id].value();
+        return _local_garbage_queues[channel_id].value();
     }
 
     /**
@@ -143,7 +148,7 @@ private:
     util::maybe_atomic<bool> &_is_running;
 
     // Allocator to free collected resources.
-    dynamic::local::Allocator &_allocator;
+    dynamic::Allocator &_allocator;
 
     // Global epoch, incremented periodically.
     std::atomic<epoch_t> _global_epoch{0U};
@@ -152,11 +157,11 @@ private:
     alignas(64) std::array<LocalEpoch, tasking::config::max_cores()> _local_epochs;
 
     // Queue that holds all logically deleted objects in a global space.
-    alignas(64) queue::MPSC<resource::ResourceInterface> _global_garbage_queue;
+    alignas(64) util::MPSCQueue<resource::ResourceInterface> _global_garbage_queue;
 
     // Queues for every worker thread. Logically deleted objects are stored here
     // whenever local garbage collection is used.
-    alignas(64) std::array<util::aligned_t<queue::MPSC<resource::ResourceInterface>>,
+    alignas(64) std::array<util::aligned_t<util::MPSCQueue<resource::ResourceInterface>>,
                            tasking::config::max_cores()> _local_garbage_queues;
 
     /**
@@ -168,16 +173,16 @@ private:
 class ReclaimEpochGarbageTask final : public tasking::TaskInterface
 {
 public:
-    constexpr ReclaimEpochGarbageTask(EpochManager &epoch_manager, dynamic::local::Allocator &allocator) noexcept
+    constexpr ReclaimEpochGarbageTask(EpochManager &epoch_manager, dynamic::Allocator &allocator) noexcept
         : _epoch_manager(epoch_manager), _allocator(allocator)
     {
     }
     ~ReclaimEpochGarbageTask() noexcept override = default;
 
-    tasking::TaskResult execute(std::uint16_t worker_id) override;
+    tasking::TaskResult execute(std::uint16_t core_id, std::uint16_t channel_id) override;
 
 private:
     EpochManager &_epoch_manager;
-    dynamic::local::Allocator &_allocator;
+    dynamic::Allocator &_allocator;
 };
 } // namespace mx::memory::reclamation

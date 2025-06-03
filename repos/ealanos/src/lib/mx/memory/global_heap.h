@@ -1,29 +1,30 @@
 #pragma once
 #include "alignment_helper.h"
-#include "config.h"
-#include "ealanos/util/json.hpp"
 #include <cstdint>
 #include <cstdlib>
-#include <mx/system/cache.h>
+#include <array>
+#include <cstring>
+
 #include <ealanos/memory/hamstraaja.h>
 
+#include <mx/system/topology.h>
+#include <mx/system/environment.h>
+#include <mx/memory/config.h>
+
+#include <base/log.h>
+
 namespace mx::memory {
+    using Alloc = Ealan::Memory::Hamstraaja<mx::memory::config::block_size(), mx::memory::config::hyperblock_cutoff()>;
 /**
  * The global heap represents the heap, provided by the OS.
  */
 class GlobalHeap
 {
+
 public:
 
-	static Ealan::Memory::Hamstraaja<config::min_block_size(), config::superblock_cutoff()> *_heap;
+    alignas(64) static Ealan::Memory::Hamstraaja<config::block_size(), config::hyperblock_cutoff()> *_alloc;
 
-	static bool initialized() { return _heap != nullptr; }
-	
-	static void init(
-		Ealan::Memory::Hamstraaja<config::min_block_size(), config::superblock_cutoff()> *_alloc)
-	{
-        _heap = _alloc;
-	}
 
     /**
      * Allocates the given size on the given NUMA node.
@@ -34,9 +35,8 @@ public:
      */
     static void *allocate(const std::uint8_t numa_node_id, const std::size_t size)
     {
-		void *ptr = _heap->alloc(size, numa_node_id); // numa_alloc_onnode(size, numa_node_id);
-		return ptr;
-    }
+        return _alloc->alloc(size, numa_node_id);
+	}
 
     /**
      * Allocates the given memory aligned to the cache line
@@ -47,8 +47,9 @@ public:
      */
     static void *allocate_cache_line_aligned(const std::size_t size)
     {
-        return _heap->alloc(alignment_helper::next_multiple(size, 64UL));//std::aligned_alloc(mx::system::cache::line_size(), alignment_helper::next_multiple(size, 64UL));
+        return _alloc->alloc(size);
     }
+
 
     /**
      * Frees the given memory.
@@ -56,6 +57,8 @@ public:
      * @param memory Pointer to memory.
      * @param size Size of the allocated object.
      */
-    static void free(void *memory, const std::size_t size, [[maybe_unused]] const std::uint8_t numa_node_id) { _heap->free(memory); }
+    static void free(void *memory)  { _alloc->free(memory); }
 };
 } // namespace mx::memory
+
+alignas(64) Ealan::Memory::Hamstraaja<mx::memory::config::block_size(), mx::memory::config::hyperblock_cutoff()> *mx::memory::GlobalHeap::_alloc;

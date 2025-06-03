@@ -1,64 +1,69 @@
 #include "core_set.h"
 #include <algorithm>
-#include <mx/system/cpu.h>
+#include <mx/system/topology.h>
 #include <mx/tasking/config.h>
 #include <numeric>
 #include <vector>
+#include <base/log.h>
 
 using namespace mx::util;
 
-core_set core_set::build(std::uint16_t count_cores, const Order order)
+core_set core_set::build(std::uint16_t cores, const Order order)
 {
-    count_cores =
-        std::min(count_cores, std::min(std::uint16_t(tasking::config::max_cores()), system::cpu::count_cores()));
+	cores = std::min(cores, std::min(std::uint16_t(tasking::config::max_cores()),
+	                                 system::topology::count_cores()));
 
-    auto set = core_set{};
+    core_set core_set;
     if (order == Ascending)
     {
-        for (auto i = 0U; i < count_cores; ++i)
+        for (auto i = 0U; i < cores; ++i)
         {
-            set.emplace_back(i);
+            core_set.emplace_back(i);
         }
     }
     else if (order == NUMAAware)
     {
-        /// List of all available core ids.
-        std::vector<std::uint16_t> numa_sorted_core_ids(system::cpu::count_cores());
+        std::vector<std::uint16_t> cores_to_sort(system::topology::count_cores());
+        std::iota(cores_to_sort.begin(), cores_to_sort.end(), 0U);
+        std::sort(cores_to_sort.begin(), cores_to_sort.end(),
+                  [](const std::uint16_t &left, const std::uint16_t &right) {
+                      const auto left_node = system::topology::node_id(left);
+                      const auto right_node = system::topology::node_id(right);
+                      if (left_node == right_node)
+                      {
+                          return left < right;
+                      }
 
-        /// Fill from 0 to N-1.
-        std::iota(numa_sorted_core_ids.begin(), numa_sorted_core_ids.end(), 0U);
-
-        /// Sort by NUMA Node IDs (lower... upper).
-        core_set::sort_by_numa(numa_sorted_core_ids);
-
-        /// Emplace the first K core ids from the by NUMA sorted list..
-        for (auto i = 0U; i < count_cores; ++i)
+                      return left_node < right_node;
+                  });
+        for (auto i = 0U; i < cores; ++i)
         {
-            set.emplace_back(numa_sorted_core_ids[i]);
+            core_set.emplace_back(cores_to_sort[i]);
         }
     }
 
-    return set;
+    return core_set;
 }
 
-void core_set::sort_by_numa(std::vector<std::uint16_t> &core_ids)
+core_set core_set::build(std::uint64_t *core_mask, std::uint16_t count)
 {
-    std::sort(core_ids.begin(), core_ids.end(), [](const std::uint16_t &left, const std::uint16_t &right) {
-        const auto left_node = system::cpu::node_id(left);
-        const auto right_node = system::cpu::node_id(right);
-        if (left_node == right_node)
-        {
-            return left < right;
-        }
+    core_set core_set;
+    for (int c = 0; c < count; ++count)
+    {
+        std::bitset<tasking::config::max_cores()> mask{core_mask[c]};
+        long core = 0;
 
-        return left_node < right_node;
-    });
+        while ((core = util::bit_scan_forward(mask.to_ulong())) != -1) {
+            mask.reset(core);
+            core_set.emplace_back(core);
+        }
+    }
 }
 
 namespace mx::util {
 std::ostream &operator<<(std::ostream &stream, const core_set &core_set)
 {
-    for (auto i = 0U; i < core_set.count_cores(); i++)
+    for (auto i = 0U; i < core_set.size(); i++)
     {
         if (i > 0U)
         {

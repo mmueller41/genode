@@ -1,7 +1,7 @@
 #include "epoch_manager.h"
-#include <mx/queue/list.h>
-#include <mx/system/cpu.h>
+#include <mx/system/topology.h>
 #include <mx/tasking/runtime.h>
+#include <mx/util/queue.h>
 #include <thread>
 
 using namespace mx::memory::reclamation;
@@ -24,13 +24,12 @@ void EpochManager::enter_epoch_periodically()
         if constexpr (config::local_garbage_collection())
         {
             // Collect local garbage.
-            // TODO: This might be buggy (even with cpu id, since threads could be interrupted within allocation)!
-            const auto core_id = mx::system::cpu::core_id();
-            for (auto worker_id = std::uint16_t(0U); worker_id < this->_count_channels; ++worker_id)
+            const auto core_id = mx::system::topology::core_id();
+            for (auto channel_id = 0U; channel_id < this->_count_channels; ++channel_id)
             {
                 auto *garbage_task =
                     mx::tasking::runtime::new_task<ReclaimEpochGarbageTask>(core_id, *this, this->_allocator);
-                garbage_task->annotate(worker_id);
+                garbage_task->annotate(std::uint16_t(channel_id));
                 mx::tasking::runtime::spawn(*garbage_task);
             }
         }
@@ -41,7 +40,7 @@ void EpochManager::enter_epoch_periodically()
         }
 
         // Wait some time until next epoch.
-        std::this_thread::sleep_until(std::chrono::system_clock::now() + config::epoch_interval());
+        std::this_thread::sleep_for(config::epoch_interval()); // NOLINT: sleep_for seems to crash clang-tidy
     }
 }
 
@@ -53,7 +52,7 @@ void EpochManager::reclaim_epoch_garbage() noexcept
 
     // Items that could not be physically removed in this epoch
     // and therefore have to be scheduled to the next one.
-    queue::List<resource::ResourceInterface> deferred_resources{};
+    util::Queue<resource::ResourceInterface> deferred_resources{};
 
     resource::ResourceInterface *resource;
     while ((resource = reinterpret_cast<resource::ResourceInterface *>(this->_global_garbage_queue.pop_front())) !=
@@ -82,11 +81,11 @@ void EpochManager::reclaim_all() noexcept
 {
     if constexpr (config::local_garbage_collection())
     {
-        for (auto worker_id = 0U; worker_id < this->_count_channels; ++worker_id)
+        for (auto channel_id = 0U; channel_id < this->_count_channels; ++channel_id)
         {
             resource::ResourceInterface *resource;
             while ((resource = reinterpret_cast<resource::ResourceInterface *>(
-                        this->_local_garbage_queues[worker_id].value().pop_front())) != nullptr)
+                        this->_local_garbage_queues[channel_id].value().pop_front())) != nullptr)
             {
                 resource->on_reclaim();
                 this->_allocator.free(static_cast<void *>(resource));
@@ -110,14 +109,15 @@ void EpochManager::reset() noexcept
     if (this->_allocator.is_free())
     {
         this->_global_epoch.store(0U);
-        for (auto worker_id = 0U; worker_id < tasking::config::max_cores(); ++worker_id)
+        for (auto channel_id = 0U; channel_id < tasking::config::max_cores(); ++channel_id)
         {
-            _local_epochs[worker_id] = std::numeric_limits<epoch_t>::max();
+            _local_epochs[channel_id] = std::numeric_limits<epoch_t>::max();
         }
     }
 }
 
-mx::tasking::TaskResult ReclaimEpochGarbageTask::execute(const std::uint16_t worker_id)
+mx::tasking::TaskResult ReclaimEpochGarbageTask::execute(const std::uint16_t /*core_id*/,
+                                                         const std::uint16_t channel_id)
 {
     // Items logically removed in an epoch leq than
     // this epoch can be removed physically.
@@ -125,10 +125,10 @@ mx::tasking::TaskResult ReclaimEpochGarbageTask::execute(const std::uint16_t wor
 
     // Items that could not be physically removed in this epoch
     // and therefore have to be scheduled to the next one.
-    queue::List<resource::ResourceInterface> deferred_resources{};
+    util::Queue<resource::ResourceInterface> deferred_resources{};
 
     // Queue with channel-local garbage.
-    auto &garbage_queue = this->_epoch_manager.local_garbage(worker_id);
+    auto &garbage_queue = this->_epoch_manager.local_garbage(channel_id);
 
     resource::ResourceInterface *resource;
     while ((resource = reinterpret_cast<resource::ResourceInterface *>(garbage_queue.pop_front())) != nullptr)

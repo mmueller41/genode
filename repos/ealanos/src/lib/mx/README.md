@@ -1,33 +1,42 @@
-# MxTasking
+# How to use `MxTasking`
 
-The *MxTasking*  lib implements the task engine.
+## Build a simple _Hello World_ task
+Every task inherits from `mx::tasking::TaskInterface` and implements the `execute` method, which is called when the task gets executed by the runtime.
 
-## Structure
-### Memory
-The memory component can be found in the [memory](memory) folder. 
-It implements different memory allocators (the [fixed size allocator](memory/fixed_size_allocator.h) mainly for tasks with a static size and the [dynamic size allocator](memory/dynamic_size_allocator.h) for variable sized data objects).
-Further, epoch-based memory reclamation is implemented by the [epoch manager](memory/reclamation/epoch_manager.h).
+    #include <mx/tasking/task.h>
+    #include <iostream>
+    class HelloWorldTask : public mx::tasking::TaskInterface
+    {
+    public:
+        HelloWorldTask() = default;
+        virtual ~HelloWorldTask() = default;
+        
+        virtual TaskInterface *execute(const std::uint16_t, const std::uint16_t)
+        {
+            std::cout << "Hello world from MxTasking!" << std::endl;
+            return nullptr;
+        }
+    };
+    
+## Run the _Hello World_ task
 
-### Queue
-Different (task-) queues can be found in the [queue](queue) folder.
-It provides 
-* a [non-synchronized single-core queue](queue/list.h) (for fast core-local dispatching), 
-* a [multi-producer single-consumer queue](queue/mpsc.h) (for dispatching tasks to remote cores),
-* and a [(bound) multi-producer multi-consumer queue](queue/bound_mpmc.h) (mainly used for memory-reclamation).
-
-### Resource
-The resource component can be found in the [resource](resource) folder.
-This package encapsulates 
-* [annotations for resources](resource/annotation.h),
-* the [resource builder](resource/builder.h) which creates and schedules resources,
-* a [tagged pointer](resource/ptr.h) instance that links to resources including information (synchronization method and worker id),
-* and the [resource interface](resource/resource_interface.h) that has to be implemented by each to synchronized resource.
-
-### Synchronization
-The synchronization component can be found in the [synchronization](synchronization) folder.
-This package provides different synchronization methods ([optimistic lock](synchronization/optimistic_lock.h), [rw lock](synchronization/rw_spinlock.h), [spinlock](synchronization/spinlock.h)) and [structures to define the required synchronization level](synchronization/synchronization.h).
-
-### Tasking
-The tasking core can be found in the [tasking](tasking) folder.
-For more information see the tasking-specific [readme](tasking/README.md).
-
+    #include <mx/tasking/runtime.h>
+    
+    int main()
+    {
+        // Define which cores will be used (1 core here).
+        auto cores = mx::util::core_set::build(1);
+        
+        // Create an instance of the task with the current core as first
+        // parameter (we assume that we start at core 0).
+        auto *task = mx::tasking::runtime::new_task<HelloWorldTask>(0);
+    
+        // Create a runtime for the given cores.
+        mx::tasking::runtime_guard runtime { cores };
+        
+        // Schedule the task.
+        mx::tasking::runtime::spawn(*task);
+        
+        // Will print: "Hello world from MxTasking!"
+        return 0;
+    }

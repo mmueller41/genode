@@ -16,17 +16,13 @@ template <typename T> class reference_counter
 {
 public:
     explicit constexpr reference_counter(const std::uint16_t core_id) noexcept : _local_core_id(core_id) {}
-    constexpr reference_counter(const std::uint16_t core_id, const T counter) noexcept
-        : _local_core_id(core_id), _local_counter(counter)
-    {
-    }
 
     ~reference_counter() noexcept = default;
 
     /**
      * Increases the counter.
      * @param core_id Logical core identifier of the caller.
-     * @param count Number to increase.
+     * @param count Number of increase.
      */
     void add(const std::uint16_t core_id, const T count = 1) noexcept
     {
@@ -38,18 +34,6 @@ public:
         {
             _remote_counter.fetch_add(count, std::memory_order_relaxed);
         }
-    }
-
-    /**
-     * Increases the counter and loads the new value.
-     * @param core_id Logical core identifier of the caller.
-     * @param count Number to increase.
-     * @return New value.
-     */
-    [[nodiscard]] T add_fetch(const std::uint16_t core_id, const T count = 1) noexcept
-    {
-        add(core_id, count);
-        return load();
     }
 
     /**
@@ -67,18 +51,6 @@ public:
         {
             _remote_counter.fetch_sub(count, std::memory_order_relaxed);
         }
-    }
-
-    /**
-     * Decreases the counter and loads the new value.
-     * @param core_id Logical core identifier of the caller.
-     * @param count Number of decrease.
-     * @return New value.
-     */
-    [[nodiscard]] T sub_fetch(const std::uint16_t core_id, const T count = 1) noexcept
-    {
-        sub(core_id, count);
-        return load();
     }
 
     /**

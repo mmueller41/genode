@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <mx/synchronization/spinlock.h>
 #include <mx/util/aligned_t.h>
-#include <optional>
 #include <utility>
 #include <vector>
 
@@ -125,8 +124,8 @@ private:
     alignas(64) std::size_t _available_size;
     synchronization::Spinlock _lock;
 
-    std::optional<std::pair<std::size_t, std::size_t>> find_block(std::size_t alignment,
-                                                                  std::size_t size) const noexcept;
+    std::pair<std::vector<FreeHeader>::iterator, std::size_t> find_block(std::size_t alignment,
+                                                                         std::size_t size) noexcept;
 };
 
 /**

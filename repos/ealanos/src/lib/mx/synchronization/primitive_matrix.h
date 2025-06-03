@@ -2,15 +2,15 @@
 #include "synchronization.h"
 #include <algorithm>
 #include <cstdint>
-#include <mx/resource/ptr.h>
+#include <mx/resource/resource.h>
 
 namespace mx::synchronization {
 class PrimitiveMatrix
 {
 public:
     static primitive select_primitive(const isolation_level isolation_level,
-                                      const resource::expected_access_frequency access_frequency,
-                                      const resource::expected_read_write_ratio read_write_ratio) noexcept
+                                      const resource::hint::expected_access_frequency access_frequency,
+                                      const resource::hint::expected_read_write_ratio read_write_ratio) noexcept
     {
         return isolation_level != isolation_level::None
                    ? matrix()[static_cast<std::uint8_t>(isolation_level)][static_cast<std::uint8_t>(read_write_ratio)]

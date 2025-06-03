@@ -1,12 +1,11 @@
 #pragma once
-#include <mx/system/cache.h>
 #include <type_traits>
 
 namespace mx::util {
 /**
  * Aligns the given data type with an alignment of 64.
  */
-template <typename T> class alignas(system::cache::line_size()) aligned_t
+template <typename T> class alignas(64) aligned_t
 {
 public:
     constexpr aligned_t() noexcept = default;
@@ -14,7 +13,7 @@ public:
     explicit constexpr aligned_t(const T &value) noexcept : _value(value) {}
     constexpr aligned_t(const aligned_t<T> &other) = default;
 
-    template <typename... Args> explicit aligned_t(Args &&...args) noexcept : _value(std::forward<Args>(args)...) {}
+    template <typename... Args> explicit aligned_t(Args &&... args) noexcept : _value(std::forward<Args>(args)...) {}
 
     ~aligned_t() noexcept = default;
 
@@ -60,6 +59,6 @@ public:
     }
 
 private:
-    T _value;
+    T _value = T();
 };
 } // namespace mx::util

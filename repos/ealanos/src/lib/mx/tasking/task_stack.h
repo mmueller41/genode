@@ -25,7 +25,7 @@ public:
      * Saves the full task on the stack.
      * @param task Task to save.
      */
-    void backup(const TaskInterface *task) noexcept
+    void save(const TaskInterface *task) noexcept
     {
         if constexpr (system::Environment::is_sse2() && (config::task_size() == 64U || config::task_size() == 128U))
         {
@@ -93,33 +93,33 @@ private:
 #ifdef USE_SSE2
         if constexpr (S == 64U)
         {
-            __m128i word0 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 0U);
-            __m128i word1 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 1U);
-            __m128i word2 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 2U);
-            __m128i word3 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 3U);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 0U, word0);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 1U, word1);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 2U, word2);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 3U, word3);
+            __m128i m0 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 0U);
+            __m128i m1 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 1U);
+            __m128i m2 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 2U);
+            __m128i m3 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 3U);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 0U, m0);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 1U, m1);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 2U, m2);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 3U, m3);
         }
         else if constexpr (S == 128U)
         {
-            __m128i word0 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 0U);
-            __m128i word1 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 1U);
-            __m128i word2 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 2U);
-            __m128i word3 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 3U);
-            __m128i word4 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 4U);
-            __m128i word5 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 5U);
-            __m128i word6 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 6U);
-            __m128i word7 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 7U);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 0U, word0);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 1U, word1);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 2U, word2);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 3U, word3);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 4U, word4);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 5U, word5);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 6U, word6);
-            _mm_storeu_si128(static_cast<__m128i *>(destination) + 7U, word7);
+            __m128i m0 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 0U);
+            __m128i m1 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 1U);
+            __m128i m2 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 2U);
+            __m128i m3 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 3U);
+            __m128i m4 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 4U);
+            __m128i m5 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 5U);
+            __m128i m6 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 6U);
+            __m128i m7 = _mm_loadu_si128(static_cast<const __m128i *>(src) + 7U);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 0U, m0);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 1U, m1);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 2U, m2);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 3U, m3);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 4U, m4);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 5U, m5);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 6U, m6);
+            _mm_storeu_si128(static_cast<__m128i *>(destination) + 7U, m7);
         }
 #endif
     }

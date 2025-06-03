@@ -19,9 +19,9 @@ public:
      */
     void lock() noexcept
     {
-        do
+        while (true)
         {
-            while (_flag)
+            while (_flag.load(std::memory_order_relaxed))
             {
                 system::builtin::pause();
             }
@@ -30,7 +30,7 @@ public:
             {
                 return;
             }
-        } while (true);
+        }
     }
 
     /**
@@ -40,20 +40,20 @@ public:
     bool try_lock() noexcept
     {
         bool expected = false;
-        return __atomic_compare_exchange_n(&_flag, &expected, true, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+        return _flag.compare_exchange_weak(expected, true, std::memory_order_acquire);
     }
 
     /**
      * Unlocks the spinlock.
      */
-    void unlock() noexcept { __atomic_store_n(&_flag, false, __ATOMIC_SEQ_CST); }
+    void unlock() noexcept { _flag.store(false, std::memory_order_acquire); }
 
     /**
      * @return True, if the lock is in use.
      */
-    [[nodiscard]] bool is_locked() const noexcept { return __atomic_load_n(&_flag, __ATOMIC_RELAXED); }
+    [[nodiscard]] bool is_locked() const noexcept { return _flag.load(std::memory_order_relaxed); }
 
 private:
-    bool _flag;
+    std::atomic_bool _flag{false};
 };
 } // namespace mx::synchronization

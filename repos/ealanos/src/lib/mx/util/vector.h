@@ -168,7 +168,7 @@ private:
     static void release(pointer_type data, const std::size_t capacity) noexcept
     {
         const auto size = sizeof(value_type) * capacity;
-        memory::GlobalHeap::free(static_cast<void *>(data), size);
+        memory::GlobalHeap::free(static_cast<void *>(data), size, _numa_node_id);
     }
 };
 } // namespace mx::util

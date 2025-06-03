@@ -1,13 +1,9 @@
 #pragma once
 
 #include "mx/memory/global_heap.h"
+#include "mx/system/topology.h"
 #include <cstdint>
 #include <cstdlib>
-#include <mx/system/cache.h>
-#include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 namespace mx::memory {
 /**
@@ -22,20 +18,17 @@ public:
 
     /**
      * Allocates memory for the given core.
-     * @param worker_id Worker to allocate memory for.
+     * @param core_id Core to allocate memory for.
      * @return Allocated memory.
      */
-    [[nodiscard]] virtual void *allocate(std::uint16_t worker_id) = 0;
+    [[nodiscard]] virtual void *allocate(std::uint16_t core_id) = 0;
 
     /**
      * Frees the memory at the given core.
-     * @param worker_id Worker to store free memory.
+     * @param core_id Core to store free memory.
      * @param address Address to free.
      */
-    virtual void free(std::uint16_t worker_id, void *address) noexcept = 0;
-
-    [[nodiscard]] virtual std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>>
-    allocated_chunks() = 0;
+    virtual void free(std::uint16_t core_id, void *address) noexcept = 0;
 };
 
 /**
@@ -50,21 +43,12 @@ public:
     /**
      * @return Allocated memory using systems malloc (but aligned).
      */
-    [[nodiscard]] void *allocate(const std::uint16_t /*worker_id*/) override
-    {
-        return memory::GlobalHeap::allocate_cache_line_aligned(S);
-    }
+    [[nodiscard]] void *allocate(const std::uint16_t core_id) override { return GlobalHeap::allocate(mx::system::topology::node_id(core_id), 2*S); }
 
     /**
      * Frees the given memory using systems free.
      * @param address Memory to free.
      */
-    void free(const std::uint16_t /*worker_id*/, void *address) noexcept override { memory::GlobalHeap::free(address, 0, 0); }
-
-    [[nodiscard]] std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>>
-    allocated_chunks() override
-    {
-        return std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>>{};
-    }
+    void free(const std::uint16_t /*core_id*/, void *address) noexcept override { GlobalHeap::free(address); }
 };
 } // namespace mx::memory

@@ -1,18 +1,19 @@
 #pragma once
 
-#include "annotation.h"
 #include "config.h"
-#include "priority.h"
 #include "task_stack.h"
 #include <bitset>
 #include <cstdint>
 #include <functional>
-#include <mx/queue/list.h>
-#include <mx/resource/ptr.h>
+#include <mx/resource/resource.h>
 #include <variant>
-#include <vector>
 
 namespace mx::tasking {
+enum priority : std::uint8_t
+{
+    low = 0,
+    normal = 1
+};
 
 class TaskInterface;
 
@@ -35,17 +36,6 @@ public:
      *         runtime to run the given task.
      */
     static TaskResult make_succeed(TaskInterface *successor_task) noexcept { return TaskResult{successor_task, false}; }
-
-    /**
-     * Let the runtime know that the given task
-     * should be run as a successor of the current
-     * task. The runtime will schedule that task.
-     *
-     * @param successor_task Task to succeed.
-     * @return A TaskResult that tells the
-     *         runtime to run the given task.
-     */
-    static TaskResult make_succeed(mx::resource::ptr resource) noexcept { return TaskResult{resource, false}; }
 
     /**
      * Let the runtime know that the given task
@@ -83,12 +73,10 @@ public:
      * Let the runtime know to stop after
      * the returning task.
      *
-     * @param worker_id Id of the current worker.
-     * @param stop_network If set to true, the network server will also be stopped.
      * @return A TaskResult that tells the
      *         runtime to top.
      */
-    static TaskResult make_stop(std::uint16_t worker_id, bool stop_network = true) noexcept;
+    static TaskResult make_stop() noexcept;
 
     constexpr TaskResult() = default;
     ~TaskResult() = default;
@@ -96,24 +84,17 @@ public:
     TaskResult &operator=(const TaskResult &) = default;
 
     explicit operator TaskInterface *() const noexcept { return _successor_task; }
-    explicit operator mx::resource::ptr() const noexcept { return _resource; }
 
     [[nodiscard]] bool is_remove() const noexcept { return _remove_task; }
     [[nodiscard]] bool has_successor() const noexcept { return _successor_task != nullptr; }
-    [[nodiscard]] bool has_resource() const noexcept { return static_cast<bool>(_resource); }
 
 private:
     constexpr TaskResult(TaskInterface *successor_task, const bool remove) noexcept
         : _successor_task(successor_task), _remove_task(remove)
     {
     }
-    constexpr TaskResult(const mx::resource::ptr resource, const bool remove) noexcept
-        : _resource(resource), _remove_task(remove)
-    {
-    }
-    TaskInterface *_successor_task{nullptr};
-    mx::resource::ptr _resource;
-    bool _remove_task{false};
+    TaskInterface *_successor_task = nullptr;
+    bool _remove_task = false;
 };
 
 /**
@@ -126,6 +107,7 @@ class TaskInterface
 public:
     using channel = std::uint16_t;
     using node = std::uint8_t;
+    using resource_and_size = std::pair<mx::resource::ptr, std::uint16_t>;
 
     constexpr TaskInterface() = default;
     virtual ~TaskInterface() = default;
@@ -133,118 +115,107 @@ public:
     /**
      * Will be executed by a worker when the task gets CPU time.
      *
-     * @param worker_id     Worker ID the task is executed on.
+     * @param core_id       (System-)ID of the core, the task is executed on.
+     * @param channel_id    Channel ID the task is executed on.
      * @return Pointer to the follow up task.
      */
-    virtual TaskResult execute(std::uint16_t worker_id) = 0;
-
-    /**
-     * @return Trace Id of the task, that will be included into recordings to assign
-     *          time ranges to specific tasks.
-     */
-    [[nodiscard]] virtual std::uint64_t trace_id() const noexcept { return 0U; }
-
-    /**
-     * @return The annotation of the task.
-     */
-    [[nodiscard]] const Annotation &annotation() const noexcept { return _annotation; }
-
-    /**
-     * @return The annotation of the task.
-     */
-    [[nodiscard]] class Annotation &annotation() noexcept { return _annotation; }
+    virtual TaskResult execute(std::uint16_t core_id, std::uint16_t channel_id) = 0;
 
     /**
      * Annotate the task with a resource the task will work on.
-     * The size identifies how many bytes will be prefetched.
      *
      * @param resource Pointer to the resource.
      * @param size  Size of the resource (that will be prefetched).
      */
     void annotate(const mx::resource::ptr resource_, const std::uint16_t size) noexcept
     {
-        annotate(resource_, PrefetchSize::make(PrefetchDescriptor::PrefetchType::Temporal, size));
+        _annotation.target = std::make_pair(resource_, size);
     }
-
-    /**
-     * Annotate the task with a resource the task will work on.
-     * The object will be used for synchronization and prefetching.
-     *
-     * @param resource Pointer to the resource.
-     * @param prefetch_hint  Mask for prefetching the resource.
-     */
-    void annotate(const mx::resource::ptr resource_, const PrefetchDescriptor descriptor) noexcept
-    {
-        annotate(resource_);
-        annotate(PrefetchHint{descriptor, resource_});
-    }
-
-    /**
-     * Annotate the task with a resource the task will work on.
-     * The data object will be used for synchronization only.
-     *
-     * @param resource Pointer to the resource.
-     */
-    void annotate(const mx::resource::ptr resource_) noexcept { _annotation.set(resource_); }
-
-    /**
-     * Annotate the task with a prefetch hint that will be prefetched.
-     *
-     * @param prefetch_hint Hint for prefetching.
-     */
-    void annotate(const PrefetchHint prefetch_hint) noexcept { _annotation.set(prefetch_hint); }
 
     /**
      * Annotate the task with a desired channel the task should be executed on.
      *
-     * @param worker_id ID of the channel.
+     * @param channel_id ID of the channel.
      */
-    void annotate(const std::uint16_t worker_id) noexcept { _annotation.set(worker_id); }
+    void annotate(const channel channel_id) noexcept { _annotation.target = channel_id; }
 
     /**
      * Annotate the task with a desired NUMA node id the task should executed on.
      *
      * @param node_id ID of the NUMA node.
      */
-    void annotate(const std::uint8_t node_id) noexcept { _annotation.set(node_id); }
+    void annotate(const node node_id) noexcept { _annotation.target = node_id; }
 
     /**
      * Annotate the task with a run priority (low, normal, high).
      *
      * @param priority_ Priority the task should run with.
      */
-    void annotate(const priority priority_) noexcept { _annotation.set(priority_); }
-
-    /**
-     * Copy annotations from other task to this one.
-     *
-     * @param other Other task to copy annotations from.
-     */
-    void annotate(TaskInterface *other) noexcept { _annotation = other->_annotation; }
-
-    /**
-     * Copy annotation to this one.
-     *
-     * @param annotation
-     */
-    void annotate(const auto &annotation) noexcept { _annotation = annotation; }
-
-    /**
-     * Annotate the task to execute on a specific destination.
-     *
-     * @param execution_destination Destination to execute on.
-     */
-    void annotate(const Annotation::execution_destination execution_destination) noexcept
-    {
-        _annotation.set(execution_destination);
-    }
+    void annotate(const priority priority_) noexcept { _annotation.priority = priority_; }
 
     /**
      * Annotate the task whether it is a reading or writing task.
      *
      * @param is_readonly True, when the task is read only (false by default).
      */
-    void annotate(const Annotation::access_intention access_intention) noexcept { _annotation.set(access_intention); }
+    void is_readonly(const bool is_readonly) noexcept { _annotation.is_readonly = is_readonly; }
+
+    /**
+     * @return The annotated resource.
+     */
+    [[nodiscard]] mx::resource::ptr annotated_resource() const noexcept
+    {
+        return std::get<0>(std::get<resource_and_size>(_annotation.target));
+    }
+
+    /**
+     * @return The annotated resource size.
+     */
+    [[nodiscard]] std::uint16_t annotated_resource_size() const noexcept
+    {
+        return std::get<1>(std::get<resource_and_size>(_annotation.target));
+    }
+
+    /**
+     * @return The annotated channel.
+     */
+    [[nodiscard]] channel annotated_channel() const noexcept { return std::get<channel>(_annotation.target); }
+
+    /**
+     * @return The annotated NUMA node id.
+     */
+    [[nodiscard]] node annotated_node() const noexcept { return std::get<node>(_annotation.target); }
+
+    /**
+     * @return Annotated priority.
+     */
+    [[nodiscard]] enum priority priority() const noexcept { return _annotation.priority; }
+
+    /**
+     * @return True, when the task is a read only task.
+     */
+    [[nodiscard]] bool is_readonly() const noexcept { return _annotation.is_readonly; }
+
+    /**
+     * @return True, when the task has a resource annotated.
+     */
+    [[nodiscard]] bool has_resource_annotated() const noexcept
+    {
+        return std::holds_alternative<resource_and_size>(_annotation.target);
+    }
+
+    /**
+     * @return True, when the task has a channel annotated.
+     */
+    [[nodiscard]] bool has_channel_annotated() const noexcept
+    {
+        return std::holds_alternative<channel>(_annotation.target);
+    }
+
+    /**
+     * @return True, when the task has a NUMA node annotated.
+     */
+    [[nodiscard]] bool has_node_annotated() const noexcept { return std::holds_alternative<node>(_annotation.target); }
 
     /**
      * @return Pointer to the next task in spawn queue.
@@ -258,73 +229,41 @@ public:
     void next(TaskInterface *next) noexcept { _next = next; }
 
 private:
-    /// Pointer for next task in queue.
+    /**
+     * Annotation of a task.
+     */
+    class annotation
+    {
+    public:
+        constexpr annotation() noexcept = default;
+        ~annotation() = default;
+
+        // Is the task just reading?
+        bool is_readonly{false};
+
+        // Priority of a task.
+        enum priority priority
+        {
+            priority::normal
+        };
+
+        // Target the task will run on.
+        std::variant<channel, node, resource_and_size, bool> target{false};
+    } __attribute__((packed));
+
+    // Pointer for next task in queue.
     TaskInterface *_next{nullptr};
 
-    /// Tasks annotations.
-    class Annotation _annotation
-    {
-    };
-};
-
-class LambdaTask : public TaskInterface
-{
-public:
-    LambdaTask(std::function<TaskResult(std::uint16_t)> &&callback) noexcept : _callback(std::move(callback)) {}
-
-    LambdaTask(std::function<void()> &&callback) noexcept
-        : LambdaTask([callback = std::move(callback)](const std::uint16_t /*worker_id*/) {
-              callback();
-              return TaskResult::make_remove();
-          })
-    {
-    }
-
-    ~LambdaTask() noexcept override = default;
-
-    TaskResult execute(std::uint16_t worker_id) override { return _callback(worker_id); }
-
-private:
-    std::function<TaskResult(std::uint16_t)> _callback;
-};
-
-class TaskLine : public TaskInterface
-{
-public:
-    TaskLine() noexcept = default;
-    ~TaskLine() noexcept override = default;
-
-    TaskResult execute(std::uint16_t worker_id) override;
-
-    void add(TaskInterface *task)
-    {
-        if (_next_task == nullptr)
-        {
-            _next_task = task;
-            annotate(task);
-        }
-        else
-        {
-            _waiting_tasks.push_back(task);
-        }
-    }
-
-    [[nodiscard]] bool empty() const noexcept { return _next_task == nullptr; }
-
-private:
-    TaskInterface *_next_task;
-    queue::List<TaskInterface> _waiting_tasks;
+    // Tasks annotations.
+    annotation _annotation;
 };
 
 class StopTaskingTask final : public TaskInterface
 {
 public:
-    constexpr StopTaskingTask(const bool stop_network) noexcept : _stop_network(stop_network) {}
+    constexpr StopTaskingTask() noexcept = default;
     ~StopTaskingTask() override = default;
 
-    TaskResult execute(std::uint16_t worker_id) override;
-
-private:
-    const bool _stop_network;
+    TaskResult execute(std::uint16_t /*core_id*/, std::uint16_t /*channel_id*/) override;
 };
 } // namespace mx::tasking

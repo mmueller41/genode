@@ -17,12 +17,11 @@ enum class isolation_level : std::uint8_t
  */
 enum class protocol : std::uint8_t
 {
-    None = 0U,                          // System is free to choose
-    Queue = 1U,                         // Choose primitive with queues with respect to isolation level
-    Latch = 2U,                         // Choose primitive with latches with respect to isolation level
-    OLFIT = 3U,                         // Try to choose olfit
-    RestrictedTransactionalMemory = 4U, // Try to choose transactional memory
-    Batched = 5U,                       // Tasks are batched
+    None = 0U,               // System is free to choose
+    Queue = 1U,              // Choose primitive with queues with respect to isolation level
+    Latch = 2U,              // Choose primitive with latches with respect to isolation level
+    OLFIT = 3U,              // Try to choose olfit
+    TransactionalMemory = 4U // Try to choose htm
 };
 
 /**
@@ -36,14 +35,12 @@ enum class protocol : std::uint8_t
  */
 enum class primitive : std::uint8_t
 {
-    None = 0U,                          // Nothing will be synchronized
-    ExclusiveLatch = 1U,                // All accesses will use a spinlock
-    ScheduleAll = 2U,                   // All accesses will be scheduled to the mapped channel
-    ReaderWriterLatch = 3U,             // Use a reader/writer latch to enable parallel reads
-    ScheduleWriter = 4U,                // Reads can perform anywhere, writes are scheduled to the mapped channel
-    OLFIT = 5U,                         // Read/write anywhere but use a latch for writers
-    RestrictedTransactionalMemory = 6U, /// Read/write transactional
-    Batched = 7U                        // Tasks are batched by using task squads
+    None = 0U,              // Nothing will be synchronized
+    ExclusiveLatch = 1U,    // All accesses will use a spinlock
+    ScheduleAll = 2U,       // All accesses will be scheduled to the mapped channel
+    ReaderWriterLatch = 3U, // Use a reader/writer latch to enable parallel reads
+    ScheduleWriter = 4U,    // Reads can perform anywhere, writes are scheduled to the mapped channel
+    OLFIT = 5U              // Read/write anywhere but use a latch for writers
 };
 
 /**

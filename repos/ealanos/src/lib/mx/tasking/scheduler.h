@@ -1,8 +1,8 @@
 #pragma once
-#include "prefetch_distance.h"
-#include "shared_task_queue.h"
+#include "channel.h"
 #include "task.h"
-#include "task_squad.h"
+#include "tukija/syscall-generic.h"
+#include "tukija/syscalls.h"
 #include "worker.h"
 #include <array>
 #include <atomic>
@@ -11,16 +11,16 @@
 #include <iostream>
 #include <memory>
 #include <mx/memory/config.h>
+#include <mx/memory/dynamic_size_allocator.h>
 #include <mx/memory/reclamation/epoch_manager.h>
-#include <mx/memory/worker_local_dynamic_size_allocator.h>
-#include <mx/resource/ptr.h>
-#include <mx/tasking/profiling/idle_profiler.h>
-#include <mx/tasking/profiling/task_counter.h>
-#include <mx/tasking/profiling/task_tracer.h>
+#include <mx/resource/resource.h>
+#include <mx/tasking/profiling/profiling_task.h>
+#include <mx/tasking/profiling/statistic.h>
 #include <mx/util/core_set.h>
 #include <mx/util/random.h>
-#include <optional>
 #include <string>
+#include <cmath>
+#include <mx/util/field_alloc.h>
 
 namespace mx::tasking {
 /**
@@ -30,38 +30,22 @@ namespace mx::tasking {
 class Scheduler
 {
 public:
-    Scheduler(const util::core_set &core_set, PrefetchDistance prefetch_distance,
-              memory::dynamic::local::Allocator &resource_allocator) noexcept;
+    Scheduler(const util::core_set &core_set, std::uint16_t prefetch_distance,
+              memory::dynamic::Allocator &resource_allocator) noexcept;
     ~Scheduler() noexcept;
 
     /**
      * Schedules a given task.
-     *
      * @param task Task to be scheduled.
-     * @param local_worker_id Worker, the request came from.
-     * @return Worker ID where the task was dispatched to.
+     * @param current_channel_id Channel, the request came from.
      */
-    std::uint16_t dispatch(TaskInterface &task, std::uint16_t local_worker_id) noexcept;
+    void schedule(TaskInterface &task, std::uint16_t current_channel_id) noexcept;
 
     /**
-     * Schedules a given list of tasks to the local worker.
-     * The tasks have to be concatenated.
-     *
-     * @param first First task of the list.
-     * @param last Last task of the list.
-     * @param local_worker_id Worker, the request came from.
-     * @return Worker ID where the task was dispatched to.
+     * Schedules a given task.
+     * @param task Task to be scheduled.
      */
-    std::uint16_t dispatch(TaskInterface &first, TaskInterface &last, std::uint16_t local_worker_id) noexcept;
-
-    /**
-     * Schedules all tasks of a given squad.
-     * @param squad Squad to be scheduled.
-     * @param local_worker_id Channel, the request came from.
-     * @return Worker ID where the task was dispatched to.
-     */
-    std::uint16_t dispatch(mx::resource::ptr squad, enum Annotation::resource_boundness boundness,
-                           std::uint16_t local_worker_id) noexcept;
+    void schedule(TaskInterface &task) noexcept;
 
     /**
      * Starts all worker threads and waits until they finish.
@@ -75,11 +59,43 @@ public:
     void interrupt() noexcept
     {
         _is_running = false;
-        if (this->_idle_profiler.is_running())
-        {
-            this->_idle_profiler.stop();
+        while (Tukija::Cip::cip()->cores_current.count() > 1) {
+			system::builtin::pause();
         }
+
+		unsigned pcpu = Tukija::Cip::cip()->get_cpu_index();
+		
+        Worker *me = _worker_at_core[pcpu];
+
+        /* We assume that the runtime is always stopped by the foreman.
+         * So we should check whether this is truly the case here.
+         */
+        assert(me->current_channel()->id() == 0 && "Channel is not 0.");
+        assert(me->id() == 0 && "Stop called by worker.");
+
+        me->yield_channels(config::max_cores(), _channels[0]);
+
+       // Genode::log("Got ", _vacant_channels.size(), " vacant channels.");
+        // this->_profiler.stop();
     }
+
+    void resume() noexcept { 
+        //Genode::log("Allocation before resume ", allocation);
+
+		unsigned current_cores = Tukija::Cip::cip()->cores_current.count();
+        allocate_cores(_count_channels - current_cores);
+        _is_running = true;
+    }
+
+    [[nodiscard]] inline Worker *my_self() noexcept {
+        unsigned pcpu = Tukija::Cip::cip()->get_cpu_index();
+		
+        return _worker_at_core[pcpu];
+    }
+
+    [[nodiscard]] inline Channel *get_channel(std::uint64_t index) { return _channels[index]; }
+
+    [[nodiscard]] inline std::uint16_t active_workers() const noexcept { return _active_worker_count; }
 
     /**
      * @return Core set of this instance.
@@ -97,61 +113,69 @@ public:
     [[nodiscard]] memory::reclamation::EpochManager &epoch_manager() noexcept { return _epoch_manager; }
 
     /**
-     * @return Number of all cores.
+     * @return Number of all channels.
      */
-    [[nodiscard]] std::uint16_t count_cores() const noexcept { return _core_set.count_cores(); }
+    [[nodiscard]] std::uint16_t count_channels() const noexcept { return _count_channels; }
 
     /**
-     * @return Number of all numa regions.
+     * Reads the NUMA region of a given channel/worker thread.
+     * @param channel_id Channel.
+     * @return NUMA region of the given channel.
      */
-    [[nodiscard]] std::uint8_t count_numa_nodes() const noexcept { return _core_set.numa_nodes(); }
-
-    /**
-     * @return Prefetch distance.
-     */
-    [[nodiscard]] PrefetchDistance prefetch_distance() const noexcept { return _prefetch_distance; }
-
-    /**
-     * Reads the NUMA region of a given worker thread.
-     * @param worker_id Worker.
-     * @return NUMA region of the given worker.
-     */
-    [[nodiscard]] std::uint8_t numa_node_id(const std::uint16_t worker_id) const noexcept
+    [[nodiscard]] std::uint8_t numa_node_id(const std::uint16_t channel_id) const noexcept
     {
-        return _worker_numa_node_map[worker_id];
+        return _channel_numa_node_map[channel_id];
     }
 
     /**
      * Predicts usage for a given channel.
-     * @param worker_id Worker.
+     * @param channel_id Channel.
      * @param usage Usage to predict.
      */
-    void predict_usage(const std::uint16_t worker_id, const mx::resource::expected_access_frequency usage) noexcept
+    void predict_usage(const std::uint16_t channel_id, const resource::hint::expected_access_frequency usage) noexcept
     {
-        _worker[worker_id]->occupancy().predict(usage);
+        _channels[channel_id]->predict_usage(usage);
+        /*if (usage == resource::hint::expected_access_frequency::excessive) {
+            Worker *owner = _owner_of_channel[channel_id];
+            
+            if (owner) {
+                owner->prohibit_stealing();
+                //Genode::log("Worker ", owner->core_id(), " is going to have excessive load.");
+                _overloaded_workers.push_back(owner);
+                Nova::mword_t allocation;
+                std::uint16_t channels = owner->count_channels();
+
+                std::uint16_t cores_needed = (channels > 1) ? channels : 1;
+                Nova::alloc_cores(cores_needed + _vacant_channel_count.load(), allocation);
+            }
+            else
+            {
+                Nova::mword_t allocation;
+                Nova::alloc_cores(_vacant_channel_count, allocation);
+            }
+        }*/
     }
 
     /**
      * Updates the predicted usage of a channel.
-     * @param worker_id Worker.
+     * @param channel_id Channel.
      * @param old_prediction So far predicted usage.
      * @param new_prediction New prediction.
      */
-    void modify_predicted_usage(const std::uint16_t worker_id,
-                                const mx::resource::expected_access_frequency old_prediction,
-                                const mx::resource::expected_access_frequency new_prediction) noexcept
+    void modify_predicted_usage(const std::uint16_t channel_id,
+                                const resource::hint::expected_access_frequency old_prediction,
+                                const resource::hint::expected_access_frequency new_prediction) noexcept
     {
-        _worker[worker_id]->occupancy().revoke(old_prediction);
-        _worker[worker_id]->occupancy().predict(new_prediction);
+        _channels[channel_id]->modify_predicted_usage(old_prediction, new_prediction);
     }
 
     /**
-     * @param worker_id Worker.
+     * @param channel_id Channel.
      * @return True, when a least one usage was predicted to be "excessive" for the given channel.
      */
-    [[nodiscard]] bool has_excessive_usage_prediction(const std::uint16_t worker_id) const noexcept
+    [[nodiscard]] bool has_excessive_usage_prediction(const std::uint16_t channel_id) const noexcept
     {
-        return _worker[worker_id]->occupancy().has_excessive_usage_prediction();
+        return _channels[channel_id]->has_excessive_usage_prediction();
     }
 
     /**
@@ -159,108 +183,118 @@ public:
      */
     void reset() noexcept;
 
-    /**
-     * Starts profiling of idle times.
-     */
-    void start_idle_profiler();
+	/**
+	 * Resets the usage predictions for all channels. This is useful for cases
+	 * where the resource schedule has changed (e.g. after a resume).
+	 */
+	void reset_usage_predictions()
+	{
+		for (auto channel : _channels) {
+			channel->predict_usage(resource::hint::expected_access_frequency::normal);
+		}
+	}
+	/**
+     * Register a worker in the core to worker map
+    */
+    void register_worker(Worker *worker) { _worker_at_core[worker->phys_core_id()] = worker;
+        _active_worker_count.fetch_add(1);
+    }
+
+    void deregister_worker() { _active_worker_count.fetch_sub(1); }
 
     /**
-     * Stops idle profiling.
-     * @return List of idle times for each channel.
+     * Aggregates the counter for all cores.
+     * @param counter Statistic counter.
+     * @return Aggregated value.
      */
-    [[nodiscard]] profiling::IdleTimes stop_idle_profiler() { return this->_idle_profiler.stop(); }
+    [[nodiscard]] std::uint64_t statistic([[maybe_unused]] const profiling::Statistic::Counter counter) const noexcept
+    {
+        if constexpr (config::task_statistics())
+        {
+            return this->_statistic.get(counter);
+        }
+        else
+        {
+            return 0U;
+        }
+    }
 
     /**
-     * @return Statistic.
+     * Reads the statistics for a given counter on a given channel.
+     * @param counter Statistic counter.
+     * @param channel_id Channel.
+     * @return Value of the counter for the given channel.
      */
-    [[nodiscard]] std::optional<profiling::TaskCounter> &task_counter() noexcept { return _task_counter; }
+    [[nodiscard]] std::uint64_t statistic([[maybe_unused]] const profiling::Statistic::Counter counter,
+                                          [[maybe_unused]] const std::uint16_t channel_id) const noexcept
+    {
+        if constexpr (config::task_statistics())
+        {
+            return this->_statistic.get(counter, channel_id);
+        }
+        else
+        {
+            return 0U;
+        }
+    }
 
     /**
-     * @return Task tracer.
+     * Starts profiling of idle times and specifies the results file.
+     * @param output_file File to write idle times after stopping MxTasking.
      */
-    [[nodiscard]] std::optional<profiling::TaskTracer> &task_tracer() noexcept { return _task_tracer; }
-
-    [[nodiscard]] std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>> memory_tags();
+    void profile(const std::string &output_file);
 
     bool operator==(const util::core_set &cores) const noexcept { return _core_set == cores; }
 
     bool operator!=(const util::core_set &cores) const noexcept { return _core_set != cores; }
 
+    inline void allocate_cores(std :: uint16_t cores)
+	{
+		if (!cores) return;
+
+		Tukija::Cip *cip = Tukija::Cip::cip();
+		cip->cores_new.clear();
+		cip->cores_reclaimed.clear();
+		
+		Tukija::alloc(Tukija::Resource_type::CPU_CORE, cores);
+		_remainder_channel_count.store(cip->cores_new.count() + cip->cores_reclaimed.count());
+    }
+
 private:
-    class PhysicalCoreResourceWorkerIds
-    {
-    public:
-        PhysicalCoreResourceWorkerIds() noexcept
-            : _worker_ids{std::numeric_limits<std::uint16_t>::max(), std::numeric_limits<std::uint16_t>::max(),
-                          std::numeric_limits<std::uint16_t>::max()}
-        {
-        }
-
-        explicit PhysicalCoreResourceWorkerIds(const std::uint16_t worker_id) noexcept
-            : _worker_ids{worker_id, worker_id, worker_id}
-        {
-        }
-
-        PhysicalCoreResourceWorkerIds(const std::uint16_t memory_bound_worker_id,
-                                      const std::uint16_t compute_bound_worker_id,
-                                      const std::uint16_t mixed_worker_id) noexcept
-            : _worker_ids{memory_bound_worker_id, compute_bound_worker_id, mixed_worker_id}
-        {
-        }
-
-        ~PhysicalCoreResourceWorkerIds() noexcept = default;
-
-        PhysicalCoreResourceWorkerIds &operator=(const PhysicalCoreResourceWorkerIds &) noexcept = default;
-        PhysicalCoreResourceWorkerIds &operator=(PhysicalCoreResourceWorkerIds &&) noexcept = default;
-
-        [[nodiscard]] std::uint16_t operator[](const enum Annotation::resource_boundness boundness) const noexcept
-        {
-            return _worker_ids[boundness];
-        }
-
-        [[nodiscard]] std::uint16_t &operator[](const enum Annotation::resource_boundness boundness) noexcept
-        {
-            return _worker_ids[boundness];
-        }
-
-        operator bool()
-        {
-            return _worker_ids[0U] != std::numeric_limits<std::uint16_t>::max() &&
-                   _worker_ids[1U] != std::numeric_limits<std::uint16_t>::max() &&
-                   _worker_ids[2U] != std::numeric_limits<std::uint16_t>::max();
-        }
-
-    private:
-        std::array<std::uint16_t, 3U> _worker_ids;
-    };
-
     // Cores to run the worker threads on.
     const util::core_set _core_set;
 
-    // Number of tasks a resource will be prefetched in front of.
-    const PrefetchDistance _prefetch_distance;
+    // Number of all channels.
+    std::uint16_t _count_channels;
 
-    // All initialized workers.
-    std::array<Worker *, config::max_cores()> _worker{nullptr};
-
-    // Map of worker id to NUMA region id.
-    std::array<std::uint8_t, config::max_cores()> _worker_numa_node_map{0U};
+    alignas(64) std::atomic<bool> _loot_available{true};
 
     // Flag for the worker threads. If false, the worker threads will stop.
     // This is atomic for hardware that does not guarantee atomic reads/writes of booleans.
     alignas(64) util::maybe_atomic<bool> _is_running{false};
 
+    alignas(64) std::atomic<std::uint16_t> _active_worker_count{0};
+
+    // All initialized workers.
+    alignas(64) std::array<Worker *, config::max_cores()> _worker{nullptr};
+    alignas(64) std::array<Worker *, config::max_cores()> _worker_at_core{nullptr};
+
+    alignas(64) std::array<Channel *, config::max_cores()> _channels{nullptr};
+
+    alignas(64) mx::util::Field_Allocator<config::max_cores()> _vacant_channels_alloc{63};
+    alignas(64) std::atomic<std::int32_t> _remainder_channel_count{0};
+
+    // Map of channel id to NUMA region id.
+    alignas(64) std::array<std::uint8_t, config::max_cores()> _channel_numa_node_map{0U};
+
     // Epoch manager for memory reclamation,
     alignas(64) memory::reclamation::EpochManager _epoch_manager;
 
     // Profiler for task statistics.
-    alignas(64) std::optional<profiling::TaskCounter> _task_counter{std::nullopt};
+    profiling::Statistic _statistic;
 
     // Profiler for idle times.
-    alignas(64) profiling::IdleProfiler _idle_profiler;
-
-    // Recorder for tracing task run times.
-    alignas(64) std::optional<profiling::TaskTracer> _task_tracer{std::nullopt};
+    profiling::Profiler _profiler{};
 
     /**
      * Make a decision whether a task should be scheduled to the local
@@ -268,13 +302,16 @@ private:
      *
      * @param is_readonly Access mode of the task.
      * @param primitive The synchronization primitive of the task annotated resource.
-     * @param resource_worker_id Worker id of the task annotated resource.
-     * @param current_worker_id Worker id where the spawn() operation is called.
+     * @param resource_channel_id Channel id of the task annotated resource.
+     * @param current_channel_id Channel id where the spawn() operation is called.
      * @return True, if the task should be scheduled local.
      */
-    [[nodiscard]] static inline bool keep_task_local(const bool is_readonly, const synchronization::primitive primitive)
+    [[nodiscard]] static inline bool keep_task_local(const bool is_readonly, const synchronization::primitive primitive,
+                                                     const std::uint16_t resource_channel_id,
+                                                     const std::uint16_t current_channel_id)
     {
-        return (is_readonly && primitive != synchronization::primitive::ScheduleAll) ||
+        return (resource_channel_id == current_channel_id) ||
+               (is_readonly && primitive != synchronization::primitive::ScheduleAll) ||
                (primitive != synchronization::primitive::None && primitive != synchronization::primitive::ScheduleAll &&
                 primitive != synchronization::primitive::ScheduleWriter);
     }

@@ -1,95 +1,132 @@
 #include "scheduler.h"
 #include "mx/system/environment.h"
-#include "mx/util/logger.h"
-#include "runtime.h"
+#include "tukija/syscall-generic.h"
+#include <cassert>
 #include <mx/memory/global_heap.h>
 #include <mx/synchronization/synchronization.h>
-#include <mx/system/cpu.h>
-#include <mx/system/thread.h>
-#include <string>
+#include <mx/system/topology.h>
 #include <thread>
 #include <vector>
-#include <iostream>
-
+#include <base/log.h>
+#include <mx/tasking/runtime.h>
+#include <internal/thread_create.h>
+#include <base/affinity.h>
+#include <base/thread.h>
+#include <tukija/syscalls.h>
+#include <cstdlib>
+#include <cmath>
 
 using namespace mx::tasking;
 
-Scheduler::Scheduler(const mx::util::core_set &core_set, const PrefetchDistance prefetch_distance,
-                     memory::dynamic::local::Allocator &resource_allocator) noexcept
-    : _core_set(core_set), _prefetch_distance(prefetch_distance), _worker({nullptr}),
-      _epoch_manager(core_set.count_cores(), resource_allocator, _is_running)
+std::uint64_t *volatile mx::tasking::runtime::_signal_page;
+
+Scheduler::Scheduler(const mx::util::core_set &core_set, const std::uint16_t prefetch_distance,
+                     memory::dynamic::Allocator &resource_allocator) noexcept
+    : _core_set(core_set), _count_channels(core_set.size()),  _worker({}), _channel_numa_node_map({0U}),
+      _epoch_manager(core_set.size(), resource_allocator, _is_running), _statistic(_count_channels)
 {
-    this->_worker_numa_node_map.fill(0U);
-
-    /// Set up profiling utilities.
-    if constexpr (config::is_use_task_counter())
+    this->_worker.fill(nullptr);
+    this->_channel_numa_node_map.fill(0U);
+    Genode::log("Initializing scheduler");
+    auto worker_count = Tukija::Cip::cip()->habitat_affinity.total();
+    for (auto worker_id = 0U; worker_id < worker_count; ++worker_id)
     {
-        this->_task_counter.emplace(profiling::TaskCounter{this->_core_set.count_cores()});
-    }
-    if constexpr (config::is_collect_task_traces() || config::is_monitor_task_cycles_for_prefetching())
-    {
-        this->_task_tracer.emplace(profiling::TaskTracer{this->_core_set.count_cores()});
-    }
+        const auto core_id = worker_id;
+        this->_channel_numa_node_map[worker_id] = system::topology::node_id(core_id);
+        Genode::log("Creating worker ", worker_id, " at node ", this->_channel_numa_node_map[worker_id]);
+        auto ptr = memory::GlobalHeap::allocate(this->_channel_numa_node_map[worker_id], sizeof(Worker));
+        this->_worker[worker_id] =
+            new (ptr)
+                Worker(worker_id, core_id, this->_channel_numa_node_map[worker_id], this->_is_running, _vacant_channels_alloc, _remainder_channel_count,
+                       prefetch_distance, this->_epoch_manager[worker_id], this->_epoch_manager.global_epoch(),
+                       this->_statistic);
+        ptr = memory::GlobalHeap::allocate(this->_channel_numa_node_map[worker_id], sizeof(Channel));
+        this->_channels[worker_id] =
+            new (ptr) Channel(worker_id, this->_channel_numa_node_map[worker_id], prefetch_distance);
+        Genode::log("Channel ", worker_id, " created at ", _channels[worker_id]);
+	}
 
-	/// Create worker.
-    std::cout << "Creating workers for coreset " << this->_core_set << std::endl;
-	
-    for (auto worker_id = std::uint16_t(0U); worker_id < this->_core_set.count_cores(); ++worker_id)
-    {
-        /// The core the worker is binded to.
-        const auto core_id = this->_core_set[worker_id];
-
-        /// The corresponding NUMA Node.
-        const auto numa_node_id = system::cpu::node_id(core_id);
-        this->_worker_numa_node_map[worker_id] = numa_node_id;
-
-		this->_worker[worker_id] = static_cast<Worker*>(memory::GlobalHeap::allocate(numa_node_id, sizeof(Worker)));
-
-        std::cout << "Creating worker " << worker_id << " at " << this->_worker[worker_id];
-		
-		new (static_cast<void *>(this->_worker[worker_id]))
-			Worker(this->_core_set.count_cores(), worker_id, core_id, this->_is_running,
-		           prefetch_distance, this->_epoch_manager[worker_id],
-		           this->_epoch_manager.global_epoch(), this->_task_counter, this->_task_tracer);
-	    util::Logger::info_if(system::Environment::is_debug(), "Created worker threads");
-    }
+	Genode::log("Using ", _count_channels, " Channels");
+	Genode::log("CPU freq: ", mx::system::Environment::get_cpu_freq(), "kHz");
+	/* We need to state the actual number of channels here. But as _count_channels only denotes the
+       number of channels from the restricted core_set, defined by the application, we could end up reporting a number below the actual number of channels. This could lead to the queue stealing misbehaving, e.g. not all queues being taken by the workers. Furthermore, we must subtract the queue used by the foreman which is not stealable by definition.*/
+	Tukija::Cip::cip()->channel_info.count = worker_count - 1;
 }
 
 Scheduler::~Scheduler() noexcept
 {
-    std::for_each(this->_worker.begin(), this->_worker.begin() + this->_core_set.count_cores(), [](auto *worker) {
-        const auto numa_node_id = system::cpu::node_id(worker->core_id());
+    for (auto *worker : this->_worker)
+    {
+        std::uint8_t node_id = worker->numa_id();
         worker->~Worker();
-        memory::GlobalHeap::free(worker, sizeof(Worker), numa_node_id);
-    });
+        memory::GlobalHeap::free(worker);
+    }
+
+    for (auto *channel : this->_channels)
+    {
+        std::uint8_t node_id = channel->numa_node_id();
+        channel->~Channel();
+        memory::GlobalHeap::free(channel);
+    }
 }
 
 void Scheduler::start_and_wait()
 {
     // Create threads for worker...
-    std::vector<std::thread> worker_threads(this->_core_set.count_cores() +
+    /*std::vector<std::thread> worker_threads(this->_core_set.size() +
                                             static_cast<std::uint16_t>(config::memory_reclamation() != config::None));
-    for (auto worker_id = 0U; worker_id < this->_core_set.count_cores(); ++worker_id)
+    for (auto channel_id = 0U; channel_id < this->_core_set.size(); ++channel_id)
     {
-        auto *worker = this->_worker[worker_id];
-        worker_threads[worker_id] = std::thread([worker] { worker->execute(); });
+        worker_threads[channel_id] = std::thread([this, channel_id] { this->_worker[channel_id]->execute(); });
 
-        util::Logger::info_if(system::Environment::is_debug(), "Created worker thread " + std::to_string(worker_id) + " of size " + std::to_string(sizeof(std::thread)));
-        //system::thread::pin(worker_threads[worker_id], worker->core_id());
-        //system::thread::name(worker_threads[worker_id], "mx::worker#" + std::to_string(worker_id));
+        //system::thread::pin(worker_threads[channel_id], this->_worker[channel_id]->core_id());
+    }*/
+    Genode::Affinity::Space space = Tukija::Cip::cip()->habitat_affinity;
+
+    std::vector<pthread_t> worker_threads(space.total() +
+                                          static_cast<std::uint16_t>(config::memory_reclamation() != config::None));
+
+    Tukija::mword_t start_cpu = Tukija::Cip::cip()->get_cpu_index();
+
+    Genode::Trace::Timestamp start = Genode::Trace::timestamp();
+    for (auto cpu = 2U; cpu < space.total(); ++cpu)
+    {
+        Genode::String<32> const name{"mx::worker#", cpu};
+        Libc::pthread_create_from_session(&worker_threads[cpu], Worker::entry, _worker[cpu], 128 * 4096, name.string(),
+                                          &mx::system::Environment::envp()->cpu(), space.location_of_index(cpu));
     }
+    Genode::Trace::Timestamp end = Genode::Trace::timestamp();
+    Genode::log("Worker started in ", (end - start), " cycles");
+
+    Genode::log("Creating foreman thread on CPU ", start_cpu);
+
+    Channel *qf = _channels[0];
+    _worker[0]->assign(qf);
+
+    Libc::pthread_create_from_session(&worker_threads[0], Worker::entry, _worker[0], 128 * 4096, "foreman",
+                                      &mx::system::Environment::envp()->cpu(), space.location_of_index(0) );
+
+    /* Always assign the first channel to the foreman, so that it is guaranteed
+    that channel 0 is always processed by worker 0 and, thus, always on the same CPU core.
+    This is very useful for benchmarks relying on the TSC. Furthermore, this channel will always be processed. */
+
+    Genode::log("Created foreman thread");
+
+    Genode::log("Allocating ", _core_set.size(), " initial workers.");
+
+    Genode::log("Initial cores ", Tukija::Cip::cip()->cores_current);
+
+	this->allocate_cores(_count_channels - Tukija::Cip::cip()->cores_current.count());
+
+	Genode::log("Allocated ", Tukija::Cip::cip()->channel_info.count, " CPU cores.");
 
     // ... and epoch management (if enabled).
     if constexpr (config::memory_reclamation() != config::None)
     {
-        const auto memory_reclamation_thread_id = this->_core_set.count_cores();
-
         // In case we enable memory reclamation: Use an additional thread.
-        worker_threads[memory_reclamation_thread_id] =
-            std::thread([this] { this->_epoch_manager.enter_epoch_periodically(); });
-
-        // Set name.
-        //system::thread::name(worker_threads[memory_reclamation_thread_id], "mx::mem_reclam");
+        Libc::pthread_create_from_session(
+        &worker_threads[space.total()], mx::memory::reclamation::EpochManager::enter, &this->_epoch_manager, 4 * 4096,
+            "epoch_manager", &mx::system::Environment::cpu(), space.location_of_index(space.total()));
     }
 
     // Turning the flag on starts all worker threads to execute tasks.
@@ -100,7 +137,7 @@ void Scheduler::start_and_wait()
     // from somewhere in the application.
     for (auto &worker_thread : worker_threads)
     {
-        worker_thread.join();
+        pthread_join(worker_thread, 0);
     }
 
     if constexpr (config::memory_reclamation() != config::None)
@@ -112,210 +149,127 @@ void Scheduler::start_and_wait()
     }
 }
 
-std::uint16_t Scheduler::dispatch(TaskInterface &task, const std::uint16_t local_worker_id) noexcept
+void Scheduler::schedule(TaskInterface &task, const std::uint16_t current_channel_id) noexcept
 {
-    /// The "local_channel_id" (the id of the calling channel) may be "invalid" (=uint16_t::max).
-    /// If it is not, we set the worker_id of the worker_id either by contacting the map (virtualization on)
-    /// or just using the worker_id as worker_id (virtualization off).
-    const auto has_local_worker_id = local_worker_id != std::numeric_limits<std::uint16_t>::max();
-
-    if constexpr (config::is_use_task_counter())
-    {
-        if (has_local_worker_id) [[likely]]
-        {
-            this->_task_counter->increment<profiling::TaskCounter::Dispatched>(local_worker_id);
-        }
-    }
-
-    const auto &annotation = task.annotation();
-
     // Scheduling is based on the annotated resource of the given task.
-    if (annotation.has_resource())
+    if (task.has_resource_annotated())
     {
-        const auto annotated_resource = annotation.resource();
-        auto resource_worker_id = annotated_resource.worker_id();
-
-        if (annotated_resource.synchronization_primitive() == synchronization::primitive::Batched)
-        {
-            //            if (resource_worker_id == local_worker_id)
-            //            {
-            //                annotated_resource.get<TaskSquad>()->push_back_local(task);
-            //                return local_worker_id;
-            //            }
-
-            annotated_resource.get<TaskSquad>()->push_back_remote(task);
-            return resource_worker_id;
-        }
+        const auto annotated_resource = task.annotated_resource();
+        const auto resource_channel_id = annotated_resource.channel_id();
 
         // For performance reasons, we prefer the local (not synchronized) queue
         // whenever possible to spawn the task. The decision is based on the
         // synchronization primitive and the access mode of the task (reader/writer).
-        if (has_local_worker_id &&
-            Scheduler::keep_task_local(annotation.is_readonly(), annotated_resource.synchronization_primitive()))
+        if (Scheduler::keep_task_local(task.is_readonly(), annotated_resource.synchronization_primitive(),
+                                       resource_channel_id, current_channel_id))
         {
-            this->_worker[local_worker_id]->queues().push_back_local(&task);
-            if constexpr (config::is_use_task_counter())
+            this->_channels[current_channel_id]->push_back_local(&task);
+            if constexpr (config::task_statistics())
             {
-                this->_task_counter->increment<profiling::TaskCounter::DispatchedLocally>(local_worker_id);
+                this->_statistic.increment<profiling::Statistic::ScheduledOnChannel>(current_channel_id);
             }
-            return resource_worker_id;
-        }
-
-        if (has_local_worker_id) [[likely]]
-        {
-            this->_worker[resource_worker_id]->queues().push_back_remote(&task, this->numa_node_id(local_worker_id),
-                                                                         local_worker_id);
         }
         else
         {
-            this->_worker[resource_worker_id]->queues().push_back_remote(&task, system::cpu::node_id(),
-                                                                         runtime::worker_id());
-        }
-
-        if constexpr (config::is_use_task_counter())
-        {
-            if (has_local_worker_id) [[likely]]
+            this->_channels[resource_channel_id]->push_back_remote(&task,
+                                                                           this->numa_node_id(current_channel_id));
+            if constexpr (config::task_statistics())
             {
-                this->_task_counter->increment<profiling::TaskCounter::DispatchedRemotely>(local_worker_id);
+                this->_statistic.increment<profiling::Statistic::ScheduledOffChannel>(current_channel_id);
             }
         }
-        return resource_worker_id;
     }
 
     // The developer assigned a fixed channel to the task.
-    if (annotation.has_worker_id())
+    else if (task.has_channel_annotated())
     {
-        const auto target_worker_id = annotation.worker_id();
+        const auto target_channel_id = task.annotated_channel();
 
-        if (has_local_worker_id)
+        // For performance reasons, we prefer the local (not synchronized) queue
+        // whenever possible to spawn the task.
+        if (target_channel_id == current_channel_id)
         {
-            // For performance reasons, we prefer the local (not synchronized) queue
-            // whenever possible to spawn the task.
-            if (local_worker_id == target_worker_id)
+            this->_channels[current_channel_id]->push_back_local(&task);
+            if constexpr (config::task_statistics())
             {
-                this->_worker[target_worker_id]->queues().push_back_local(&task);
-                if constexpr (config::is_use_task_counter())
-                {
-                    this->_task_counter->increment<profiling::TaskCounter::DispatchedLocally>(target_worker_id);
-                }
-
-                return target_worker_id;
+                this->_statistic.increment<profiling::Statistic::ScheduledOnChannel>(current_channel_id);
             }
-
-            this->_worker[target_worker_id]->queues().push_back_remote(&task, this->numa_node_id(local_worker_id),
-                                                                       local_worker_id);
         }
         else
         {
-            this->_worker[target_worker_id]->queues().push_back_remote(&task, system::cpu::node_id(),
-                                                                       runtime::worker_id());
-        }
-
-        if constexpr (config::is_use_task_counter())
-        {
-            if (has_local_worker_id) [[likely]]
+            this->_channels[target_channel_id]->push_back_remote(&task, this->numa_node_id(current_channel_id));
+            if constexpr (config::task_statistics())
             {
-                this->_task_counter->increment<profiling::TaskCounter::DispatchedRemotely>(local_worker_id);
+                this->_statistic.increment<profiling::Statistic::ScheduledOffChannel>(current_channel_id);
             }
         }
-
-        return target_worker_id;
     }
 
     // The developer assigned a fixed NUMA region to the task.
-    //    if (annotation.has_numa_node_id())
-    //    {
-    //        this->_numa_node_queues[annotation.numa_node_id()].get(annotation.priority()).push_back(&task);
-    //        if constexpr (config::is_use_task_counter())
-    //        {
-    //            if (current_channel_id != std::numeric_limits<std::uint16_t>::max()) [[likely]]
-    //            {
-    //                this->_task_counter->increment<profiling::TaskCounter::DispatchedRemotely>(current_channel_id);
-    //            }
-    //        }
-    //
-    //        /// TODO: What to return?
-    //        return 0U;
-    //    }
-
-    // The task should be spawned on the local channel.
-    if (annotation.is_locally())
+    else if (task.has_node_annotated())
     {
-        if (has_local_worker_id) [[likely]]
-        {
-            this->_worker[local_worker_id]->queues().push_back_local(&task);
-            if constexpr (config::is_use_task_counter())
-            {
-                this->_task_counter->increment<profiling::TaskCounter::DispatchedLocally>(local_worker_id);
-            }
-
-            return local_worker_id;
-        }
-
-        assert(false && "Spawn was expected to be 'locally' but no local channel was provided.");
+        // TODO: Select random channel @ node, based on load
+        assert(false && "NOT IMPLEMENTED: Task scheduling for node.");
     }
 
     // The task can run everywhere.
-    //    this->_global_queue.get(annotation.priority()).push_back(&task);
-    //    if constexpr (config::is_use_task_counter())
-    //    {
-    //        if (current_channel_id != std::numeric_limits<std::uint16_t>::max()) [[likely]]
-    //        {
-    //            this->_task_counter->increment<profiling::TaskCounter::DispatchedRemotely>(current_channel_id);
-    //        }
-    //    }
+    else
+    {
+        this->_channels[current_channel_id]->push_back_local(&task);
+        if constexpr (config::task_statistics())
+        {
+            this->_statistic.increment<profiling::Statistic::ScheduledOnChannel>(current_channel_id);
+        }
+    }
 
-    /// TODO: What to return?
-    return 0U;
+    if constexpr (config::task_statistics())
+    {
+        this->_statistic.increment<profiling::Statistic::Scheduled>(current_channel_id);
+    }
 }
 
-std::uint16_t Scheduler::dispatch(TaskInterface &first, TaskInterface &last, const uint16_t local_worker_id) noexcept
+void Scheduler::schedule(TaskInterface &task) noexcept
 {
-    this->_worker[local_worker_id]->queues().push_back_local(&first, &last);
-    return local_worker_id;
-}
-
-std::uint16_t Scheduler::dispatch(const mx::resource::ptr squad, const enum Annotation::resource_boundness boundness,
-                                  const std::uint16_t local_worker_id) noexcept
-{
-    auto *dispatch_task = runtime::new_task<TaskSquadSpawnTask>(local_worker_id, *squad.get<TaskSquad>());
-    dispatch_task->annotate(squad.worker_id());
-    return this->dispatch(*dispatch_task, local_worker_id);
+    if (task.has_resource_annotated())
+    {
+        const auto &annotated_resource = task.annotated_resource();
+        this->_channels[annotated_resource.channel_id()]->push_back_remote(&task, 0U);
+        if constexpr (config::task_statistics())
+        {
+            this->_statistic.increment<profiling::Statistic::ScheduledOffChannel>(annotated_resource.channel_id());
+        }
+    }
+    else if (task.has_channel_annotated())
+    {
+        this->_channels[task.annotated_channel()]->push_back_remote(&task, 0U);
+        if constexpr (config::task_statistics())
+        {
+            this->_statistic.increment<profiling::Statistic::ScheduledOffChannel>(task.annotated_channel());
+        }
+    }
+    else if (task.has_node_annotated())
+    {
+        // TODO: Select random channel @ node, based on load
+        assert(false && "NOT IMPLEMENTED: Task scheduling for node.");
+    }
+    else
+    {
+        assert(false && "NOT IMPLEMENTED: Task scheduling without channel.");
+    }
 }
 
 void Scheduler::reset() noexcept
 {
-    if constexpr (config::is_use_task_counter())
-    {
-        this->_task_counter->clear();
-    }
-
+    this->_statistic.clear();
     this->_epoch_manager.reset();
 }
 
-void Scheduler::start_idle_profiler()
+void Scheduler::profile(const std::string &output_file)
 {
-    // TODO: Should we measure idle times?
-    //    this->_idle_profiler.start();
-    //    for (auto worker_id = 0U; worker_id < this->_core_set.count_cores(); ++worker_id)
-    //    {
-    //        this->_idle_profiler.start(this->_worker[worker_id]->channel());
-    //    }
-}
-
-std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>> Scheduler::memory_tags()
-{
-    auto tags = std::unordered_map<std::string, std::vector<std::pair<std::uintptr_t, std::uintptr_t>>>{};
-
-    auto workers = std::vector<std::pair<std::uintptr_t, std::uintptr_t>>{};
-    workers.reserve(this->_core_set.count_cores());
-    for (auto worker_id = 0U; worker_id < this->_core_set.count_cores(); ++worker_id)
+    this->_profiler.profile(output_file);
+    for (auto i = 0U; i < this->_count_channels; ++i)
     {
-        const auto begin = std::uintptr_t(this->_worker[worker_id]);
-        const auto end = begin + sizeof(Worker);
-        workers.emplace_back(std::make_pair(begin, end));
+        Genode::log("Profiling channel ", i, " at ", this->_channels[i]);
+        this->_profiler.profile(this->_is_running, *(this->_channels[i]));
     }
-
-    tags.insert(std::make_pair("worker", std::move(workers)));
-    return tags;
 }

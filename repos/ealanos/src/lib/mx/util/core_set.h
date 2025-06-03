@@ -5,13 +5,10 @@
 #include <bitset>
 #include <cstdint>
 #include <mx/memory/config.h>
-#include <mx/system/cpu.h>
+#include <mx/system/topology.h>
 #include <mx/tasking/config.h>
-#include <optional>
 #include <ostream>
-#include <sstream>
-#include <string>
-#include <vector>
+#include <mx/util/bits.h>
 
 namespace mx::util {
 /**
@@ -31,28 +28,8 @@ public:
         NUMAAware
     };
 
-    /**
-     * Builds the core set for a fixed number of cores and specified ordering.
-     * @param channels Number of channels.
-     * @param cores Number of cores.
-     * @param order The order can be "Ascending" (for using the systems order) or "NUMA Aware".
-     * @return
-     */
-    [[nodiscard]] static core_set build(std::uint16_t cores, Order order = Ascending);
-
-    /**
-     * Builds the core set for all cores in the system and specified ordering.
-     * @param order The order can be "Ascending" (for using the systems order) or "NUMA Aware".
-     * @return
-     */
-    [[nodiscard]] static core_set build(Order order = Ascending)
-    {
-        return core_set::build(system::cpu::count_cores(), order);
-    }
-
-    constexpr core_set() noexcept = default;
-
-    core_set(std::initializer_list<std::uint16_t> &&core_ids) noexcept
+    constexpr core_set() noexcept : _core_identifier({0U}), _numa_nodes(0U) {}
+    explicit core_set(std::initializer_list<std::uint16_t> &&core_ids) noexcept : core_set()
     {
         for (const auto core_id : core_ids)
         {
@@ -63,16 +40,26 @@ public:
 
     core_set &operator=(const core_set &other) noexcept = default;
 
-    std::uint16_t operator[](const std::uint16_t index) const noexcept { return _worker_core_map[index]; }
-    [[nodiscard]] std::uint16_t front() const { return _worker_core_map.front(); }
-    [[nodiscard]] std::uint16_t back() const { return _worker_core_map.back(); }
+    /**
+     * Add a core to the core set.
+     * @param core_identifier Logical identifier of the core.
+     */
+    void emplace_back(const std::uint16_t core_identifier) noexcept
+    {
+        _core_identifier[_size++] = core_identifier;
+        _numa_nodes[system::topology::node_id(core_identifier)] = true;
+    }
 
-    explicit operator bool() const noexcept { return _count_cores > 0U; }
+    std::uint16_t operator[](const std::uint16_t index) const noexcept { return _core_identifier[index]; }
+    std::uint16_t front() const { return _core_identifier.front(); }
+    std::uint16_t back() const { return _core_identifier.back(); }
+
+    explicit operator bool() const noexcept { return _size > 0U; }
 
     /**
      * @return Number of included cores.
      */
-    [[nodiscard]] std::uint16_t count_cores() const noexcept { return _count_cores; }
+    [[nodiscard]] std::uint16_t size() const noexcept { return _size; }
 
     /**
      * @return Number of included NUMA regions.
@@ -86,7 +73,7 @@ public:
      */
     [[nodiscard]] std::uint8_t numa_node_id(const std::uint16_t index) const noexcept
     {
-        return system::cpu::node_id(_worker_core_map[index]);
+        return system::topology::node_id(_core_identifier[index]);
     }
 
     /**
@@ -94,19 +81,27 @@ public:
      */
     [[nodiscard]] std::uint16_t max_core_id() const noexcept
     {
-        return *std::max_element(_worker_core_map.cbegin(), _worker_core_map.cbegin() + _count_cores);
+        return *std::max_element(_core_identifier.cbegin(), _core_identifier.cbegin() + _size);
     }
+
+    /**
+     * Builds the core set for a fixed number of cores and specified ordering.
+     * @param cores Number of cores.
+     * @param order The order can be "Ascending" (for using the systems order) or "NUMA Aware".
+     * @return
+     */
+    static core_set build(std::uint16_t cores, Order order = Ascending);
+
+    static core_set build(std::uint64_t *core_mask, std::uint16_t count);
 
     bool operator==(const core_set &other) const noexcept
     {
-        return _worker_core_map == other._worker_core_map && _count_cores == other._count_cores &&
-               _numa_nodes == other._numa_nodes;
+        return _core_identifier == other._core_identifier && _size == other._size && _numa_nodes == other._numa_nodes;
     }
 
     bool operator!=(const core_set &other) const noexcept
     {
-        return _worker_core_map != other._worker_core_map || _count_cores != other._count_cores ||
-               _numa_nodes != other._numa_nodes;
+        return _core_identifier != other._core_identifier || _size != other._size || _numa_nodes != other._numa_nodes;
     }
 
     /**
@@ -118,38 +113,17 @@ public:
         return _numa_nodes.test(numa_node_id);
     }
 
-    [[nodiscard]] auto begin() const noexcept { return _worker_core_map.begin(); }
-    [[nodiscard]] auto end() const noexcept { return _worker_core_map.begin() + _count_cores; }
-
-    [[nodiscard]] std::string to_string() const noexcept
-    {
-        std::stringstream stream;
-        stream << *this;
-        return stream.str();
-    }
+    [[nodiscard]] auto begin() const noexcept { return _core_identifier.begin(); }
+    [[nodiscard]] auto end() const noexcept { return _core_identifier.begin() + _size; }
 
 private:
-    // Maps from worker id (0..N) to core id.
-    std::array<std::uint16_t, tasking::config::max_cores()> _worker_core_map{0U};
+    // List of core identifiers.
+    std::array<std::uint16_t, tasking::config::max_cores()> _core_identifier;
 
     // Number of cores in the set.
-    std::uint16_t _count_cores{0U};
+    std::uint16_t _size{0U};
 
     // Bitvector for represented NUMA regions.
     std::bitset<memory::config::max_numa_nodes()> _numa_nodes{0U};
-
-    /**
-     * Add a core to the core set.
-     * @param core_identifier Logical identifier of the core.
-     */
-    void emplace_back(const std::uint16_t core_identifier) noexcept
-    {
-        const auto worker_id = _count_cores++;
-
-        _worker_core_map[worker_id] = core_identifier;
-        _numa_nodes[system::cpu::node_id(core_identifier)] = true;
-    }
-
-    static void sort_by_numa(std::vector<std::uint16_t> &core_ids);
 };
 } // namespace mx::util

@@ -22,7 +22,14 @@ public:
 #endif
     }
 
-    [[nodiscard]] static std::uint32_t clz(const std::uint32_t number) noexcept { return __builtin_clz(number); }
-    [[nodiscard]] static std::uint64_t clz(const std::uint64_t number) noexcept { return __builtin_clzll(number); }
+    [[maybe_unused]] static bool expect_false(const bool expression) noexcept
+    {
+        return __builtin_expect(expression, false);
+    }
+
+    [[maybe_unused]] static bool expect_true(const bool expression) noexcept
+    {
+        return __builtin_expect(expression, true);
+    }
 };
 } // namespace mx::system

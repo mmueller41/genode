@@ -14,8 +14,6 @@ public:
     constexpr OptimisticLock() = default;
     ~OptimisticLock() = default;
 
-    void initialize() { _version = 0b100; }
-
     /**
      * Guarantees to read a valid version by blocking until
      * the version is not locked.
@@ -23,11 +21,11 @@ public:
      */
     [[nodiscard]] version_t read_valid() const noexcept
     {
-        auto version = __atomic_load_n(&_version, __ATOMIC_SEQ_CST);
+        auto version = _version.load(std::memory_order_seq_cst);
         while (OptimisticLock::is_locked(version))
         {
             system::builtin::pause();
-            version = __atomic_load_n(&_version, __ATOMIC_SEQ_CST);
+            version = _version.load(std::memory_order_seq_cst);
         }
         return version;
     }
@@ -40,7 +38,7 @@ public:
      */
     [[nodiscard]] bool is_valid(const version_t version) const noexcept
     {
-        return version == __atomic_load_n(&_version, __ATOMIC_SEQ_CST);
+        return version == _version.load(std::memory_order_seq_cst);
     }
 
     /**
@@ -51,8 +49,7 @@ public:
     {
         auto version = read_valid();
 
-        return __atomic_compare_exchange_n(&_version, &version, version + 0b10, false, __ATOMIC_SEQ_CST,
-                                           __ATOMIC_SEQ_CST);
+        return _version.compare_exchange_strong(version, version + 0b10);
     }
 
     /**
@@ -62,7 +59,7 @@ public:
     {
         if constexpr (SINGLE_WRITER)
         {
-            __atomic_fetch_add(&_version, 0b10, __ATOMIC_SEQ_CST);
+            _version.fetch_add(0b10, std::memory_order_seq_cst);
         }
         else
         {
@@ -82,10 +79,10 @@ public:
     /**
      * Unlocks the version lock.
      */
-    void unlock() noexcept { __atomic_fetch_add(&_version, 0b10, __ATOMIC_SEQ_CST); }
+    void unlock() noexcept { _version.fetch_add(0b10, std::memory_order_seq_cst); }
 
 private:
-    version_t _version;
+    std::atomic<version_t> _version{0b100};
 
     [[nodiscard]] static bool is_locked(const version_t version) noexcept { return (version & 0b10) == 0b10; }
 };

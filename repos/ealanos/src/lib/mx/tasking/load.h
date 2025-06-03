@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 #include <bitset>
 #include <cstdint>
 
@@ -13,14 +12,29 @@ public:
     constexpr Load() = default;
     ~Load() = default;
 
-    void set(const std::uint16_t count_withdrawed_task) noexcept
+    Load &operator+=(const bool hit) noexcept
     {
-        _load = count_withdrawed_task / float(config::task_buffer_size());
+        _hits <<= 1;
+        _hits.set(0, hit);
+        return *this;
     }
 
-    [[nodiscard]] float get() const noexcept { return _load; }
+    Load &operator|=(const Load &other) noexcept
+    {
+        _hits |= other._hits;
+        return *this;
+    }
+
+    /**
+     * @return Number of successful requests.
+     */
+    [[nodiscard]] std::size_t count() const noexcept { return _hits.count(); }
+
+    bool operator<(const Load &other) const noexcept { return _hits.count() < other._hits.count(); }
+    bool operator<(const std::size_t other) const noexcept { return _hits.count() < other; }
 
 private:
-    float _load{0U};
+    // Bitvector of the last 64 requests.
+    std::bitset<64> _hits{0U};
 };
 } // namespace mx::tasking

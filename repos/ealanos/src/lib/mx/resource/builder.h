@@ -1,11 +1,10 @@
 #pragma once
-#include "annotation.h"
-#include "ptr.h"
+#include "resource.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mx/memory/dynamic_size_allocator.h>
 #include <mx/memory/global_heap.h>
-#include <mx/memory/worker_local_dynamic_size_allocator.h>
 #include <mx/tasking/config.h>
 #include <mx/tasking/scheduler.h>
 #include <mx/util/aligned_t.h>
@@ -21,7 +20,7 @@ namespace mx::resource {
 class Builder
 {
 public:
-    Builder(tasking::Scheduler &scheduler, memory::dynamic::local::Allocator &allocator) noexcept
+    Builder(tasking::Scheduler &scheduler, memory::dynamic::Allocator &allocator) noexcept
         : _allocator(allocator), _scheduler(scheduler)
     {
     }
@@ -33,22 +32,17 @@ public:
      * size and arguments. The hint defines the synchronization
      * requirements and affects scheduling.
      *
-     * @param calling_worker_id Id of the calling worker for local allocation.
      * @param size Size of the data object.
      * @param hint  Hint for scheduling and synchronization.
      * @param arguments Arguments to the constructor.
      * @return Tagged pointer holding the synchronization, assigned channel and pointer.
      */
     template <typename T, typename... Args>
-    ptr build(const std::uint16_t calling_worker_id, const std::size_t size, annotation &&annotation,
-              Args &&...arguments) noexcept
+    ptr build(const std::size_t size, resource::hint &&hint, Args &&... arguments) noexcept
     {
 #ifndef NDEBUG
-        if (annotation != synchronization::isolation_level::None &&
-            (annotation != synchronization::isolation_level::Exclusive ||
-             annotation != synchronization::protocol::Queue) &&
-            (annotation != synchronization::isolation_level::Exclusive &&
-             annotation != synchronization::protocol::Batched))
+        if (hint != synchronization::isolation_level::None &&
+            (hint != synchronization::isolation_level::Exclusive || hint != synchronization::protocol::Queue))
         {
             if constexpr (std::is_base_of<ResourceInterface, T>::value == false)
             {
@@ -57,35 +51,13 @@ public:
         }
 #endif
 
-        const auto synchronization_method = Builder::isolation_level_to_synchronization_primitive(annotation);
+        const auto synchronization_method = Builder::isolation_level_to_synchronization_primitive(hint);
 
-        const auto [mapped_worker_id, numa_node_id] = schedule(annotation);
+        const auto [channel_id, numa_node_id] = schedule(hint);
+        const auto resource_information = information{channel_id, synchronization_method};
 
-        auto *resource = new (_allocator.allocate(calling_worker_id, numa_node_id, system::cache::line_size(), size))
-            T(std::forward<Args>(arguments)...);
-
-        if constexpr (std::is_base_of<ResourceInterface, T>::value)
-        {
-            switch (synchronization_method)
-            {
-            case synchronization::primitive::ExclusiveLatch:
-            case synchronization::primitive::RestrictedTransactionalMemory:
-                resource->initialize(ResourceInterface::SynchronizationType::Exclusive);
-                break;
-            case synchronization::primitive::ReaderWriterLatch:
-                resource->initialize(ResourceInterface::SynchronizationType::SharedWrite);
-                break;
-            case synchronization::primitive::OLFIT:
-            case synchronization::primitive::ScheduleWriter:
-                resource->initialize(ResourceInterface::SynchronizationType::OLFIT);
-                break;
-            default:
-                break;
-            }
-        }
-
-        const auto resource_information = information{mapped_worker_id, synchronization_method};
-        return ptr{resource, resource_information};
+        return ptr{new (_allocator.allocate(numa_node_id, 64U, size)) T(std::forward<Args>(arguments)...),
+                   resource_information};
     }
 
     /**
@@ -93,17 +65,14 @@ public:
      * The hint defines the synchronization
      * requirements and affects scheduling.
      * @param object
-     * @param annotation  Hint for scheduling and synchronization.
+     * @param hint  Hint for scheduling and synchronization.
      * @return Tagged pointer holding the synchronization, assigned channel and pointer.
      */
-    template <typename T> ptr build(T *object, annotation &&annotation) noexcept
+    template <typename T> ptr build(T *object, resource::hint &&hint) noexcept
     {
 #ifndef NDEBUG
-        if (annotation != synchronization::isolation_level::None &&
-            (annotation != synchronization::isolation_level::Exclusive ||
-             annotation != synchronization::protocol::Queue) &&
-            (annotation != synchronization::isolation_level::Exclusive &&
-             annotation != synchronization::protocol::Batched))
+        if (hint != synchronization::isolation_level::None &&
+            (hint != synchronization::isolation_level::Exclusive || hint != synchronization::protocol::Queue))
         {
             if constexpr (std::is_base_of<ResourceInterface, T>::value == false)
             {
@@ -112,18 +81,18 @@ public:
         }
 #endif
 
-        const auto synchronization_method = Builder::isolation_level_to_synchronization_primitive(annotation);
-        const auto [worker_id, _] = schedule(annotation);
+        const auto synchronization_method = Builder::isolation_level_to_synchronization_primitive(hint);
+        const auto [channel_id, _] = schedule(hint);
 
-        return ptr{object, information{worker_id, synchronization_method}};
+        return ptr{object, information{channel_id, synchronization_method}};
     }
 
     /**
      * Destroys the given data object.
-     * @param calling_worker_id Worker calling destroy for local free.
+     * @param core_id Executing core.
      * @param resource Tagged pointer to the data object.
      */
-    template <typename T> void destroy(const std::uint16_t calling_worker_id, const ptr resource)
+    template <typename T> void destroy(const ptr resource)
     {
         // TODO: Revoke usage prediction?
         if (resource != nullptr)
@@ -132,44 +101,44 @@ public:
             {
                 if (synchronization::is_optimistic(resource.synchronization_primitive()))
                 {
-                    _scheduler.epoch_manager().add_to_garbage_collection(resource.get<ResourceInterface>(),
-                                                                         resource.worker_id());
+                    _scheduler.epoch_manager().add_to_garbage_collection(resource.get<resource::ResourceInterface>(),
+                                                                         resource.channel_id());
                     return;
                 }
             }
 
             // No need to reclaim memory.
             resource.get<T>()->~T();
-            _allocator.free(calling_worker_id, resource.get<void>());
+            _allocator.free(resource.get<void>());
         }
     }
 
 private:
     // Internal allocator for dynamic sized allocation.
-    memory::dynamic::local::Allocator &_allocator;
+    memory::dynamic::Allocator &_allocator;
 
     // Scheduler of MxTasking to get access to channels.
     tasking::Scheduler &_scheduler;
 
     // Next channel id for round-robin scheduling.
-    alignas(64) std::atomic_uint16_t _round_robin_worker_id{0U};
+    alignas(64) std::atomic_uint16_t _round_robin_channel_id{0U};
 
     /**
      * Schedules the resource to a channel, affected by the given hint.
      *
-     * @param annotation Hint for scheduling.
+     * @param hint Hint for scheduling.
      * @return Pair of Channel and NUMA node IDs.
      */
-    std::pair<std::uint16_t, std::uint8_t> schedule(const annotation &annotation);
+    std::pair<std::uint16_t, std::uint8_t> schedule(const resource::hint &hint);
 
     /**
      * Determines the best synchronization method based on
      * synchronization requirement.
      *
-     * @param annotation Hint for choosing the primitive.
+     * @param isolation_level Synchronization requirement.
+     * @param prefer_latch Prefer latch for synchronization or latch-free?
      * @return Chosen synchronization method.
      */
-    static synchronization::primitive isolation_level_to_synchronization_primitive(
-        const annotation &annotation) noexcept;
+    static synchronization::primitive isolation_level_to_synchronization_primitive(const hint &hint) noexcept;
 };
 } // namespace mx::resource
