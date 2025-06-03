@@ -299,8 +299,8 @@ Signal Signal_receiver::pending_signal()
 	});
 	if (result.context) {
 		Mutex::Guard context_guard(result.context->_mutex);
-		if (result.num == 0)
-			warning("returning signal with num == 0");
+		/*if (result.num == 0)
+			warning("returning signal with num == 0");*/
 
 		return result;
 	}

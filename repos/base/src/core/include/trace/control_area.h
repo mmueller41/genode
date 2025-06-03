@@ -71,7 +71,7 @@ class Genode::Trace::Control_area
 				return true;
 			}
 
-			error("trace-control allocation failed");
+			//error("trace-control allocation failed");
 			return false;
 		}
 
