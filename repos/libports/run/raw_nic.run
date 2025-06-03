@@ -66,10 +66,10 @@ append config {
 
 			<policy label_prefix="rawnic" domain="downlink"/>
 			<policy label_prefix="drivers"   domain="uplink"/>
-			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
 			<!--
-			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="yes">
+			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
 			-->
+			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="no">
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
@@ -84,7 +84,7 @@ append config {
 
 			</domain>
 
-			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="yes">
+			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="no">
 
 				<dhcp-server ip_first="10.0.3.55" ip_last="10.0.3.55">
 					<dns-server ip="8.8.8.8"/>
