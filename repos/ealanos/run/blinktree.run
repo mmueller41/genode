@@ -1,0 +1,76 @@
+set build_components {
+    core init hoitaja timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx lib/mxtasking app/blinktree_benchmark
+}
+
+build $build_components
+create_boot_directory
+
+install_config {
+    <config prio_levels="32" verbose="true">
+        <parent-provides>
+            <service name="LOG"/>
+            <service name="PD"/>
+            <service name="CPU"/>
+            <service name="ROM"/>
+            <service name="RAM"/>
+            <service name="IRQ"/>
+            <service name="IO_MEM"/>
+            <service name="IO_PORT"/>
+            <service name="CAP"/>
+            <service name="RM"/>
+            <service name="SIGNAL"/>
+            <service name="TRACE"/>
+        </parent-provides>
+        <default-route>
+            <any-service><parent/><any-child/></any-service>
+        </default-route>
+        <default caps="2000"/>
+        <affinity-space width="64" height="1"/>
+        <start name="timer">
+            <resource name="RAM" quantum="3M"/>
+            <provides><service name="Timer"/></provides>
+            <route>
+                <any-service><parent/><any-child/></any-service>
+            </route>
+        </start>
+        <start name="blinktree1" caps="10000">
+            <binary name="blinktree_benchmark"/>
+            <affinity xpos="1" ypos="0" width="16" height="1"/>
+            <resource name="RAM" quantum="84G"/>
+            <!--<resource name="CPU" quantum="90"/>-->
+            <config>
+                <vfs>
+                    <dir name="dev"> 
+                        <log/> 
+                        <inline name="rtc">2022-07-20 14:30</inline> 
+                    </dir>
+                    <dir name="workloads">
+                        <rom name="fill_randint_workloada"/>
+                        <rom name="mixed_randint_workloada"/>
+                    </dir>
+                </vfs>
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+        </start> 
+    </config>   
+}
+
+set boot_modules [build_artifacts]
+append boot_modules { fill_randint_workloada mixed_randint_workloada }
+build_boot_image $boot_modules
+
+append qemu_args " -nographic "
+#run_genode_until forever
+
+for {set i 0} { $i < 3000 } { incr i } {
+    if { ! [catch {run_genode_until "Benchmark finished" 240} result ] } {
+        incr succeeded
+        puts "\n $succeeded of 3000 succeeded"
+        kill_spawned $qemu_spawn_id
+    } else {
+        incr failed
+        kill_spawned $qemu_spawn_id
+    }
+}
+
+puts "\n $succeeded of $i succeeded. $failed of $i failed."
