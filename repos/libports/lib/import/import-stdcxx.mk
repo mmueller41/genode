@@ -36,7 +36,7 @@ include $(call select_from_repositories,lib/import/import-libc.mk)
 CC_OPT += -D_GLIBCXX_HAVE_MBSTATE_T
 
 # use compiler-builtin atomic operations
-CC_OPT += -D_GLIBCXX_ATOMIC_BUILTINS_4
+CC_OPT += -D_GLIBCXX_ATOMIC_BUILTINS_8 -D__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8
 
 # No isinf isnan
 CC_OPT += -D_GLIBCXX_NO_OBSOLETE_ISINF_ISNAN_DYNAMIC
