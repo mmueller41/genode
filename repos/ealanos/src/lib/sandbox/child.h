@@ -390,6 +390,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		Ealan::Habitat_connection &_habitat;
 
+		bool _is_brick;
+
 		/**
 		 * CPU-session priority parameters
 		 */
@@ -650,7 +652,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 				if (_child.active()) {
 					try {
-					 	_cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name));
+					 	_cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name), _is_brick);
 					} catch (Ealan::Cell::Cell_creation_error) {
 						Genode::error("Failed to create cell");
 						abandon();
@@ -756,7 +758,7 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			}
 		}
 
-		bool is_brick() { return false; }
+		bool is_brick() { return _is_brick; }
 
 		/****************************
 		 ** Child-policy interface **

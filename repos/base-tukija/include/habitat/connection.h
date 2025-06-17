@@ -28,8 +28,8 @@ struct Ealan::Habitat_connection : Genode::Connection<Ealan::Habitat_session>, H
     Habitat_connection(Genode::Env &env, Genode::Affinity &affinity, Label const &label = Label()) 
     : Connection<Habitat_session>(env, label, Genode::Ram_quota { RAM_QUOTA }, affinity, Args("")), Habitat_client(cap()) {}
 
-    Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
-        return Habitat_client::create_cell(pd_cap, affinity, prio, label);
+    Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label, bool is_brick) override {
+        return Habitat_client::create_cell(pd_cap, affinity, prio, label, is_brick);
     }
 
     Genode::Affinity affinity() override

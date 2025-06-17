@@ -12,6 +12,7 @@
  */
 
 /* Genode includes */
+#include "utils.h"
 #include <vm_session/vm_session.h>
 
 /* local includes */
@@ -735,50 +736,32 @@ void Sandbox::Child::resource_request(Parent::Resource_args const &args)
 }
 
 
-Sandbox::Child::Child(Env                      &env,
-                      Allocator                &alloc,
-                      Verbose            const &verbose,
-                      Id                        id,
-                      Report_update_trigger    &report_update_trigger,
-                      Xml_node                  start_node,
-                      Default_route_accessor   &default_route_accessor,
-                      Default_caps_accessor    &default_caps_accessor,
-                      Name_registry            &name_registry,
-                      Ram_limit_accessor       &ram_limit_accessor,
-                      Cap_limit_accessor       &cap_limit_accessor,
-                      Cpu_limit_accessor       &cpu_limit_accessor,
-                      Cpu_quota_transfer       &cpu_quota_transfer,
-                      Prio_levels               prio_levels,
-                      Affinity::Space const    &affinity_space,
-					  Affinity::Location	   &location,
-                      Registry<Parent_service> &parent_services,
-                      Registry<Routed_service> &child_services,
-                      Registry<Local_service>  &local_services,
-                      Pd_intrinsics            &pd_intrinsics,
-					  Ealan::Habitat_connection &habitat,
-					  Genode::Sandbox::State_handler &habitat_handler)
-:
-	_env(env), _alloc(alloc), _verbose(verbose), _id(id),
-	_report_update_trigger(report_update_trigger),
-	_habitat_handler(habitat_handler),
-	_list_element(this),
-	_start_node(_alloc, start_node),
-	_default_route_accessor(default_route_accessor),
-	_default_caps_accessor(default_caps_accessor),
-	_ram_limit_accessor(ram_limit_accessor),
-	_cap_limit_accessor(cap_limit_accessor),
-	_cpu_limit_accessor(cpu_limit_accessor),
-	_cpu_quota_transfer(cpu_quota_transfer),
-	_name_registry(name_registry),
-	_heartbeat_enabled(start_node.has_sub_node("heartbeat")),
-	_resources(_resources_from_start_node(start_node, prio_levels, affinity_space, location,
-	                                      default_caps_accessor.default_caps())),
-	_pd_intrinsics(pd_intrinsics),
-	_parent_services(parent_services),
-	_child_services(child_services),
-	_local_services(local_services),
-	_session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm()),
-	_habitat(habitat){
+Sandbox::Child::Child(
+	Env &env, Allocator &alloc, Verbose const &verbose, Id id,
+	Report_update_trigger &report_update_trigger, Xml_node start_node,
+	Default_route_accessor &default_route_accessor, Default_caps_accessor &default_caps_accessor,
+	Name_registry &name_registry, Ram_limit_accessor &ram_limit_accessor,
+	Cap_limit_accessor &cap_limit_accessor, Cpu_limit_accessor &cpu_limit_accessor,
+	Cpu_quota_transfer &cpu_quota_transfer, Prio_levels prio_levels,
+	Affinity::Space const &affinity_space, Affinity::Location &location,
+	Registry<Parent_service> &parent_services, Registry<Routed_service> &child_services,
+	Registry<Local_service> &local_services, Pd_intrinsics &pd_intrinsics,
+	Ealan::Habitat_connection &habitat, Genode::Sandbox::State_handler &habitat_handler)
+	: _env(env), _alloc(alloc), _verbose(verbose), _id(id),
+	  _report_update_trigger(report_update_trigger), _habitat_handler(habitat_handler),
+	  _list_element(this), _start_node(_alloc, start_node),
+	  _default_route_accessor(default_route_accessor),
+	  _default_caps_accessor(default_caps_accessor), _ram_limit_accessor(ram_limit_accessor),
+	  _cap_limit_accessor(cap_limit_accessor), _cpu_limit_accessor(cpu_limit_accessor),
+	  _cpu_quota_transfer(cpu_quota_transfer), _name_registry(name_registry),
+	  _heartbeat_enabled(start_node.has_sub_node("heartbeat")),
+	  _resources(_resources_from_start_node(start_node, prio_levels, affinity_space, location,
+                                            default_caps_accessor.default_caps())),
+	  _pd_intrinsics(pd_intrinsics), _parent_services(parent_services),
+	  _child_services(child_services), _local_services(local_services),
+	  _session_requester(_env.ep().rpc_ep(), _env.ram(), _env.rm()), _habitat(habitat),
+	  _is_brick(Sandbox::is_brick_from_xml(start_node))
+	  {
 	//log("Creating new cell <", _unique_name, ">");
 	if (_verbose.enabled()) {
 		log("child \"",       _unique_name, "\"");

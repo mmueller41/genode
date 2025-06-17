@@ -55,11 +55,11 @@ class Hoitaja::Core_allocator
 
         Genode::Affinity::Location allocate_cores_for_cell(Genode::Xml_node const &start_node)
         {
-            /*if (::Sandbox::is_brick_from_xml(start_node)) {
+            if (::Sandbox::is_brick_from_xml(start_node)) {
                 Genode::Affinity::Location brick = ::Sandbox::affinity_location_from_xml(_affinity_space, start_node);
                 _cores_for_cells -= brick.width();
                 return brick;
-            }*/
+            }
 
             // Calculate affinity from global affinity space and priority
             long priority = ::Sandbox::priority_from_xml(start_node, _prio_levels);
@@ -73,7 +73,12 @@ class Hoitaja::Core_allocator
         }
 
         void free_cores_from_cell(::Sandbox::Child &cell)
-        {
+		{
+			if (cell.is_brick()) {
+				_cores_for_cells += cell.resources().affinity.location().width();
+				return;
+            }
+		
             /* Remove cell's coefficient from the global resource coefficient.
              * This is necessary in order to be able to redistribute the freed resources correctly. We do not trigger the redistribution itself here, because the child has not been fully destroyed yet, thus its resources might still be occupied at this point. */
             _resource_coeff -= 1.0 / static_cast<double>(cell.resources().priority);
@@ -84,8 +89,11 @@ class Hoitaja::Core_allocator
          * 
          */
         void update(::Sandbox::Child &cell, int *xpos, int *lower_limit) {
-            if (cell.abandoned())
-                return;
+			if (cell.abandoned()) return;
+
+			if (cell.is_brick()) {
+				return;
+			}
             ::Sandbox::Child::Resources resources = cell.resources();
             long priority = (resources.priority == 0)? 1 : resources.priority;
 

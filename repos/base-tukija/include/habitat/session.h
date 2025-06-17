@@ -35,7 +35,7 @@ struct Ealan::Habitat_session : Genode::Session
     /**
      * Attach cell info page to the cells virtual memory space
      */
-    virtual Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) = 0;
+    virtual Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd, Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label, bool is_brick) = 0;
 
     /**
      * @brief Clean up the habitat by removing terminated cells and freeing their memory
@@ -45,7 +45,7 @@ struct Ealan::Habitat_session : Genode::Session
 
     virtual Genode::Affinity affinity() = 0;
 
-    GENODE_RPC_THROW(Rpc_create_cell, Cell_capability, create_cell, GENODE_TYPE_LIST(Ealan::Cell::Cell_creation_error), Genode::Capability<Genode::Pd_session>, Genode::Affinity &, Genode::uint16_t, Genode::Session_label const &);
+    GENODE_RPC_THROW(Rpc_create_cell, Cell_capability, create_cell, GENODE_TYPE_LIST(Ealan::Cell::Cell_creation_error), Genode::Capability<Genode::Pd_session>, Genode::Affinity &, Genode::uint16_t, Genode::Session_label const &, bool);
     GENODE_RPC(Rpc_affinity, Genode::Affinity, affinity);
     GENODE_RPC(Rpc_groom, void, groom);
 

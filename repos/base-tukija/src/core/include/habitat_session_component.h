@@ -54,9 +54,9 @@ class Core::Habitat_session_component : public Genode::Session_object<Ealan::Hab
     public:
         Habitat_session_component(Genode::Rpc_entrypoint &ep, Genode::Session::Resources const &resources, Genode::Session_label const &label, Genode::Session::Diag const &diag, Genode::Ram_allocator &ram, Genode::Region_map &rm, Genode::Affinity const &affinity) : Genode::Session_object<Ealan::Habitat_session>(ep, resources, label, diag), _local_rm(rm), _affinity(affinity), _label(label), _ram_alloc(ram, _ram_quota_guard(), _cap_quota_guard()), _md_alloc(_ram_alloc, rm), _ep(ep) {}
 
-        Ealan::Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, [[maybe_unused]] Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label) override {
+        Ealan::Cell_capability create_cell(Genode::Capability<Genode::Pd_session> pd_cap, [[maybe_unused]] Genode::Affinity &affinity, Genode::uint16_t prio, Genode::Session_label const &label, bool is_brick) override {
 
-            Ealan::Cell_component *cell = new (_md_alloc) Ealan::Cell_component(pd_cap, prio, affinity, _ep, _local_rm, label);
+            Ealan::Cell_component *cell = new (_md_alloc) Ealan::Cell_component(pd_cap, prio, affinity, _ep, _local_rm, label, is_brick);
 
             _managed_cells.insert(cell);
 

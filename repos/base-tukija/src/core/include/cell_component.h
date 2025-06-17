@@ -83,7 +83,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
     public:
 
-        Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio, Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep, Genode::Region_map &rm, Genode::Session_label const &label) : _ep(ep),  _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap), _native_pd(_pd.native_pd()) {
+        Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio, Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep, Genode::Region_map &rm, Genode::Session_label const &label, bool is_brick) : _ep(ep),  _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap), _native_pd(_pd.native_pd()), _is_brick(is_brick) {
             Tukija::mword_t cell_pd_sel = _native_pd.sel();
             Tukija::mword_t cip_phys = 0;
 
