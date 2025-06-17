@@ -1,0 +1,8 @@
+CompileFlags:
+    Add: [-nostdinc, -m64, -std=c++20, -ferror-limit=0]
+    Compiler: /usr/local/genode/tool/23.05/bin/genode-x86-g++
+
+Diagnostics:
+    Suppress: '*'
+    ClangTidy:
+        Remove: '*'

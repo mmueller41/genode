@@ -1,0 +1,48 @@
+---
+AccessModifierOffset: 1
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: None
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+  AlignCompound: true
+  AlignFunctionPointers: true
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+  AlignCompound: true
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: true
+AlignConsecutiveShortCaseStatements:
+  Enabled: true
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseExpressionOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLambdasOnASingleLine: Inline
+AllowShortLoopsOnASingleLine: true
+BreakBeforeBraces: Linux
+EmptyLineAfterAccessModifier: Always
+IndentCaseBlocks: true
+IndentExternBlock: Indent
+IndentWrappedFunctionNames: true
+IndentAccessModifiers: true
+IndentPPDirectives: BeforeHash
+UseTab: AlignWithSpaces
+LambdaBodyIndentation: Signature
+Language: Cpp
+Standard: c++20
+SpaceInEmptyBlock: true
+NamespaceIndentation: All
+IndentGotoLabels: true
+BreakBeforeInlineASMColon: OnlyMultiline
+IndentWidth: 4
+TabWidth: 4
+ColumnLimit: 100
