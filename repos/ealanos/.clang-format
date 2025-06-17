@@ -34,7 +34,7 @@ IndentCaseBlocks: true
 IndentExternBlock: Indent
 IndentWrappedFunctionNames: true
 IndentAccessModifiers: true
-IndentPPDirectives: BeforeHash
+IndentPPDirectives: None
 UseTab: AlignWithSpaces
 LambdaBodyIndentation: Signature
 Language: Cpp
