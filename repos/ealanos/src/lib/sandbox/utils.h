@@ -14,7 +14,21 @@
 #ifndef _LIB__SANDBOX__UTILS_H_
 #define _LIB__SANDBOX__UTILS_H_
 
-namespace Sandbox {
+#include <base/stdint.h>
+#include <base/log.h>
+#include <util/string.h>
+#include <base/registry.h>
+#include <base/affinity.h>
+#include <util/xml_node.h>
+	#include <base/session_label.h>
+	#include <base/service.h>
+	#include <base/child.h>
+	#include <os/session_policy.h>
+#include "types.h"
+
+namespace Sandbox
+{
+	using namespace Genode;
 
 	static inline void warn_insuff_quota(size_t const avail)
 	{
@@ -231,6 +245,11 @@ namespace Sandbox {
 		});
 
 		return result;
+	}
+
+	inline bool is_brick_from_xml(Xml_node start_node)
+	{
+		return start_node.attribute_value("brick", false);
 	}
 }
 
