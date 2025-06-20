@@ -5,6 +5,7 @@
 *.log
 /*.xml
 *.o
+*.d
 
 /build
 /contrib
