@@ -393,7 +393,8 @@ void runloops(long sleep_cnt, int num_chunks )
     blkp[cblks] = (char *) CUSTOM_MALLOC(blk_size) ;
 #endif
     blksize[cblks] = blk_size ;
-    assert(blkp[cblks] != NULL) ;
+	assert(blkp[cblks] != NULL);
+	assert(blkp[cblks] < (void *)0x7FFF80000000UL);
   }
 
   while(TRUE){
@@ -633,22 +634,22 @@ static void * exercise_heap( void *pinput)
     pdea->array[victim] = new char[blk_size] ;
 #else
     pdea->array[victim] = (char *) CUSTOM_MALLOC(blk_size) ;
-#endif
+	#endif
 
     pdea->blksize[victim] = blk_size ;
-    assert(pdea->array[victim] != NULL) ;
+	assert(pdea->array[victim] != NULL);
+	assert(pdea->array[victim] < (void*)0x7FFF80000000UL);
 
-    pdea->cAllocs++ ;
+		pdea->cAllocs++;
 
-		/* Write something! */
+	/* Write something! */
 
-		volatile char * chptr = ((char *) pdea->array[victim]);
-		*chptr++ = 'a';
-		[[maybe_unused]] volatile char ch = *((char *) pdea->array[victim]);
-		*chptr = 'b';
+	volatile char *chptr              = ((char *)pdea->array[victim]);
+	*chptr++                          = 'a';
+	[[maybe_unused]] volatile char ch = *((char *)pdea->array[victim]);
+	*chptr                            = 'b';
 
-
-		if( stopflag ) break ;
+	if (stopflag) break;
   }
 
   //  	printf("Thread %u terminating: %d allocs, %d frees\n",
@@ -784,7 +785,7 @@ void Libc::Component::construct(Libc::Env &env)
                     min_size = config.attribute_value("min_size", 8);
                     max_size = config.attribute_value("max_size", 1000);
                     chperthread = config.attribute_value("chperthread", 5000);
-                    num_rounds = config.attribute_value("rounds", 100);
+                    num_rounds = config.attribute_value("rounds", 1000);
                     seed = config.attribute_value("seed", 4141);
                     max_threads = config.attribute_value("max_threads", 32);
                     min_threads = config.attribute_value("min_threads", 1);
