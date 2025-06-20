@@ -70,15 +70,16 @@ void Server::run()
 
 	static Genode::Heap _alloc{env.ram(), env.rm()};
 
-	mx::memory::GlobalHeap::_alloc->reserve_superblocks(64, 128, 6);
+	mx::memory::GlobalHeap::_alloc->reserve_superblocks(64, 128, 0);
 	
 	Mxip::mxip_init(*mx::memory::GlobalHeap::_alloc, timer);
 	Ealan::Memory::Hamstraaja<128, 4 * 4096> *task_alloc =
 		new (_alloc) Ealan::Memory::Hamstraaja<128, 4 * 4096>(env.pd(), env.rm());
-	task_alloc->reserve_superblocks(48, 128, 6);
+	task_alloc->reserve_superblocks(48, 128, 0);
 	Mxip::Nic_netif::Payload_allocator *palloc = new (_alloc) Mxip::Nic_netif::Payload_allocator(env.pd(), env.rm());
+	palloc->reserve_superblocks(64, 1600, 0);
 	server = new network::Server{env, this->_port, mx::tasking::runtime::channels(), timer, _alloc, task_alloc, palloc};
-
+	
 	std::cout << "Waiting for requests on port :" << this->_port << std::endl;
 	auto network_thread = std::thread{[server]() {
 		server->listen();
