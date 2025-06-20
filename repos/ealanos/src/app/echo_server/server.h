@@ -1,5 +1,6 @@
 #pragma once
 
+#include "base/output.h"
 #include "config.h"
 #include "ealanos/memory/hamstraaja.h"
 #include "lwip/pbuf.h"
@@ -80,7 +81,9 @@ namespace application::echo_server::network {
             struct pbuf *tx;
             std::uint16_t channel_id;
             std::uint64_t id;
-        };
+		};
+
+
         Server(Libc::Env &env, std::uint64_t port,
                std::uint16_t count_channels, Timer::Connection &timer, Genode::Heap &alloc, Ealan::Memory::Hamstraaja<128, 4*4096> *talloc, Mxip::Nic_netif::Payload_allocator *palloc) noexcept;
         ~Server();
@@ -183,6 +186,12 @@ namespace application::echo_server::network {
 				Genode::log("Freeing state object ", s);
 				mx::memory::GlobalHeap::free(s); // mem_free(s);
 				Genode::log("Freed state object");
+
+				static bool printed = false;
+				if (!printed) {
+                    //get_instance()->_netif.print_stats();
+					printed = true;
+				}
             }
         }
 
