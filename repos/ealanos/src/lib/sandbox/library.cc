@@ -592,8 +592,9 @@ void Genode::Sandbox::Library::apply_config(Xml_node const &config)
 	_children.for_each_child([&] (Child &child) { child.apply_downgrade(); });
 	_children.for_each_child([&] (Child &child) { child.apply_upgrade(); });
 
-	if (_state_report_outdated)
-		_state_reporter.trigger_immediate_report_update();
+	if (_state_report_outdated) _state_reporter.trigger_immediate_report_update();
+
+	maintain_cells();
 }
 
 void Genode::Sandbox::Library::maintain_cells()
