@@ -33,7 +33,7 @@ install_config {
                 <any-service><parent/><any-child/></any-service>
             </route>
         </start>
-        <start name="cell1" priority="-1" caps="16000">
+        <start name="cell1" priority="-1" caps="160000">
             <binary name="larson"/>
             <resource name="RAM" quantum="220G"/>
             <config>
