@@ -50,7 +50,7 @@ public:
     explicit Chunk(void *memory, bool is_allocated) noexcept : _memory(memory), _is_allocated(is_allocated) {}
     ~Chunk() noexcept = default;
 
-    static constexpr auto size() { return 4096 * 4096; /* 16mb */ }
+    static constexpr auto size() { return 4 * 4096 * 4096; /* 16mb */ }
 
     explicit operator void *() const noexcept { return _memory; }
     explicit operator std::uintptr_t() const noexcept { return reinterpret_cast<std::uintptr_t>(_memory); }
