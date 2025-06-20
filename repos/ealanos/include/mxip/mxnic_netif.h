@@ -28,6 +28,9 @@
 
 #include "base/allocator.h"
 #include "mx/memory/global_heap.h"
+#include "mx/system/environment.h"
+#include "os/packet_stream.h"
+#include "trace/timestamp.h"
 #include <memory>
 #if ETH_PAD_SIZE
 #error ETH_PAD_SIZE defined but unsupported by lwip/nic_netif.h
@@ -46,6 +49,7 @@
 #include <mx/tasking/runtime.h>
 #include <mx/tasking/task.h>
 
+#include "mxip_lock.h"
 /* EalanOS includes */
 #include <ealanos/memory/hamstraaja.h>
 
@@ -92,13 +96,19 @@ namespace Lwip {
 	{
 		struct pbuf_custom p { };
 		Mxip::Nic_netif &netif;
-		void *payload;
+		void              *payload;
+		Genode::Packet_descriptor packet;
 
-		Nic_netif_pbuf(Mxip::Nic_netif &nic, void *pl)
-		: netif(nic), payload(pl)
+		Nic_netif_pbuf(Mxip::Nic_netif &nic, void *pl, Genode::Packet_descriptor pkt)
+		: netif(nic), payload(pl), packet(pkt)
 		{
 			p.custom_free_function = nic_netif_pbuf_free;
 		}
+	};
+
+	struct Rx_task_stats {
+		Genode::Trace::Timestamp waiting_time;
+		Genode::Trace::Timestamp execution_time;	
 	};
 }
 
@@ -116,7 +126,7 @@ class Mxip::Nic_netif
 		};
 
 		enum { TASK_SIZE = 128, SB_SIZE = 2 * 2048 };
-
+		
 	private:
 
 		Genode::Entrypoint _ep;
@@ -153,22 +163,23 @@ class Mxip::Nic_netif
 
 		bool _dhcp { false };
 
+		Lwip::Rx_task_stats _rx_stats[10000100];
 	public:
 
 		void free_pbuf(Lwip::Nic_netif_pbuf &pbuf)
 		{
-			/*bool msg_once = true;
+			bool msg_once = true;
 			while (!_nic.rx()->ready_to_ack()) {
-				if (msg_once)
-					Genode::error("Nic rx acknowledgement queue congested, blocking to  free pbuf");
+				//if (msg_once)
+					//Genode::error("Nic rx acknowledgement queue congested, blocking to  free pbuf");
 				msg_once = false;
 				_ep.wait_and_dispatch_one_io_signal();
 			}
 
 			_nic.rx()->try_ack_packet(pbuf.packet);
-			_wakeup_scheduler.schedule_nic_server_wakeup();*/
-			_packet_alloc->free(pbuf.payload);
-			_task_alloc->free(&pbuf);//destroy(_pbuf_alloc, &pbuf);
+			_wakeup_scheduler.schedule_nic_server_wakeup();
+			//_packet_alloc->free(pbuf.payload);
+			_packet_alloc->free(&pbuf);//destroy(_pbuf_alloc, &pbuf);
 		}
 
 		/*************************
@@ -401,6 +412,14 @@ class Mxip::Nic_netif
 			_nic.rx()->wakeup();
 			_nic.tx()->wakeup();
 		}
+
+		void print_stats()
+		{
+			for (int id = 0; id < 1000000; id++) {
+				Genode::log("rx: id =", id, " wait=", _rx_stats[id].waiting_time, " etime: ", _rx_stats[id].execution_time);
+			}
+		}
+
 };
 
 /**************************
@@ -411,21 +430,23 @@ class Mxip::Receive_task : public mx::tasking::TaskInterface
 {
 	public:
 
-		Receive_task(void *payload, size_t len, struct Lwip::netif &netif, Mxip::Nic_netif &net)
-			: _netif(netif), _payload(payload), _length(len), _net(net)
+		Receive_task(void *payload, size_t len, struct Lwip::netif &netif, Mxip::Nic_netif &net, Genode::Trace::Timestamp arrival, unsigned long id, Genode::Packet_descriptor packet)
+			: _netif(netif), _payload(payload), _length(len), _net(net), _arrival(arrival), _id(id), _packet(packet)
 		{
 		}
 
 		mx::tasking::TaskResult execute(std::uint16_t, std::uint16_t) override
 		{
-			Lwip::Nic_netif_pbuf *nic_pbuf = new (_net._task_alloc->alloc(sizeof(Lwip::Nic_netif_pbuf)))
-					Lwip::Nic_netif_pbuf(_net, _payload);
+			Genode::Trace::Timestamp execution = Genode::Trace::timestamp();
+			Lwip::Nic_netif_pbuf *nic_pbuf = new (_net._packet_alloc->alloc(sizeof(Lwip::Nic_netif_pbuf)))
+					Lwip::Nic_netif_pbuf(_net, _payload, _packet);
 
 			if (!nic_pbuf) {
 				Genode::warning("Could not allocate pbuf ");
 				_net._task_alloc->free(this);
 				return mx::tasking::TaskResult::make_null();
 			}
+
 			pbuf *p = pbuf_alloced_custom(PBUF_RAW, _length, PBUF_REF, &nic_pbuf->p, _payload,
 			                              _length);
 			LINK_STATS_INC(link.recv);
@@ -435,14 +456,19 @@ class Mxip::Receive_task : public mx::tasking::TaskInterface
 				_net._task_alloc->free(this);
 				return mx::tasking::TaskResult::make_null();
 			}
-			err_t rc = _netif.input(p, &_netif);
 
+			err_t rc = _netif.input(p, &_netif);
+			
 			if (rc != ERR_OK) {
 				Genode::error("error forwarding Nic packet to lwIP: error=",
 				              static_cast<std::int16_t>(rc));
 				pbuf_free(p);
 			}
+			Genode::Trace::Timestamp processed = Genode::Trace::timestamp();
 
+			_net._rx_stats[_id].waiting_time =
+				((execution - _arrival) * 1000) / mx::system::Environment::get_cpu_freq();
+			_net._rx_stats[_id].execution_time = ((processed - execution) * 1000) / mx::system::Environment::get_cpu_freq();
 			_net._task_alloc->free(this);
 			return mx::tasking::TaskResult::make_null();
 			//return mx::tasking::TaskResult::make_remove();
@@ -454,7 +480,9 @@ class Mxip::Receive_task : public mx::tasking::TaskInterface
 		void                       *_payload;
 		std::size_t 				_length;
 		Mxip::Nic_netif            &_net;
-		
+		Genode::Trace::Timestamp    _arrival;
+		unsigned long               _id;
+		Genode::Packet_descriptor   _packet;
 };
 
 class Mxip::Tx_ready_task : public mx::tasking::TaskInterface
@@ -464,12 +492,13 @@ class Mxip::Tx_ready_task : public mx::tasking::TaskInterface
 		Tx_ready_task(Nic::Connection &nic, Mxip::Nic_netif &netif) : _nic(nic), _netif(netif) { }
 		mx::tasking::TaskResult execute(std::uint16_t, std::uint16_t) override
 		{
+			//GENODE_LOG_TSC(1);
 			auto &tx       = *_nic.tx();
 			bool  progress = false;
 
 			while (tx.ack_avail()) {
 				tx.release_packet(tx.try_get_acked_packet());
-				_netif._tx_saturated = false;
+				//_netif._tx_saturated = false;
 				progress = true;
 			}
 
@@ -504,6 +533,8 @@ class Mxip::Link_state_task : public mx::tasking::TaskInterface
 			 * if the application wants to be informed of the
 			 * link state then it should use 'set_link_callback'
 			 */
+
+			//GENODE_LOG_TSC_NAMED(1, "Link state task");
 			if (_nic.link_state()) {
 				Lwip::netif_set_link_up(&_netif);
 				if (_dhcp) {
@@ -520,9 +551,9 @@ class Mxip::Link_state_task : public mx::tasking::TaskInterface
 					Lwip::dhcp_release_and_stop(&_netif);
 				}
 			}
-			_nic_netif._task_alloc->free(this);
-			return mx::tasking::TaskResult::make_null();
-			//return mx::tasking::TaskResult::make_remove();
+			//_nic_netif._task_alloc->free(this);
+			//return mx::tasking::TaskResult::make_null();
+			return mx::tasking::TaskResult::make_remove();
 		}
 
 	private:

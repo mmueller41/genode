@@ -40,8 +40,8 @@ extern "C" {
 #define LWIP_TCP_TIMESTAMPS         0
 #define TCP_LISTEN_BACKLOG              255
 #define TCP_MSS                         1460
-#define TCP_WND                     (80 * TCP_MSS)
-#define TCP_SND_BUF                 (80 * TCP_MSS)
+#define TCP_WND                     (46 * TCP_MSS)
+#define TCP_SND_BUF                 (46 * TCP_MSS)
 #define LWIP_WND_SCALE                  3
 #define TCP_RCV_SCALE                   2
 #define TCP_SND_QUEUELEN                ((512 * (TCP_SND_BUF) + (TCP_MSS - 1))/(TCP_MSS))

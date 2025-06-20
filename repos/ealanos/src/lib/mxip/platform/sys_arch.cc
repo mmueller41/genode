@@ -13,11 +13,13 @@
  */
 
 /* Genode includes */
+#include "mxip_lock.h"
 #include <timer_session/connection.h>
 #include <util/reconstructible.h>
 #include <base/sleep.h>
 
 #include <mxip/genode_init.h>
+#include <mxip/mxip_lock.h>
 
 #include <mx/tasking/task.h>
 #include <mx/tasking/runtime.h>
