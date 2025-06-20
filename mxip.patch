@@ -1,0 +1,270 @@
+diff --color -urBN contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/pbuf.c /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/pbuf.c
+--- contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/pbuf.c	2025-06-02 15:39:50.669263103 +0200
++++ /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/pbuf.c	2024-11-28 13:21:26.486875565 +0100
+@@ -750,9 +750,7 @@
+      * further protection. */
+     SYS_ARCH_PROTECT(old_level);
+     /* all pbufs in a chain are referenced at least once */
+-    //LWIP_ASSERT("pbuf_free: p->ref > 0", p->ref > 0);
+-    if (p->ref <= 0)
+-      return 0;
++    LWIP_ASSERT("pbuf_free: p->ref > 0", p->ref > 0);
+     /* decrease reference count (number of pointers to pbuf) */
+     ref = --(p->ref);
+     SYS_ARCH_UNPROTECT(old_level);
+diff --color -urBN contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp.c /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp.c
+--- contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp.c	2025-05-27 15:39:53.158278754 +0200
++++ /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp.c	2024-12-01 19:07:26.497318728 +0100
+@@ -174,6 +174,8 @@
+ /** List of all TCP PCBs that are in a state in which
+  * they accept or send data. */
+ struct tcp_pcb *tcp_active_pcbs;
++/* List of all remote hosts */
++struct tcp_host *tcp_remote_hosts;
+ /** List of all TCP PCBs in TIME-WAIT state */
+ struct tcp_pcb *tcp_tw_pcbs;
+ 
+@@ -209,6 +211,13 @@
+ void
+ tcp_free(struct tcp_pcb *pcb)
+ {
++  struct tcp_host *host = NULL;
++  for (host = tcp_remote_hosts; host != NULL; host = host->next) {
++    if (ip_addr_cmp(&pcb->remote_ip, &host->remote_ip)) {
++      host->pcbs[pcb->remote_port] = NULL;
++      host->connections--;
++    }
++  }
+   LWIP_ASSERT("tcp_free: LISTEN", pcb->state != LISTEN);
+ #if LWIP_TCP_PCB_NUM_EXT_ARGS
+   tcp_ext_arg_invoke_callbacks_destroyed(pcb->ext_args);
+@@ -2013,6 +2022,7 @@
+   LWIP_ASSERT_CORE_LOCKED();
+   if (pcb != NULL) {
+     LWIP_ASSERT("invalid socket state for recv callback", pcb->state != LISTEN);
++    //printf("pcb->recv is at %p\n", (void *)&(pcb->recv));
+     pcb->recv = recv;
+   }
+ }
+diff --color -urBN contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp_in.c /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp_in.c
+--- contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp_in.c	2025-05-27 15:39:53.158278754 +0200
++++ /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/core/tcp_in.c	2024-12-03 21:32:29.385841338 +0100
+@@ -119,6 +119,7 @@
+ {
+   struct tcp_pcb *pcb, *prev;
+   struct tcp_pcb_listen *lpcb;
++  struct tcp_host *remote_host;
+ #if SO_REUSE
+   struct tcp_pcb *lpcb_prev = NULL;
+   struct tcp_pcb_listen *lpcb_any = NULL;
+@@ -246,15 +247,44 @@
+   /* Demultiplex an incoming segment. First, we check if it is destined
+      for an active connection. */
+   prev = NULL;
+-
+-  for (pcb = tcp_active_pcbs; pcb != NULL; pcb = pcb->next) {
++  pcb = NULL;
++//#define LWIP_PCB_ARRAY 1
++  LWIP_DEBUGF(TCP_DEBUG, ("TCP packet incoming %" U16_F " -> %" U16_F "\n", tcphdr->src, tcphdr->dest));
++
++  for (remote_host = tcp_remote_hosts; remote_host != NULL; remote_host = remote_host->next) {
++    LWIP_DEBUGF(TCP_DEBUG, ("Comparing host structure ip=%" U32_F " with incoming IP %" U32_F "\n", remote_host->remote_ip, *ip_current_src_addr()));
++    if (ip_addr_cmp(ip_current_src_addr(), &remote_host->remote_ip))
++      break;
++  }
++#ifdef LWIP_PCB_ARRAY
++  if (remote_host) {
++    LWIP_DEBUGF(TCP_DEBUG, ("Found host structure\n"));
++    pcb = remote_host->pcbs[tcphdr->src];
++    if (pcb && pcb->remote_port == tcphdr->src && pcb->local_port == tcphdr->dest && ip_addr_cmp(&pcb->remote_ip, ip_current_src_addr()) && ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr())) {
++      if (pcb->state == TIME_WAIT) {
++        {
++          tcp_timewait_input(pcb);
++        }
++        pbuf_free(p);
++        return;
++      } else if (pcb->state == CLOSED) {
++        pcb = NULL;
++        return;
++      }
++      LWIP_DEBUGF(TCP_DEBUG, ("Found pcb for %" U16_F " at %p \n", tcphdr->src, pcb));
++    }
++  }
++#else
++  for (pcb = tcp_active_pcbs; pcb != NULL; pcb = pcb->next)
++  {
+     LWIP_ASSERT("tcp_input: active pcb->state != CLOSED", pcb->state != CLOSED);
+     LWIP_ASSERT("tcp_input: active pcb->state != TIME-WAIT", pcb->state != TIME_WAIT);
+     LWIP_ASSERT("tcp_input: active pcb->state != LISTEN", pcb->state != LISTEN);
+ 
+     /* check if PCB is bound to specific netif */
+     if ((pcb->netif_idx != NETIF_NO_INDEX) &&
+-        (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
++        (pcb->netif_idx != netif_get_index(ip_data.current_input_netif)))
++    {
+       prev = pcb;
+       continue;
+     }
+@@ -262,12 +292,14 @@
+     if (pcb->remote_port == tcphdr->src &&
+         pcb->local_port == tcphdr->dest &&
+         ip_addr_cmp(&pcb->remote_ip, ip_current_src_addr()) &&
+-        ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr())) {
++        ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr()))
++    {
+       /* Move this PCB to the front of the list so that subsequent
+-         lookups will be faster (we exploit locality in TCP segment
+-         arrivals). */
++          lookups will be faster (we exploit locality in TCP segment
++          arrivals). */
+       LWIP_ASSERT("tcp_input: pcb->next != pcb (before cache)", pcb->next != pcb);
+-      if (prev != NULL) {
++      if (prev != NULL)
++      {
+         prev->next = pcb->next;
+         pcb->next = tcp_active_pcbs;
+         tcp_active_pcbs = pcb;
+@@ -279,16 +311,18 @@
+     }
+     prev = pcb;
+   }
++#endif
+ 
+   if (pcb == NULL) {
+     /* If it did not go to an active connection, we check the connections
+-       in the TIME-WAIT state. */
++      in the TIME-WAIT state. */
++#ifndef LWIP_PCB_ARRAY
+     for (pcb = tcp_tw_pcbs; pcb != NULL; pcb = pcb->next) {
+       LWIP_ASSERT("tcp_input: TIME-WAIT pcb->state == TIME-WAIT", pcb->state == TIME_WAIT);
+ 
+       /* check if PCB is bound to specific netif */
+       if ((pcb->netif_idx != NETIF_NO_INDEX) &&
+-          (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
++            (pcb->netif_idx != netif_get_index(ip_data.current_input_netif))) {
+         continue;
+       }
+ 
+@@ -297,12 +331,12 @@
+           ip_addr_cmp(&pcb->remote_ip, ip_current_src_addr()) &&
+           ip_addr_cmp(&pcb->local_ip, ip_current_dest_addr())) {
+         /* We don't really care enough to move this PCB to the front
+-           of the list since we are not very likely to receive that
+-           many segments for connections in TIME-WAIT. */
++            of the list since we are not very likely to receive that
++          many segments for connections in TIME-WAIT. */
+         LWIP_DEBUGF(TCP_INPUT_DEBUG, ("tcp_input: packed for TIME_WAITing connection.\n"));
+ #ifdef LWIP_HOOK_TCP_INPACKET_PCB
+         if (LWIP_HOOK_TCP_INPACKET_PCB(pcb, tcphdr, tcphdr_optlen, tcphdr_opt1len,
+-                                       tcphdr_opt2, p) == ERR_OK)
++                                      tcphdr_opt2, p) == ERR_OK)
+ #endif
+         {
+           tcp_timewait_input(pcb);
+@@ -311,6 +345,7 @@
+         return;
+       }
+     }
++#endif
+ 
+     /* Finally, if we still did not get a match, we check all PCBs that
+        are LISTENing for incoming connections. */
+@@ -632,12 +669,15 @@
+   struct tcp_pcb *npcb;
+   u32_t iss;
+   err_t rc;
++  struct tcp_host *remote;
+ 
+   if (flags & TCP_RST) {
+     /* An incoming RST should be ignored. Return. */
+     return;
+   }
+ 
++  LWIP_DEBUGF(TCP_DEBUG, ("Entering tcp_listen_input\n"));
++
+   LWIP_ASSERT("tcp_listen_input: invalid pcb", pcb != NULL);
+ 
+   /* In the LISTEN state, we check for incoming SYN segments,
+@@ -697,6 +737,43 @@
+        for it. */
+     TCP_REG_ACTIVE(npcb);
+ 
++    for (remote = tcp_remote_hosts; remote != NULL; remote = remote->next) {
++      if (ip_addr_cmp(&remote->remote_ip, &npcb->remote_ip)) {
++        remote->pcbs[npcb->remote_port] = npcb;
++        remote->connections++;
++        break;
++      }
++    }
++
++    if (remote == NULL) {
++      remote = (struct tcp_host*)mem_malloc(sizeof(struct tcp_host));
++      LWIP_DEBUGF(TCP_DEBUG, ("Created new remote host struct"));
++      if (remote == NULL)
++      {
++        err_t err;
++        LWIP_DEBUGF(TCP_DEBUG, ("No memory for host struct, aborting."));
++        TCP_EVENT_ACCEPT(pcb, NULL, pcb->callback_arg, ERR_MEM, err);
++        LWIP_UNUSED_ARG(err);
++        tcp_free(npcb);
++        return;
++      }
++      if (!tcp_remote_hosts) {
++        tcp_remote_hosts = remote;
++        remote->next = NULL;
++        remote->prev = NULL;
++      }
++      else
++      {
++        remote->next = tcp_remote_hosts;
++        tcp_remote_hosts->prev = remote;
++        tcp_remote_hosts = remote;
++      }
++      remote->pcbs[npcb->remote_port] = npcb;
++      LWIP_DEBUGF(TCP_DEBUG, ("Registered new pcb for remote port %"U16_F".\n", npcb->remote_port));
++      remote->connections++;
++      ip_addr_copy(remote->remote_ip, npcb->remote_ip);
++    }
++
+     /* Parse any options in the SYN. */
+     tcp_parseopt(npcb);
+     npcb->snd_wnd = tcphdr->wnd;
+@@ -722,6 +799,7 @@
+       return;
+     }
+     tcp_output(npcb);
++    LWIP_DEBUGF(TCP_DEBUG, ("Sent out SYN/ACK"));
+   }
+   return;
+ }
+diff --color -urBN contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/priv/tcp_priv.h /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/priv/tcp_priv.h
+--- contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/priv/tcp_priv.h	2025-05-27 15:39:53.166278728 +0200
++++ /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/priv/tcp_priv.h	2024-11-29 17:07:08.503870622 +0100
+@@ -337,7 +337,8 @@
+ extern struct tcp_pcb *tcp_active_pcbs;  /* List of all TCP PCBs that are in a
+               state in which they accept or send
+               data. */
+-extern struct tcp_pcb *tcp_tw_pcbs;      /* List of all TCP PCBs in TIME-WAIT. */
++extern struct tcp_pcb *tcp_tw_pcbs;     /* List of all TCP PCBs in TIME-WAIT. */
++extern struct tcp_host *tcp_remote_hosts; /* List of all remote hosts */
+ 
+ #define NUM_TCP_PCB_LISTS_NO_TIME_WAIT  3
+ #define NUM_TCP_PCB_LISTS               4
+diff --color -urBN contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/tcp.h /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/tcp.h
+--- contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/tcp.h	2025-05-27 15:39:53.170278716 +0200
++++ /home/mml/genode/contrib/mxip-e310a8d13995d4b3110cb727a298d781b4f03504/src/lib/lwip/src/include/lwip/tcp.h	2024-11-29 17:58:42.480001967 +0100
+@@ -388,6 +388,14 @@
+ #endif
+ };
+ 
++struct tcp_host {
++  struct tcp_host *next;
++  struct tcp_host *prev;
++  struct tcp_pcb *pcbs[65536];
++  ip_addr_t remote_ip;
++  u16_t connections;
++};
++
+ #if LWIP_EVENT_API
+ 
+ enum lwip_event {
