@@ -650,7 +650,6 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 			if (_state == State::RAM_INITIALIZED) {
 				_child.initiate_env_sessions();
 
-				if (_child.active()) {
 					try {
 					 	_cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name), _is_brick);
 					} catch (Ealan::Cell::Cell_creation_error) {
@@ -658,9 +657,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 						abandon();
 					}
 					 Genode::log("Created new cell ", _unique_name, " ", _cell_cap);
-					 _state = State::ALIVE;
-				} else
-					_uncertain_dependencies = true;
+
+					 _uncertain_dependencies = true;
 			}
 
 		}
