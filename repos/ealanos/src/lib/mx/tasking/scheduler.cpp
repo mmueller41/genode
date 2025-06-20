@@ -92,7 +92,7 @@ void Scheduler::start_and_wait()
     for (auto cpu = 2U; cpu < space.total(); ++cpu)
     {
         Genode::String<32> const name{"mx::worker#", cpu};
-        Libc::pthread_create_from_session(&worker_threads[cpu], Worker::entry, _worker[cpu], 128 * 4096, name.string(),
+        Libc::pthread_create_from_session(&worker_threads[cpu], Worker::entry, _worker[cpu], 32 * 4096, name.string(),
                                           &mx::system::Environment::envp()->cpu(), space.location_of_index(cpu));
     }
     Genode::Trace::Timestamp end = Genode::Trace::timestamp();
@@ -103,7 +103,7 @@ void Scheduler::start_and_wait()
     Channel *qf = _channels[0];
     _worker[0]->assign(qf);
 
-    Libc::pthread_create_from_session(&worker_threads[0], Worker::entry, _worker[0], 128 * 4096, "foreman",
+    Libc::pthread_create_from_session(&worker_threads[0], Worker::entry, _worker[0], 32 * 4096, "foreman",
                                       &mx::system::Environment::envp()->cpu(), space.location_of_index(0) );
 
     /* Always assign the first channel to the foreman, so that it is guaranteed
