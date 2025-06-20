@@ -22,13 +22,15 @@ append config {
 	<affinity-space width="64" height="1"/>
 	<default caps="500"/>
 
-	<start name="timer">
+	<start name="timer" brick="yes">
 		<resource name="RAM" quantum="16M"/>
+		<affinity xpos="0" ypos="0" width="1" height="1"/>
 		<provides> <service name="Timer"/> </provides>
 	</start>
 
-	<start name="drivers" caps="1500" managing_system="yes">
+	<start name="drivers" caps="1500" managing_system="yes" brick="yes">
 		<resource name="RAM" quantum="512M"/>
+		<affinity xpos="1" ypos="0" width="1" height="1"/>
 		<binary name="init"/>
 		<route>
 			<service name="ROM" label="config"> <parent label="drivers.config"/> </service>
@@ -38,33 +40,50 @@ append config {
 		</route>
 	</start>
 
-	<start name="nic_router" caps="200">
+	<start name="nic_router" caps="200" brick="yes">
 		<resource name="RAM" quantum="2G"/>
+		<affinity xpos="2" ypos="0" width="1" height="1"/>
 		<provides>
 			<service name="Nic"/>
 			<service name="Uplink"/>
 		</provides>
-		<config verbose_domain_state="false" max_packets_per_signal="10">
+		<config verbose_domain_state="false" max_packets_per_signal="1">
 
-			<policy label_prefix="echo_server" domain="downlink"/>
+			<policy label_prefix="echo" domain="downlink"/>
+			<policy label_prefix="kuori" domain="console"/> 
 			<policy label_prefix="drivers"   domain="uplink"/>
-			<!--
 			<domain name="uplink" interface="10.0.2.55/24" gateway="10.0.2.1">
-			-->
+			<!--
 			<domain name="uplink" interface="192.168.0.2/24" gateway="192.168.0.2" verbose_packets="no">
+			-->
 
 				<nat domain="downlink"
 				     tcp-ports="16384"
 				     udp-ports="16384"
 				     icmp-ids="16384"/>
 
+				<nat domain="console"
+				 tcp-ports="16384"
+				 udp-ports="16384"
+				 icmp-ids="16384"/>
+
+
 				<tcp-forward port="12345" domain="downlink" to="10.0.3.55"/>
-				<tcp-forward port="80"   domain="downlink" to="10.0.3.55"/>
-				<tcp-forward port="8080" domain="downlink" to="10.0.3.55"/>
+				<tcp-forward port="8080" domain="console" to="10.0.1.55"/>
 
 				<udp-forward port="7"    domain="downlink" to="10.0.3.55"/>
 				<udp-forward port="7070" domain="downlink" to="10.0.3.55"/>
 
+			</domain>
+
+			<domain name="console" interface="10.0.1.1/24">
+				<dhcp-server ip_first="10.0.1.55" ip_last="10.0.1.55">
+					<dns-server ip="8.8.8.8"/>
+				</dhcp-server>
+
+				<tcp dst="0.0.0.0/0"><permit-any domain="uplink" /></tcp>
+				<udp dst="0.0.0.0/0"><permit-any domain="uplink" /></udp>
+				<icmp dst="0.0.0.0/0" domain="uplink"/>
 			</domain>
 
 			<domain name="downlink" interface="10.0.3.1/24" verbose_packets="no">
@@ -82,10 +101,44 @@ append config {
 
 		</config>
 	</start>
-	<start name="echo_server" caps="100000">
+
+
+	<start name="vfs">
+		<resource name="RAM" quantum="10M"/>
+		<provides><service name="File_system"/></provides>
+		<config>
+			<vfs>
+				<ram/>
+				<inline name="echo">echo</inline>
+			</vfs>
+			<default-policy root="/" writable="yes"/>
+		</config>
+	</start>
+
+	<start name="fs_rom">
+		<resource name="RAM" quantum="10M"/>
+		<provides><service name="ROM"/> </provides>
+		<config/>
+		<route>
+			<service name="File_system"> <child name="vfs"/> </service>
+			<any-service><parent/></any-service>
+		</route>
+	</start>
+
+    <start name="kuori" caps="200" brick="yes">
+		<affinity xpos="3" ypos="0" width="1" height="1"/>
+        <binary name="kuori"/>
+        <resource name="RAM" quantum="512M"/>
+		<route>
+            <service name="Launcher"><local/></service>
+			<service name="Nic"> <child name="nic_router"/> </service>
+			<any-service> <parent/> <any-child/> </any-service>
+        </route>
+		<config dhcp="yes"/>
+    </start>
+	<!--<start name="echo_server" caps="100000">
 		<binary name="blinktree_daemon"/>
 		<resource name="RAM" quantum="200G"/>
-		<!--<resource name="CPU" quantum="90"/>-->
 		<config dhcp="true">
 			<vfs>
 				<dir name="dev"> 
@@ -100,14 +153,14 @@ append config {
 			<service name="Nic"> <child name="nic_router"/> </service>
 			<any-service> <parent/> <any-child/> </any-service>
 		</route>
-	</start>
+	</start>-->
 </config>
 }
 
 append qemu_args " -nographic "
 append_qemu_nic_args "host=10.0.2.1,dhcpstart=10.0.2.55,hostfwd=tcp::12345-:12345,hostfwd=tcp::10080-:80,hostfwd=tcp::18080-:8080,hostfwd=udp::10007-:7,hostfwd=udp::17070-:7070"
 
-build { core init hoitaja timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx server/nic_router server/nic_uplink app/echo_server }
+build { core init hoitaja timer lib/ld lib/vfs lib/libm lib/libc lib/stdcxx server/nic_router server/vfs server/fs_rom app/echo_server app/kuori }
 
 install_config $config
 build_boot_image [build_artifacts]
