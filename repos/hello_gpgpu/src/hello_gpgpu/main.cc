@@ -170,6 +170,11 @@ struct hello_gpgpu
 				Genode::log("===Run jacobi_2d_imper===");
 				ns_jacobi_2d_imper::main(0, 0);
 			}
+			if(benchConfig & (0x1 << 21))
+			{
+				Genode::log("===Run SURF===");
+				ns_OpenSurf::main(0, 0);
+			}
 
 		});
 

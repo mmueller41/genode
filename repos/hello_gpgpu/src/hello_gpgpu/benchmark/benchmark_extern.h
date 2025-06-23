@@ -28,6 +28,9 @@ namespace ns_fdtd_2d{int main(int argc, char *argv[]);};
 namespace ns_jacobi_1d_imper{int main(int argc, char *argv[]);};
 namespace ns_jacobi_2d_imper{int main(int argc, char *argv[]);};
 
+// SURF
+namespace ns_OpenSurf{int main(int argc, char *argv[]);};
+
 
 
  

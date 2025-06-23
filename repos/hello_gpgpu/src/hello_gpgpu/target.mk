@@ -24,6 +24,7 @@ SRC_CC = main.cc \
 		benchmark/jacobi-2d-imper/jacobi2D.cc \
 		benchmark/gramschmidt/gramschmidt.cc \
 		benchmark/lu/lu.cc \
+		benchmark/SURF/OpenSurf.cc \
 
 LIBS   = base libc libm
 
