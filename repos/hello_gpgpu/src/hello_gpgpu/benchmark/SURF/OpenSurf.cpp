@@ -76,7 +76,7 @@ namespace fake_cv
         m.step = width * sizeof(float);
 
         const size_t size = m.rows * m.cols;
-        m.data = new float[size];
+        m.data = (float*)malloc(size * sizeof(float));
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -286,7 +286,7 @@ int main(int argc, char **argv)
     // printf("numPlatforms:%d\n",numPlatforms);
     if (0 < numPlatforms)
     {
-        cl_platform_id *platforms = new cl_platform_id[numPlatforms];
+        cl_platform_id *platforms = (cl_platform_id*)malloc(numPlatforms * sizeof(cl_platform_id));
         status = clGetPlatformIDs(numPlatforms, platforms, NULL);
         char platformName[100];
         for (unsigned i = 0; i < numPlatforms; ++i)
@@ -301,7 +301,7 @@ int main(int argc, char **argv)
             //platformVendor.assign(platformName);
         }
         //std::cout << "Platform found : " << platformName << "\n";
-        delete[] platforms;
+        free(platforms);
     }
     status = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
 
@@ -414,7 +414,7 @@ int main(int argc, char **argv)
     intImgHost.rows = img.rows;
     intImgHost.cols = img.cols;
     intImgHost.step = sizeof(float);
-    intImgHost.data = new float[img.cols * img.rows];
+    intImgHost.data = (float*) malloc(img.cols * img.rows * sizeof(float));
 #endif // OCV
 
     struct timeval tInt1, tInt2;
@@ -436,7 +436,7 @@ int main(int argc, char **argv)
     }
     fclose(fp);
 #ifndef OCV
-    delete[] intImgHost.data;
+    free(intImgHost.data);
 #endif // OCV
 
 #endif
@@ -1091,7 +1091,7 @@ mid = clCreateBuffer(context,
 
     // cvReleaseImage(&img);
 #ifndef OCV
-    delete[] img.data;
+    free(img.data);
 #endif // OCV
 
     // Print the number of interest points
