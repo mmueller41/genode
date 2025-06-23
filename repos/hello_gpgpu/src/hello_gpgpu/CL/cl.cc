@@ -41,8 +41,10 @@ clGetPlatformIDs(cl_uint          num_entries,
                  cl_platform_id * platforms,
                  cl_uint *        num_platforms)
 {
-    *platforms = 0;
-    *num_platforms = 1;
+    if(platforms != nullptr)
+        *platforms = 0;
+    if(num_platforms != nullptr)
+        *num_platforms = 1;
     return CL_SUCCESS;
 }
 
@@ -104,8 +106,10 @@ clGetDeviceIDs(cl_platform_id   platform,
     if(device_type != CL_DEVICE_TYPE_GPU)
         return CL_INVALID_VALUE;
 
-    *devices = 0;
-    *num_devices = 1;
+    if(devices != nullptr)
+        *devices = 0;
+    if(num_devices != nullptr)
+        *num_devices = 1;
     return CL_SUCCESS;
 }
 
@@ -836,7 +840,12 @@ clSetKernelArg(cl_kernel    kernel,
 
     struct kernel_config* kc = (struct kernel_config*)kernel;
 
-    if(arg_size == sizeof(cl_mem))
+    if(arg_value == nullptr) // SLM
+    {
+        Genode::error("[OCL] SLM is not supported!");
+        return CL_INVALID_VALUE;
+    }
+    else if(arg_size == sizeof(cl_mem))
     {
         cl_mem* clmem = (cl_mem*)arg_value;
         kc->buffConfigs[arg_index] = (*clmem)->bc;
