@@ -126,7 +126,4 @@
     "C_Cpp.intelliSenseEngineFallback": "disabled",
     "makefile.extensionLog": ".vscode/extension.log",
     "makefile.ignoreDirectoryCommands": false,
-    "html.format.wrapLineLength": 80,
-    "editor.wordWrap": "bounded",
-    "editor.wordWrapColumn": 90
 }
