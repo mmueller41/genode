@@ -47,7 +47,11 @@ using namespace std;
 
 ///////////////////////////////////////////////////////////
 
+#ifdef SLM
+#error no SLM support
+#else
 #include "SURF_kernel.h"
+#endif // SLM
 
 namespace ns_OpenSurf {
 
@@ -122,10 +126,6 @@ cl_mem xs, ys, gauss_s2;
 cl_mem rrx, rry;
 cl_mem des;
 cl_mem mid, ndes;
-
-#ifndef SLM
-cl_mem fake_slm[10];
-#endif // SLM
 
 ///////////////////////////////////////////////////////////
 double cRow, cCol, cInt, cBui, cExt, cOut, cMov, cRnum, cOri, cDes, cnDes, cCom;
@@ -500,11 +500,10 @@ int main(int argc, char **argv)
     ciErrNum |= clSetKernelArg(ckRowIntegral, 1, sizeof(cl_mem), (void *)&d_Output);
 #ifdef SLM
     ciErrNum |= clSetKernelArg(ckRowIntegral, 2, sharedMemSize * sizeof(float), NULL);
-#else // SLM
-    fake_slm[0] = clCreateBuffer(context, CL_MEM_READ_WRITE, sharedMemSize * sizeof(float), NULL, &ciErrNum);
-    ciErrNum |= clSetKernelArg(ckRowIntegral, 2, sharedMemSize * sizeof(float), &fake_slm[0]);
-#endif // SLM
     ciErrNum |= clSetKernelArg(ckRowIntegral, 3, sizeof(int), (void *)&width);
+#else // SLM
+    ciErrNum |= clSetKernelArg(ckRowIntegral, 2, sizeof(int), (void *)&width);
+#endif // SLM
 
     /*
     #ifdef profile
@@ -554,12 +553,12 @@ int main(int argc, char **argv)
     ciErrNum |= clSetKernelArg(ckColIntegral, 1, sizeof(cl_mem), (void *)&intImage);
 #ifdef SLM
     ciErrNum |= clSetKernelArg(ckColIntegral, 2, sharedMemSize * sizeof(float), NULL);
-#else // SLM
-    fake_slm[1] = clCreateBuffer(context, CL_MEM_READ_WRITE, sharedMemSize * sizeof(float), NULL, &ciErrNum);
-    ciErrNum |= clSetKernelArg(ckColIntegral, 2, sharedMemSize * sizeof(float), &fake_slm[1]);
-#endif // SLM
     ciErrNum |= clSetKernelArg(ckColIntegral, 3, sizeof(int), (void *)&height);
     ciErrNum |= clSetKernelArg(ckColIntegral, 4, sizeof(int), (void *)&width);
+#else // SLM
+    ciErrNum |= clSetKernelArg(ckColIntegral, 2, sizeof(int), (void *)&height);
+    ciErrNum |= clSetKernelArg(ckColIntegral, 3, sizeof(int), (void *)&width);
+#endif // SLM
 
     /*
     #ifdef profile
@@ -805,17 +804,6 @@ int main(int argc, char **argv)
     clSetKernelArg(ckGetOrientation, 9, 109 * sizeof(float), 0);
     clSetKernelArg(ckGetOrientation, 10, 48 * sizeof(float), 0);
     clSetKernelArg(ckGetOrientation, 11, 48 * sizeof(float), 0);
-#else // SLM
-    fake_slm[2] = clCreateBuffer(context, CL_MEM_READ_WRITE, 109 * sizeof(float), NULL, &ciErrNum);
-    fake_slm[3] = clCreateBuffer(context, CL_MEM_READ_WRITE, 109 * sizeof(float), NULL, &ciErrNum);
-    fake_slm[4] = clCreateBuffer(context, CL_MEM_READ_WRITE, 109 * sizeof(float), NULL, &ciErrNum);
-    fake_slm[5] = clCreateBuffer(context, CL_MEM_READ_WRITE, 48 * sizeof(float), NULL, &ciErrNum);
-    fake_slm[6] = clCreateBuffer(context, CL_MEM_READ_WRITE, 48 * sizeof(float), NULL, &ciErrNum);
-    clSetKernelArg(ckGetOrientation, 7, 109 * sizeof(float), &fake_slm[2]);
-    clSetKernelArg(ckGetOrientation, 8, 109 * sizeof(float), &fake_slm[3]);
-    clSetKernelArg(ckGetOrientation, 9, 109 * sizeof(float), &fake_slm[4]);
-    clSetKernelArg(ckGetOrientation, 10, 48 * sizeof(float), &fake_slm[5]);
-    clSetKernelArg(ckGetOrientation, 11, 48 * sizeof(float), &fake_slm[6]);
 #endif // SLM
     //        clSetKernelArg(ckGetOrientation, 12,sizeof(cl_mem), (void *)&test);
 
@@ -985,15 +973,14 @@ int main(int argc, char **argv)
 #ifdef SLM
     clSetKernelArg(ckcomputeDes, 8, localWorkSize * sizeof(float), 0);
     clSetKernelArg(ckcomputeDes, 9, localWorkSize * sizeof(float), 0);
-#else // SLM
-    fake_slm[7] = clCreateBuffer(context, CL_MEM_READ_WRITE, localWorkSize * sizeof(float), NULL, &ciErrNum);
-    fake_slm[8] = clCreateBuffer(context, CL_MEM_READ_WRITE, localWorkSize * sizeof(float), NULL, &ciErrNum);
-    clSetKernelArg(ckcomputeDes, 8, localWorkSize * sizeof(float), &fake_slm[7]);
-    clSetKernelArg(ckcomputeDes, 9, localWorkSize * sizeof(float), &fake_slm[8]);
-#endif // SLM
     clSetKernelArg(ckcomputeDes, 10, sizeof(cl_mem), (void *)&gauss_s2);
     clSetKernelArg(ckcomputeDes, 11, sizeof(cl_mem), (void *)&des);
     clSetKernelArg(ckcomputeDes, 12, sizeof(int), (void *)&group);
+#else // SLM
+    clSetKernelArg(ckcomputeDes, 8, sizeof(cl_mem), (void *)&gauss_s2);
+    clSetKernelArg(ckcomputeDes, 9, sizeof(cl_mem), (void *)&des);
+    clSetKernelArg(ckcomputeDes, 10, sizeof(int), (void *)&group);
+#endif // SLM
 
     SHOWINFO(clEnqueueNDRangeKernel);
     ciErrNum = clEnqueueNDRangeKernel(clqueue,
@@ -1079,9 +1066,6 @@ mid = clCreateBuffer(context,
     clSetKernelArg(cknormalDes, 1, sizeof(cl_mem), (void *)&ndes);
 #ifdef SLM
     clSetKernelArg(cknormalDes, 2, NDES_BLOCK * sizeof(float), 0);
-#else // SLM
-    fake_slm[9] = clCreateBuffer(context, CL_MEM_READ_WRITE, NDES_BLOCK * sizeof(float), NULL, &ciErrNum);
-    clSetKernelArg(cknormalDes, 2, NDES_BLOCK * sizeof(float), &fake_slm[9]);
 #endif // SLM
 
     SHOWINFO(clEnqueueNDRangeKernel);
@@ -1158,6 +1142,8 @@ mid = clCreateBuffer(context,
 
     printf("=====================================\n");
     printf("total time:\t\t %.3f ms\n", totalTime);
+
+    return 0;
 }
 
 // compute integral image function
