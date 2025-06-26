@@ -462,7 +462,7 @@ int main(int argc, char **argv)
 #endif
     /////////////////////////////////////////////////////////////////
 
-    unsigned int blockSize = 512; // max size of the thread blocks
+    unsigned int blockSize = 256; // 512; // max size of the thread blocks
     unsigned int sharedMemSize = 2 * blockSize;
 
     /*
