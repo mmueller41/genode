@@ -48,9 +48,10 @@ using namespace std;
 ///////////////////////////////////////////////////////////
 
 #ifdef SLM
-#error no SLM support
-#else
+#warning no SLM support
 #include "SURF_kernel.h"
+#else
+#include "SURF_noSLM_kernel.h"
 #endif // SLM
 
 namespace ns_OpenSurf {
@@ -316,8 +317,13 @@ int main(int argc, char **argv)
     // create a command queue
     clqueue = clCreateCommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE, NULL);
         // Create and compile the program
+#ifdef SLM
     const size_t kernel_size = SURF_Gen9core_gen_len;
     const unsigned char* kernel_bin = SURF_Gen9core_gen;
+#else // SLM
+    const size_t kernel_size = SURF_noSLM_Gen9core_gen_len;
+    const unsigned char* kernel_bin = SURF_noSLM_Gen9core_gen;
+#endif // SLM
     cpProgram = clCreateProgramWithBinary(context, 1, &device, &kernel_size, &kernel_bin, NULL, NULL);
     status = clBuildProgram(cpProgram, 1, &device, NULL, NULL, NULL);
 
