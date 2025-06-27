@@ -525,7 +525,8 @@ int main(int argc, char **argv)
                                       0, NULL, &RowEvent);
     //        oclCheckError(ciErrNum, CL_SUCCESS);
 
-    clWaitForEvents(1, &RowEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &RowEvent);
     cl_ulong start, end;
     clGetEventProfilingInfo(RowEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
     clGetEventProfilingInfo(RowEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
@@ -576,7 +577,8 @@ int main(int argc, char **argv)
                                       &colGlobalWorkSize, &colLocalWorkSize, 0, NULL, &ColEvent);
     //        oclCheckError(ciErrNum, CL_SUCCESS);
 
-    clWaitForEvents(1, &ColEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &ColEvent);
 
     clGetEventProfilingInfo(ColEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
     clGetEventProfilingInfo(ColEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
@@ -642,7 +644,8 @@ int main(int argc, char **argv)
                                       0, NULL, &BuiEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tckBuildResponseLayer);
 
-    clWaitForEvents(1, &BuiEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &BuiEvent);
     clGetEventProfilingInfo(BuiEvent, CL_PROFILING_COMMAND_START, sizeof(cl_ulong), &start, NULL);
     clGetEventProfilingInfo(BuiEvent, CL_PROFILING_COMMAND_END, sizeof(cl_ulong), &end, NULL);
 
@@ -733,7 +736,8 @@ int main(int argc, char **argv)
                                       0, NULL, &ExtEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tckIsExtremum);
 
-    clWaitForEvents(1, &ExtEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &ExtEvent);
     cExt = executionTime(ExtEvent);
 
     SHOWINFO(clEnqueueReadBuffer);
@@ -762,7 +766,8 @@ int main(int argc, char **argv)
                                    8 * h * w * sizeof(struct _isExtremum), (struct _isExtremum *)hostExtLocation, 0, NULL, &WriteOut);
     SHOWERR(clEnqueueReadBuffer\t\thostExtLocation < -- -extLocation);
 
-    clWaitForEvents(1, &WriteOut);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &WriteOut);
     cOut = executionTime(WriteOut);
 
     FILE *pExtfpi = fopen("extre.dat", "w");
@@ -822,7 +827,8 @@ int main(int argc, char **argv)
                                       0, NULL, &OriEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tckGetOrientation);
 
-    clWaitForEvents(1, &OriEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &OriEvent);
     cOri = executionTime(OriEvent);
 
 #ifdef profile
@@ -899,7 +905,8 @@ int main(int argc, char **argv)
                                       0, NULL, &DesEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tckdesReady);
 
-    clWaitForEvents(1, &DesEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &DesEvent);
     cDes = executionTime(DesEvent);
 
 #ifdef profile
@@ -997,7 +1004,8 @@ int main(int argc, char **argv)
                                       0, NULL, &comEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tckcomputeDes);
 
-    clWaitForEvents(1, &comEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &comEvent);
     cCom = executionTime(comEvent);
 
 #ifdef profile
@@ -1083,7 +1091,8 @@ mid = clCreateBuffer(context,
                                       0, NULL, &nDesEvent);
     SHOWERR(clEnqueueNDRangeKernel\t\tcknormalDes);
 
-    clWaitForEvents(1, &nDesEvent);
+    clFinish(clqueue);
+    //clWaitForEvents(1, &nDesEvent);
     cnDes = executionTime(nDesEvent);
 
 #ifdef profile
