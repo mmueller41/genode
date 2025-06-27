@@ -537,7 +537,7 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, d_Output, CL_TRUE, 0, N * sizeof(float), h_OutputGPU, 0, NULL, NULL);
     // oclCheckError(ciErrNum, CL_SUCCESS);
 
-    printf("Rout.dat");
+    printf("Rout.dat:\n");
 
     for (int i = 0; i < height; i++)
     {
