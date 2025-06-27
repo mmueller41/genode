@@ -439,14 +439,13 @@ int main(int argc, char **argv)
     double tInt = (tInt2.tv_sec - tInt1.tv_sec) * 1000 + (tInt2.tv_usec - tInt1.tv_usec) / (float)1000;
 
     float *idata = (float *)img.ptr<float>(0);
-    FILE *fp = fopen("cpu_imgdata.dat", "w");
+    printf("cpu_imgdata.dat:\n");
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
-            fprintf(fp, "%f\t", *idata++);
-        fprintf(fp, "\n");
+            printf("%f\t", *idata++);
+        printf("\n");
     }
-    fclose(fp);
 #ifndef OCV
     free(intImgHost.data);
 #endif // OCV
@@ -485,15 +484,14 @@ int main(int argc, char **argv)
 
 #ifdef profile
     int N = imgSize;
-    FILE *hin = fopen("in.dat", "w");
+    printf("in.dat:\n");
 
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
-            fprintf(hin, "%f\t", data[i * width + j]);
-        fprintf(hin, "\n");
+            printf("%f\t", data[i * width + j]);
+        printf("\n");
     }
-    fclose(hin);
 #endif
 
     // RowIntegral kernel: First Compute prefix sum in rows of the source image
@@ -539,15 +537,14 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, d_Output, CL_TRUE, 0, N * sizeof(float), h_OutputGPU, 0, NULL, NULL);
     // oclCheckError(ciErrNum, CL_SUCCESS);
 
-    FILE *rowout = fopen("Rout.dat", "w");
+    printf("Rout.dat");
 
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
-            fprintf(rowout, "%f\t", h_OutputGPU[i * width + j]);
-        fprintf(rowout, "\n");
+            printf("%f\t", h_OutputGPU[i * width + j]);
+        printf("\n");
     }
-    fclose(rowout);
     free(h_OutputGPU);
 #endif
 
@@ -591,17 +588,15 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, intImage, CL_TRUE, 0, N * sizeof(float), h_ImgputGPU, 0, NULL, NULL);
     // oclCheckError(ciErrNum, CL_SUCCESS);
 
-    FILE *imgout = fopen("intImage.dat", "w");
+    printf("intImage.dat:\n");
 
     for (int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
-            fprintf(imgout, "%f\t", h_ImgputGPU[i * width + j]);
-        fprintf(imgout, "\n");
+            printf("%f\t", h_ImgputGPU[i * width + j]);
+        printf("\n");
     }
-    fclose(imgout);
     free(h_ImgputGPU);
-
 #endif
 
     // BuildResponeselayer kernel: Calculate DoH responses for the layers
@@ -665,25 +660,28 @@ int main(int argc, char **argv)
                                    10 * h * w * sizeof(cl_float), (float *)hostLaplacian, 0, NULL, NULL);
     SHOWERR(clEnqueueReadBuffer\t\thostLaplacian < -- -laplacian);
 
-    FILE *resfp = fopen("responses.dat", "w");
-    FILE *lapfp = fopen("laplacian.dat", "w");
-
+    printf("responses.dat:\n");
     for (int dptr = 0; dptr < 10 * h * w; dptr++)
     {
         if (dptr % 10 == 0 && dptr != 0)
         {
-            fprintf(resfp, "\n");
-            fprintf(lapfp, "\n");
+            printf("\n");
         }
-        fprintf(resfp, "%f ", hostResponses[dptr]);
-        fprintf(lapfp, "%f ", hostLaplacian[dptr]);
+        printf("%f ", hostResponses[dptr]);
     }
-    fclose(lapfp);
-    fclose(resfp);
+
+    printf("laplacian.dat:\n");
+    for (int dptr = 0; dptr < 10 * h * w; dptr++)
+    {
+        if (dptr % 10 == 0 && dptr != 0)
+        {
+            printf("\n");
+        }
+        printf("%f ", hostLaplacian[dptr]);
+    }
 
     free(hostResponses);
     free(hostLaplacian);
-
 #endif
 
     // IsExtremum kernel: Non Maximal Suppression function
@@ -770,13 +768,12 @@ int main(int argc, char **argv)
     //clWaitForEvents(1, &WriteOut);
     cOut = executionTime(WriteOut);
 
-    FILE *pExtfpi = fopen("extre.dat", "w");
+    printf("extre.dat:\n");
     for (int pi = 0; pi < 8 * w * h; pi++)
     {
-        fprintf(pExtfpi, "%d\t%d\t%.6f\t%d\n", hostExtLocation[pi].x, hostExtLocation[pi].y,
+        printf("%d\t%d\t%.6f\t%d\n", hostExtLocation[pi].x, hostExtLocation[pi].y,
                 hostExtLocation[pi].scale, hostExtLocation[pi].lap);
     }
-    fclose(pExtfpi);
 
     free(hostExtLocation);
 
@@ -838,16 +835,15 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, orientation, CL_TRUE, 0, cmn * sizeof(float), (float *)hostOri, 0, NULL, NULL);
     SHOWERR(clEnqueueReadBuffer\t\thostOri < -- -ori test);
 
-    FILE *orifp = fopen("ori.dat", "w");
+    printf("ori.dat:\n");
     for (int ori = 0; ori < cmn; ori++)
     {
         if (ori % 10 == 0 && ori != 0)
         {
-            fprintf(orifp, "\n");
+            printf("\n");
         }
-        fprintf(orifp, "%.6f  ", hostOri[ori]);
+        printf("%.6f  ", hostOri[ori]);
     }
-    fclose(orifp);
     free(hostOri);
 
     /*
@@ -919,30 +915,40 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, gauss_s2, CL_TRUE, 0, 16 * cmn * sizeof(float), (float *)hostGau, 0, NULL, NULL);
     SHOWERR(clEnqueueReadBuffer\t\thostDes < -- -Xs Ys gauss_s2);
 
-    FILE *Xsfp = fopen("xs.dat", "w");
-    FILE *Ysfp = fopen("ys.dat", "w");
-    FILE *Gaufp = fopen("gauss.dat", "w");
+    printf("xs.dat:\n");
     int sc;
     for (sc = 0; sc < 16 * cmn; sc++)
     {
         if (sc % 8 == 0 && sc != 0)
         {
-            fprintf(Xsfp, "\n");
-            fprintf(Ysfp, "\n");
-            fprintf(Gaufp, "\n");
+            printf("\n");
         }
-        fprintf(Xsfp, "%d\t", hostXs[sc]);
-        fprintf(Ysfp, "%d\t", hostYs[sc]);
-        fprintf(Gaufp, "%.6f\t", hostGau[sc]);
+        printf("%d\t", hostXs[sc]);
     }
-    fclose(Xsfp);
-    fclose(Ysfp);
-    fclose(Gaufp);
+
+    printf("ys.dat:\n");
+    for (sc = 0; sc < 16 * cmn; sc++)
+    {
+        if (sc % 8 == 0 && sc != 0)
+        {
+            printf("\n");
+        }
+        printf("%d\t", hostYs[sc]);
+    }
+
+    printf("gauss.dat:\n");
+    for (sc = 0; sc < 16 * cmn; sc++)
+    {
+        if (sc % 8 == 0 && sc != 0)
+        {
+            printf("\n");
+        }
+        printf("%.6f\t", hostGau[sc]);
+    }
 
     free(hostXs);
     free(hostYs);
     free(hostGau);
-
 #endif
 
     // GetDescriptor kernel: Calculate descriptor for the interest points
@@ -1042,20 +1048,17 @@ int main(int argc, char **argv)
     ciErrNum = clEnqueueReadBuffer(clqueue, des, CL_TRUE, 0, 64 * cmn * sizeof(float), (float *)hostDes, 0, NULL, NULL);
     SHOWERR(clEnqueueReadBuffer\t\thostDes < -- -des);
 
-    FILE *Desfp = fopen("des.dat", "w");
+    printf("des.dat:\n");
     int desc;
     for (desc = 0; desc < 64 * cmn; desc++)
     {
         if (desc % 8 == 0 && desc != 0)
         {
-            fprintf(Desfp, "\n");
+            printf("\n");
         }
-        fprintf(Desfp, "%.6f\t", hostDes[desc]);
+        printf("%.6f\t", hostDes[desc]);
     }
-    fclose(Desfp);
-
     free(hostDes);
-
 #endif
 
     // cknormalDes kernel: normalize descriptors
@@ -1102,18 +1105,16 @@ mid = clCreateBuffer(context,
                                    64 * cmn * sizeof(float), (float *)hostnDes, 0, NULL, NULL);
     SHOWERR(clEnqueueReadBuffer\t\thostnDes < -- -ndes);
 
-    FILE *nDesfp = fopen("ndes.dat", "w");
+    printf("ndes.dat:\n");
     int ndesc;
     for (ndesc = 0; ndesc < 64 * cmn; ndesc++)
     {
         if (ndesc % 8 == 0 && ndesc != 0)
         {
-            fprintf(nDesfp, "\n");
+            printf("\n");
         }
-        fprintf(nDesfp, "%.6f\t", hostnDes[ndesc]);
+        printf("%.6f\t", hostnDes[ndesc]);
     }
-    fclose(nDesfp);
-
     free(hostnDes);
 #endif
 
