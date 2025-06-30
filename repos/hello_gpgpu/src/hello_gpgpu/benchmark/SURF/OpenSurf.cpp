@@ -474,7 +474,7 @@ int main(int argc, char **argv)
 
     //d_Input = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, imgSize * sizeof(float), data, &ciErrNum);
     d_Input = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, imgSize * sizeof(float), NULL, &ciErrNum);
-    ciErrNum = clEnqueueWriteBuffer(clqueue, d_Input, CL_FALSE, 0, imgSize * sizeof(float), (int *)data, 0, NULL, NULL);
+    ciErrNum = clEnqueueWriteBuffer(clqueue, d_Input, CL_TRUE, 0, imgSize * sizeof(float), data, 0, NULL, NULL);
     //        oclCheckError(ciErrNum, CL_SUCCESS);
     d_Output = clCreateBuffer(context, CL_MEM_READ_WRITE, imgSize * sizeof(float), NULL, &ciErrNum);
     //        oclCheckError(ciErrNum, CL_SUCCESS);
@@ -711,7 +711,7 @@ int main(int argc, char **argv)
     SHOWERR(clCreateBuffer\t\t\tcnum);
 
     int hnum[] = {0};
-    ciErrNum = clEnqueueWriteBuffer(clqueue, cnum, CL_FALSE, 0, sizeof(int), (int *)hnum, 0, NULL, NULL);
+    ciErrNum = clEnqueueWriteBuffer(clqueue, cnum, CL_TRUE, 0, sizeof(int), (int *)hnum, 0, NULL, NULL);
 
     size_t hh = shrRoundUp((size_t)ExtBlockSize, h);
     size_t ww = shrRoundUp((size_t)ExtBlockSize, w);
