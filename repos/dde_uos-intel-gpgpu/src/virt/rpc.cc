@@ -50,20 +50,6 @@ void Session_component::start_task(unsigned long kconf)
 	kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
 	kc->binary = (Genode::uint8_t*)((Genode::addr_t)kc->binary + mapped_base);
 
-	// add kernel
-	Kernel* kernel = new(_global_gpgpu_genode->getAlloc()) Kernel(kc);
-	const bool needsUpdate = vgpu.has_kernel() == false;
-	vgpu.add_kernel(kernel);
-
-	// trigger vgpu update
-	if(needsUpdate)
-	{
-		_global_sched->update_vgpu(&vgpu);
-	}
-
-	// trigger sched
-	_global_sched->trigger();
-
 #ifdef VERBOSE
 	static int id = 0;
 	Genode::log("Kernel ", id);
@@ -93,6 +79,20 @@ void Session_component::start_task(unsigned long kconf)
 	}
 	id++;
 #endif // VERBOSE
+
+	// add kernel
+	Kernel* kernel = new(_global_gpgpu_genode->getAlloc()) Kernel(kc);
+	const bool needsUpdate = vgpu.has_kernel() == false;
+	vgpu.add_kernel(kernel);
+
+	// trigger vgpu update
+	if(needsUpdate)
+	{
+		_global_sched->update_vgpu(&vgpu);
+	}
+
+	// trigger sched
+	_global_sched->trigger();
 }
 
 Session_component::~Session_component()
