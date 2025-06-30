@@ -1074,7 +1074,7 @@ clEnqueueReadBuffer(cl_command_queue    command_queue,
                     const cl_event *    event_wait_list,
                     cl_event *          event)
 {
-    if(blocking_read == false)
+    if(blocking_read == CL_FALSE)
     {
         return CL_INVALID_VALUE;
     }
@@ -1124,7 +1124,7 @@ clEnqueueWriteBuffer(cl_command_queue   command_queue,
                      const cl_event *   event_wait_list,
                      cl_event *         event)
 {
-    if(blocking_write == false)
+    if(blocking_write == CL_FALSE)
     {
         return CL_INVALID_VALUE;
     }
