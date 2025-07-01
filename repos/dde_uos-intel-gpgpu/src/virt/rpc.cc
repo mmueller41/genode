@@ -53,6 +53,8 @@ void Session_component::start_task(unsigned long kconf)
 #ifdef VERBOSE
 	static int id = 0;
 	Genode::log("Kernel ", id);
+	Genode::String<32> kname((char const *)kc->kernelName);
+	Genode::log("\t\tname: ", kname);
 	for(int i = 0; i < 3; i++)
 	{
 		Genode::log("\t\trange: ", (int)kc->range[i]);
