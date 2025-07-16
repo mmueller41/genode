@@ -51,7 +51,7 @@ using namespace std;
 #warning no SLM support
 #include "SURF_kernel.h"
 #else
-#include "SURF_noSLM_kernel.h"
+#include "SURF_noSLM_fixed_kernel.h"
 #endif // SLM
 
 namespace ns_OpenSurf {
@@ -321,8 +321,8 @@ int main(int argc, char **argv)
     const size_t kernel_size = SURF_Gen9core_gen_len;
     const unsigned char* kernel_bin = SURF_Gen9core_gen;
 #else // SLM
-    const size_t kernel_size = SURF_noSLM_Gen9core_gen_len;
-    const unsigned char* kernel_bin = SURF_noSLM_Gen9core_gen;
+    const size_t kernel_size = SURF_noSLM_fixed_Gen9core_gen_len;
+    const unsigned char* kernel_bin = SURF_noSLM_fixed_Gen9core_gen;
 #endif // SLM
     cpProgram = clCreateProgramWithBinary(context, 1, &device, &kernel_size, &kernel_bin, NULL, NULL);
     status = clBuildProgram(cpProgram, 1, &device, NULL, NULL, NULL);
@@ -440,9 +440,9 @@ int main(int argc, char **argv)
 
     float *idata = (float *)img.ptr<float>(0);
     printf("cpu_imgdata.dat:\n");
-    for (int i = 0; i < height; i++)
+    for (int i = 0; i < 16; i++)
     {
-        for (int j = 0; j < width; j++)
+        for (int j = 0; j < 16; j++)
             printf("%f\t", *idata++);
         printf("\n");
     }
@@ -486,9 +486,9 @@ int main(int argc, char **argv)
     int N = imgSize;
     printf("in.dat:\n");
 
-    for (int i = 0; i < height; i++)
+    for (int i = 0; i < 16; i++)
     {
-        for (int j = 0; j < width; j++)
+        for (int j = 0; j < 16; j++)
             printf("%f\t", data[i * width + j]);
         printf("\n");
     }
@@ -539,9 +539,9 @@ int main(int argc, char **argv)
 
     printf("Rout.dat:\n");
 
-    for (int i = 0; i < height; i++)
+    for (int i = 0; i < 16; i++)
     {
-        for (int j = 0; j < width; j++)
+        for (int j = 0; j < 16; j++)
             printf("%f\t", h_OutputGPU[i * width + j]);
         printf("\n");
     }
@@ -589,10 +589,9 @@ int main(int argc, char **argv)
     // oclCheckError(ciErrNum, CL_SUCCESS);
 
     printf("intImage.dat:\n");
-
-    for (int i = 0; i < height; i++)
+    for (int i = 0; i < 16; i++)
     {
-        for (int j = 0; j < width; j++)
+        for (int j = 0; j < 16; j++)
             printf("%f\t", h_ImgputGPU[i * width + j]);
         printf("\n");
     }
@@ -661,7 +660,7 @@ int main(int argc, char **argv)
     SHOWERR(clEnqueueReadBuffer\t\thostLaplacian < -- -laplacian);
 
     printf("responses.dat:\n");
-    for (int dptr = 0; dptr < 10 * h * w; dptr++)
+    for (int dptr = 0; dptr < 10 * 16 * 16; dptr++)
     {
         if (dptr % 10 == 0 && dptr != 0)
         {
@@ -669,9 +668,10 @@ int main(int argc, char **argv)
         }
         printf("%f ", hostResponses[dptr]);
     }
+    printf("\n");
 
     printf("laplacian.dat:\n");
-    for (int dptr = 0; dptr < 10 * h * w; dptr++)
+    for (int dptr = 0; dptr < 10 * 16 * 16; dptr++)
     {
         if (dptr % 10 == 0 && dptr != 0)
         {
@@ -679,6 +679,7 @@ int main(int argc, char **argv)
         }
         printf("%f ", hostLaplacian[dptr]);
     }
+    printf("\n");
 
     free(hostResponses);
     free(hostLaplacian);
@@ -700,6 +701,12 @@ int main(int argc, char **argv)
                                 &ciErrNum);
     SHOWERR(clCreateBuffer);
 
+    // zero buffer
+    struct _isExtremum *zeroExt = (struct _isExtremum *)malloc(8 * w * h * sizeof(struct _isExtremum));
+    memset(zeroExt, 0, 8 * w * h * sizeof(struct _isExtremum));
+    ciErrNum = clEnqueueWriteBuffer(clqueue, isExtremum, CL_TRUE, 0, 8 * w * h * sizeof(struct _isExtremum), zeroExt, 0, NULL, NULL);
+    free(zeroExt);
+
 #define ExtBlockSize 8
 
     SHOWINFO(clCreateBuffer);
@@ -718,12 +725,36 @@ int main(int argc, char **argv)
     size_t szExtGlobalWorkSize[] = {hh, ww};
     size_t szExtLocalWorkSize[] = {ExtBlockSize, ExtBlockSize};
 
+    const int filter[8*3] = {0, 1, 2, 1, 2, 3, 1, 3, 4, 3, 4, 5, 
+			  3, 5, 6, 5, 6, 7, 5, 7, 8, 7, 8, 9};
+    SHOWINFO(clCreateBuffer);
+    cl_mem filter_map = clCreateBuffer(context,
+                                 CL_MEM_READ_WRITE,
+                                 8*3*sizeof(int),
+                                 NULL,
+                                 &ciErrNum);
+    SHOWERR(clCreateBuffer\t\t\\tfilter_map);
+    ciErrNum = clEnqueueWriteBuffer(clqueue, filter_map, CL_TRUE, 0, 8*3*sizeof(int), filter, 0, NULL, NULL);
+
+    int _step[10]   = {2, 2, 2, 2, 4, 4, 8, 8, 16, 16};
+    SHOWINFO(clCreateBuffer);
+    cl_mem step = clCreateBuffer(context,
+                                 CL_MEM_READ_WRITE,
+                                 10*sizeof(int),
+                                 NULL,
+                                 &ciErrNum);
+    SHOWERR(clCreateBuffer\t\t\\tstep);
+    ciErrNum = clEnqueueWriteBuffer(clqueue, step, CL_TRUE, 0, 10*sizeof(int), _step, 0, NULL, NULL);
+
+
     clSetKernelArg(ckIsExtremum, 0, sizeof(cl_mem), (void *)&responses);
     clSetKernelArg(ckIsExtremum, 1, sizeof(cl_mem), (void *)&laplacian);
     clSetKernelArg(ckIsExtremum, 2, sizeof(cl_mem), (void *)&isExtremum);
     clSetKernelArg(ckIsExtremum, 3, sizeof(int), (void *)&h);
     clSetKernelArg(ckIsExtremum, 4, sizeof(int), (void *)&w);
     clSetKernelArg(ckIsExtremum, 5, sizeof(cl_mem), (void *)&cnum);
+    clSetKernelArg(ckIsExtremum, 6, sizeof(cl_mem), (void *)&filter_map);
+    clSetKernelArg(ckIsExtremum, 7, sizeof(cl_mem), (void *)&step);
 
     SHOWINFO(clEnqueueNDRangeKernel);
     ciErrNum = clEnqueueNDRangeKernel(clqueue,
@@ -750,7 +781,13 @@ int main(int argc, char **argv)
     // cmn is the number of interest point
     int cmn = hnum[0];
 
+    // thats enough
+    printf("number of interest points: %d\n", cmn);
+    return 0;
+
 #ifdef profile
+    printf("cmn: %d\n", cmn);
+
     struct _isExtremum *hostExtLocation = (struct _isExtremum *)malloc(8 * w * h * sizeof(struct _isExtremum));
     if (hostExtLocation == NULL)
     {
@@ -769,7 +806,7 @@ int main(int argc, char **argv)
     cOut = executionTime(WriteOut);
 
     printf("extre.dat:\n");
-    for (int pi = 0; pi < 8 * w * h; pi++)
+    for (int pi = 0; pi < 8 * 16 * 16; pi++)
     {
         printf("%d\t%d\t%.6f\t%d\n", hostExtLocation[pi].x, hostExtLocation[pi].y,
                 hostExtLocation[pi].scale, hostExtLocation[pi].lap);
