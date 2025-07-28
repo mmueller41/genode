@@ -14,6 +14,7 @@
 #ifndef _INCLUDE__SANDBOX__SANDBOX_H_
 #define _INCLUDE__SANDBOX__SANDBOX_H_
 
+#include "base/mutex.h"
 #include <util/xml_node.h>
 #include <util/callable.h>
 #include <util/noncopyable.h>
@@ -115,7 +116,7 @@ class Genode::Sandbox : Noncopyable
 		 */
 		void generate_state_report(Xml_generator &) const;
 
-		Xml_node* update(::Sandbox::Child &child, Xml_node *config);
+		Xml_node* update(::Sandbox::Child &child, Xml_node *config, Genode::Mutex &config_lock);
 };
 
 class Genode::Sandbox::Local_service_base : public Service

@@ -654,7 +654,6 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 					 	_cell_cap = _habitat.create_cell(_child.pd_session_cap(), _resources.affinity, static_cast<uint16_t>(_priority), Genode::Session_label(_unique_name), _is_brick);
 					} catch (Ealan::Cell::Cell_creation_error) {
 						Genode::error("Failed to create cell");
-						abandon();
 					}
 					 Genode::log("Created new cell ", _unique_name, " ", _cell_cap);
 
@@ -826,7 +825,8 @@ class Sandbox::Child : Child_policy, Routed_service::Wakeup
 
 		void session_state_changed() override
 		{
-			_report_update_trigger.trigger_report_update();
+			_habitat_handler.handle_child_state(*this);
+			//_report_update_trigger.trigger_report_update();
 		}
 
 		bool initiate_env_sessions() const override { return false; }

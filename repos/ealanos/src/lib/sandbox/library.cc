@@ -12,6 +12,8 @@
  */
 
 /* Genode includes */
+#include "base/child.h"
+#include "base/mutex.h"
 #include <base/attached_rom_dataspace.h>
 #include <sandbox/sandbox.h>
 
@@ -214,6 +216,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 	void _update_children_config(Xml_node const &);
 	void _destroy_abandoned_parent_services();
 	void _destroy_abandoned_children();
+	void _remove_leftovers(Child &child);
+	void _groom();
 
 	Server _server { _env, _heap, _child_services, _state_reporter };
 
@@ -310,13 +314,14 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 
 	void maintain_cells();
 
-	Genode::Xml_node* update(Child &child, Genode::Xml_node *config) {
+	Genode::Xml_node* update(Child &child, Genode::Xml_node *config, Genode::Mutex &config_lock) {
 		if (child.exited()) {
 			_children.remove(&child);
 			_core_allocator->free_cores_from_cell(child);
 			/* Remove child from config */
 			try {
 				/* Find XML node for the child */
+				config_lock.acquire();
 				Xml_node node = config->sub_node("start");
 				while (node.attribute_value<Genode::Child_policy::Name>("name", Genode::Child_policy::Name()) != child.name())
 				{
@@ -348,6 +353,7 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 				Xml_node *new_config = new (_heap) Xml_node(config_ptr, config_len - len);
 				_heap.free(config, sizeof(Xml_node));
 				config = new_config;
+				config_lock.release();
 			}
 			catch (Genode::Xml_node::Nonexistent_sub_node)
 			{
@@ -357,9 +363,13 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 
 			Genode::log("Removed child ", child.name());
 			_habitat->groom();
+			config_lock.acquire();
 			apply_config(*config);
+			config_lock.release();
 			maintain_cells();
-		}
+		} else {
+			_groom();
+		} 
 		return config;
 	}
 };
@@ -386,21 +396,34 @@ void Genode::Sandbox::Library::_destroy_abandoned_children()
 
 		/* destroy child once all environment sessions are gone */
 		if (child.env_sessions_closed()) {
-			_core_allocator->free_cores_from_cell(child);
-			_children.remove(&child);
-
-			Cpu_quota const child_cpu_quota = child.cpu_quota();
-
-			destroy(_heap, &child);
-
-			/* replenish available CPU quota */
-			_avail_cpu.percent       += child_cpu_quota.percent;
-			_transferred_cpu.percent -= min(_transferred_cpu.percent,
-			                                child_cpu_quota.percent);
+			_remove_leftovers(child);
 		}
 	});
 }
 
+void Genode::Sandbox::Library::_remove_leftovers(Child &child)
+{
+	Genode::log("Destroying abandoned child ", child.name());
+	_core_allocator->free_cores_from_cell(child);
+	_children.remove(&child);
+
+	Cpu_quota const child_cpu_quota = child.cpu_quota();
+
+	destroy(_heap, &child);
+
+	/* replenish available CPU quota */
+	_avail_cpu.percent       += child_cpu_quota.percent;
+	_transferred_cpu.percent -= min(_transferred_cpu.percent,
+									child_cpu_quota.percent);
+}
+
+void Genode::Sandbox::Library::_groom()
+{
+	_children.for_each_child([&](Child &child) {
+		if (child.env_sessions_closed())
+			_remove_leftovers(child);	
+	});
+}
 
 bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const &name,
                                                      Start_model::Version const &version) const
@@ -451,6 +474,7 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 	}
 
 	try {
+		log("Creating child ", start_node.attribute_value("name", Child_policy::Name()), "in habitat with ", _prio_levels.value, " priority levels.");
 		Child &child = *new (_heap)
 			Child(_env, _heap, *_verbose,
 			      Child::Id { ++_child_cnt }, _state_reporter,
@@ -752,9 +776,9 @@ void Genode::Sandbox::generate_state_report(Xml_generator &xml) const
 	_library.generate_state_report(xml);
 }
 
-Genode::Xml_node* Genode::Sandbox::update(::Sandbox::Child &child, Genode::Xml_node *config)
+Genode::Xml_node* Genode::Sandbox::update(::Sandbox::Child &child, Genode::Xml_node *config, Genode::Mutex &_config_lock)
 {
-	return _library.update(child, config);
+	return _library.update(child, config, _config_lock);
 }
 
 Genode::Sandbox::Sandbox(Env &env, State_handler &state_handler, Pd_intrinsics &pd_intrinsics)

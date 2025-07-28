@@ -31,7 +31,7 @@ class Hoitaja::Core_allocator
     private:
         Genode::Affinity::Space &_affinity_space;
 
-        ::Sandbox::Prio_levels &_prio_levels;
+        ::Sandbox::Prio_levels _prio_levels;
 
         double _resource_coeff; // Coefficient used for calculating resource shares
 
@@ -45,7 +45,7 @@ class Hoitaja::Core_allocator
 
         Core_allocator(Genode::Affinity::Space &affinity_space, ::Sandbox::Prio_levels prio_levels) : _affinity_space(affinity_space), _prio_levels(prio_levels), _resource_coeff(0.0), _cores_for_cells(_affinity_space.total())
         {
-            Genode::log("Created core allocator for ", affinity_space.total(), " cores and ", prio_levels.value, " priorities.");
+            Genode::log("Created core allocator for ", affinity_space.total(), " cores and ", _prio_levels.value, " priorities.");
             //Nova::create_habitat(0, affinity_space.total());
         }
 
@@ -54,17 +54,20 @@ class Hoitaja::Core_allocator
         }
 
         Genode::Affinity::Location allocate_cores_for_cell(Genode::Xml_node const &start_node)
-        {
+		{
             if (::Sandbox::is_brick_from_xml(start_node)) {
                 Genode::Affinity::Location brick = ::Sandbox::affinity_location_from_xml(_affinity_space, start_node);
                 _cores_for_cells -= brick.width();
                 return brick;
             }
 
-            // Calculate affinity from global affinity space and priority
+			// Calculate affinity from global affinity space and priority
+			Genode::log("Allocating cores for cell in habitat with ", _prio_levels.value,
+			            " priorities.");
             long priority = ::Sandbox::priority_from_xml(start_node, _prio_levels);
             priority = (priority >= 0) ? 1 : priority;
             _resource_coeff += (1.0/static_cast<double>(priority)); // treat priority 0 same as 1, to avoid division by zero here
+			Genode::log("Resource coefficient: ", _resource_coeff);
 
             unsigned int cores_share = _calculate_resource_share(priority);
             
@@ -81,7 +84,8 @@ class Hoitaja::Core_allocator
 		
             /* Remove cell's coefficient from the global resource coefficient.
              * This is necessary in order to be able to redistribute the freed resources correctly. We do not trigger the redistribution itself here, because the child has not been fully destroyed yet, thus its resources might still be occupied at this point. */
-            _resource_coeff -= 1.0 / static_cast<double>(cell.resources().priority);
+            _resource_coeff -= 1.0 / static_cast<double>(cell.resources().priority == 0? 1 : cell.resources().priority);
+			Genode::log("Resource coefficient after free: ", _resource_coeff);
         }
 
         /**

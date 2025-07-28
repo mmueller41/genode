@@ -142,22 +142,7 @@ class Ealan::Hoitaja : Genode::Sandbox::State_handler, Genode::Sandbox::Local_se
 		void handle_sandbox_state() override
 		{
 			Genode::log("Sandbox state changed");
-			try
-			{
-				Reporter::Xml_generator xml(*_reporter, [&] () {
-					_sandbox.generate_state_report(xml); });
-			}
-			catch (Xml_generator::Buffer_exceeded) {
-
-				error("state report exceeds maximum size");
-
-				/* try to reflect the error condition as state report */
-				try {
-					Reporter::Xml_generator xml(*_reporter, [&] () {
-						xml.attribute("error", "report buffer exceeded"); });
-				}
-				catch (...) { }
-			}
+			_sandbox.apply_config(*_habitat_config);
 		}
 
 		void handle_child_state(::Sandbox::Child &child) override {
@@ -165,22 +150,16 @@ class Ealan::Hoitaja : Genode::Sandbox::State_handler, Genode::Sandbox::Local_se
 			do
 			{
 				try {
-					_config_lock.acquire();
-					Genode::log("Updating state of child ", child.name());
-					_habitat_config = _sandbox.update(child, _habitat_config);
-					Genode::log("Updated config length:", _habitat_config->content_size());
-					_config_lock.release();
+					_habitat_config = _sandbox.update(child, _habitat_config, _config_lock);
 				}
 				catch (Genode::Quota_guard<Genode::Cap_quota>::Limit_exceeded)
 				{
 					Genode::log("Caps exceeded while handling child state");
-					_config_lock.release();
 					_env.parent().exit(1);
 				}
 				catch (Genode::Ipc_error)
 				{
 					Genode::error("Failed to update child state for <", child.name(), ">");
-					_config_lock.release();
 					repeat = true;
 				}
 			} while (repeat);
