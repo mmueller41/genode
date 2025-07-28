@@ -413,8 +413,9 @@ void Genode::Sandbox::Library::_remove_leftovers(Child &child)
 
 	/* replenish available CPU quota */
 	_avail_cpu.percent       += child_cpu_quota.percent;
-	_transferred_cpu.percent -= min(_transferred_cpu.percent,
-									child_cpu_quota.percent);
+	_transferred_cpu.percent -= min(_transferred_cpu.percent, child_cpu_quota.percent);
+
+	maintain_cells();
 }
 
 void Genode::Sandbox::Library::_groom()
