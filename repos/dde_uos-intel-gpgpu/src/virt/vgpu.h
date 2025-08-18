@@ -33,11 +33,32 @@ namespace gpgpu_virt {
             /// priority of vgpu
             int prio;
 
+            /// assigned shared memory regions
+            int shm_ids[MAX_SHM_REGIONS];
+
+            /// local shm id counter
+            int curr_shm_id;
+
         public:
             /**
              * @brief Construct a new VGpu object
              */
-            VGpu() : ctx(nullptr), ready_list(), prio(-1) {}
+            VGpu() : ctx(nullptr), ready_list(), prio(-1), curr_shm_id(0) {}
+
+            void assignSHM(int id)
+            {
+                shm_ids[curr_shm_id++] = id;
+            }
+
+            void removeSHM(int id)
+            {
+                for(int i = 0; i < MAX_SHM_REGIONS; ++i)
+                {
+                    if (shm_ids[i] == id){
+                        shm_ids[i] = -1;
+                    }
+                }
+            }
 
             /**
              * @brief Set the Priority

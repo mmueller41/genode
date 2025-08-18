@@ -1088,6 +1088,14 @@ clCreateBuffer(cl_context   context,
                void *       host_ptr,
                cl_int *     errcode_ret) CL_API_SUFFIX__VERSION_1_0;
 
+extern CL_API_ENTRY cl_mem CL_API_CALL
+clCreateBufferSHM(cl_context   context,
+               cl_mem_flags flags,
+               size_t       size,
+               void *       host_ptr,
+               cl_int *     errcode_ret,
+                int shid) CL_API_SUFFIX__VERSION_1_0;
+
 #ifdef CL_VERSION_1_1
 
 extern CL_API_ENTRY cl_mem CL_API_CALL

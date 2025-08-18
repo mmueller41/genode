@@ -17,6 +17,9 @@
 // driver
 #include <gpgpu/gpgpu.h>
 
+// config
+#include "../../../../dde_uos-intel-gpgpu/src/config.h"
+
 class cl_genode
 {
 private:
@@ -29,6 +32,9 @@ private:
 
     // rpc
     gpgpu_virt::Connection backend_driver;
+
+    // shm mapped_bases
+    Genode::addr_t shm_mapped_base[MAX_SHM_REGIONS];
 
     // do not allow copies
     cl_genode(const cl_genode& copy) = delete;
@@ -100,6 +106,14 @@ public:
      * 
      */
     void reset() { allocator.reset(); }
+
+    /**
+     * @brief 
+     * 
+     * @param shmid 
+     * @param mbase 
+     */
+    void add_shm_mapped_base(int shmid, Genode::addr_t mbase);
 };
 
 #endif // CL_GENODE_H

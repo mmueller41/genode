@@ -357,6 +357,26 @@ clCreateBuffer(cl_context   context,
     clmem->bc.buffer = host_ptr;
     clmem->bc.buffer_size = (uint32_t)size;
     clmem->bc.non_pointer_type = false;
+    clmem->bc.shmid = -1;
+
+    *errcode_ret |= CL_SUCCESS;
+    return clmem;
+}
+
+CL_API_ENTRY cl_mem CL_API_CALL
+clCreateBufferSHM(cl_context   context,
+               cl_mem_flags flags,
+               size_t       size,
+               void *       host_ptr,
+               cl_int *     errcode_ret,
+                int shid)
+{
+    cl_mem clmem = (cl_mem)g_cl_genode->alloc(sizeof(struct _cl_mem));
+    clmem->virt_vm = host_ptr;
+    clmem->bc.buffer = host_ptr;
+    clmem->bc.buffer_size = (uint32_t)size;
+    clmem->bc.non_pointer_type = false;
+    clmem->bc.shmid = shid;
 
     *errcode_ret |= CL_SUCCESS;
     return clmem;

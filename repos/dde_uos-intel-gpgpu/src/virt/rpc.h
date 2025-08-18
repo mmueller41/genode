@@ -10,6 +10,28 @@
 namespace gpgpu_virt
 {
 
+class SHM_manager
+{
+	private:
+	Genode::Ram_dataspace_capability ram_cap[MAX_SHM_REGIONS];
+		Genode::addr_t base[MAX_SHM_REGIONS];
+		Genode::size_t sizes[MAX_SHM_REGIONS];
+		unsigned int shid;
+		SHM_manager() : ram_cap{}, base {0, }, sizes {0, }, shid(0) {};
+
+	public:
+		static SHM_manager &getInstance() {
+			static SHM_manager inst;
+			return inst;
+		}
+
+		int alloc_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap);
+		void free_shm(int id);
+		Genode::Ram_dataspace_capability getCap(int id) const { return ram_cap[id]; }
+		Genode::addr_t getBase(int id) const { return base[id]; }
+		Genode::addr_t getSize(int id) const { return sizes[id]; }
+};
+
 struct Session_component : Genode::Rpc_object<Session>
 {
 	VGpu vgpu;
@@ -25,6 +47,9 @@ struct Session_component : Genode::Rpc_object<Session>
 
 	void start_task(unsigned long kconf) override;
 
+	void register_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override;
+
+	void ask_shm(int id, Genode::size_t& size, Genode::Ram_dataspace_capability& ram_cap) override;
 };
 
 class Root_component

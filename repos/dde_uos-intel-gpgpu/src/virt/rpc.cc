@@ -31,6 +31,49 @@ void Session_component::register_vm(Genode::size_t size, Genode::Ram_dataspace_c
 	_global_sched->add_vgpu(&vgpu);
 }
 
+int SHM_manager::alloc_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
+{
+	// get shared memory id
+	const int s = __atomic_fetch_add(&shid, 1, __ATOMIC_SEQ_CST);
+
+	if(s >= MAX_SHM_REGIONS)
+		return -1;
+
+	// alloc shared memory
+	Genode::addr_t mapped_base;
+	ram_cap[s] = _global_gpgpu_genode->allocRamCap(size, mapped_base, base[s]);
+	sizes[s] = size;
+	ram_cap_vm = ram_cap[s];
+
+	return s;
+}
+
+void SHM_manager::free_shm(int id)
+{
+	_global_gpgpu_genode->freeRamCap(ram_cap[id]);
+}
+
+void Session_component::register_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
+{
+	// create shared mem
+	int shid = SHM_manager::getInstance().alloc_shm(size, ram_cap_vm);
+	vgpu.assignSHM(shid);
+}
+
+void Session_component::ask_shm(int id, Genode::size_t &size, Genode::Ram_dataspace_capability& ram_cap_vm)
+{
+	// get size
+	size = SHM_manager::getInstance().getSize(id);
+	if(size == 0) // invalid
+		return;
+
+	// get ram cap
+	ram_cap_vm = SHM_manager::getInstance().getCap(id);
+
+	// assign id to vgpu
+	vgpu.assignSHM(id);
+}
+
 void Session_component::start_task(unsigned long kconf)
 {
 	// convert offset to driver virt addr
@@ -44,7 +87,8 @@ void Session_component::start_task(unsigned long kconf)
         }
 		else // for pointer set phys addr
 		{
-			kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + base);
+			const Genode::addr_t addrBase = kc->buffConfigs[i].shmid == -1 ? base : SHM_manager::getInstance().getBase(kc->buffConfigs[i].shmid);
+			kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + addrBase);
 		}
     }
 	kc->kernelName = (char*)((Genode::addr_t)kc->kernelName + mapped_base);
@@ -63,6 +107,7 @@ void Session_component::start_task(unsigned long kconf)
 	for(int i = 0; i < kc->buffCount; i++)
 	{
 		Genode::log("\tBuffer ", i);
+		Genode::log("\t\tshmid: ", (int)kc->buffConfigs[i].shmid);
 		if(kc->buffConfigs[i].non_pointer_type)
 		{
 			Genode::log("\t\tvaddr: ", (void*)kc->buffConfigs[i].buffer);
@@ -72,7 +117,8 @@ void Session_component::start_task(unsigned long kconf)
 		}
 		else
 		{
-			Genode::log("\t\tvaddr: ", (void*)((Genode::addr_t)kc->buffConfigs[i].buffer - base + mapped_base));
+			const Genode::addr_t addrBase = kc->buffConfigs[i].shmid == -1 ? base : SHM_manager::getInstance().getBase(kc->buffConfigs[i].shmid);
+			Genode::log("\t\tvaddr: ", (void*)((Genode::addr_t)kc->buffConfigs[i].buffer - addrBase));
 			Genode::log("\t\tpaddr: ", (void*)kc->buffConfigs[i].buffer);
 			//Genode::log("\t\tgpuaddr: ", (void*)((addr_t)kc->buffConfigs[i].ga));  // to print this, temporary make the var public
 			//Genode::log("\t\tpos: ", (uint32_t)kc->buffConfigs[i].pos);  // to print this, temporary make the var public

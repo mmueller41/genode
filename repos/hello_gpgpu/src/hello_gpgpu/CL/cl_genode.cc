@@ -1,6 +1,6 @@
 #include "cl_genode.h"
 
-cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), allocator(), mapped_base(0), backend_driver(env)
+cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), allocator(), mapped_base(0), backend_driver(env), shm_mapped_base{0, }
 {
     // get shared memory with driver
     Genode::Ram_dataspace_capability ram_cap;
@@ -38,7 +38,8 @@ void cl_genode::enqueue_task(struct kernel_config* kconf)
     // convert virt vm addr to offset
     for(int i = 0; i < kconf->buffCount; i++)
     {
-        kconf->buffConfigs[i].buffer = (void*)((Genode::addr_t)kconf->buffConfigs[i].buffer - mapped_base);
+        const Genode::addr_t mbase = kconf->buffConfigs[i].shmid == -1 ? mapped_base : shm_mapped_base[kconf->buffConfigs[i].shmid];
+        kconf->buffConfigs[i].buffer = (void*)((Genode::addr_t)kconf->buffConfigs[i].buffer - mbase);
     }
     kconf->buffConfigs = (struct buffer_config*)((Genode::addr_t)kconf->buffConfigs - mapped_base);
     kconf->kernelName = (char*)((Genode::addr_t)kconf->kernelName - mapped_base);
@@ -54,4 +55,9 @@ void cl_genode::wait(struct kernel_config* kconf)
     {
         asm("nop");
     }
+}
+
+void cl_genode::add_shm_mapped_base(int shmid, Genode::addr_t mbase)
+{
+    shm_mapped_base[shmid] = mbase;
 }

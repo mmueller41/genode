@@ -23,6 +23,16 @@ struct Session_client : Genode::Rpc_client<Session>
 		call<Rpc_register_vm>(size, ram_cap);
 	}
 
+	void register_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) override
+	{
+		call<Rpc_register_shm>(size, ram_cap);
+	}
+
+	void ask_shm(int id, Genode::size_t &size, Genode::Ram_dataspace_capability& ram_cap) override
+	{
+		call<Rpc_ask_shm>(id, size, ram_cap);
+	}
+
 };
 
 }

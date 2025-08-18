@@ -1,5 +1,5 @@
 # build config
-build { core init gpgpu timer hello_gpgpu }
+build { core init gpgpu timer producer consumer1 consumer2 }
 
 # platform config
 set use_acpica_as_acpi_drv 0
@@ -14,7 +14,11 @@ proc platform_drv_policy {} {
 	append policy {
 			<policy label_prefix="gpgpu"> <pci class="ALL"/> </policy>}
 	append policy {
-			<policy label_prefix="hello_gpgpu"> <pci class="ALL"/> </policy>}
+			<policy label_prefix="producer"> <pci class="ALL"/> </policy>}
+	append policy {
+			<policy label_prefix="consumer1"> <pci class="ALL"/> </policy>}
+	append policy {
+			<policy label_prefix="consumer2"> <pci class="ALL"/> </policy>}
 
 	return $policy
 }
@@ -55,14 +59,30 @@ append config {
 append_platform_drv_config
 
 append config {
-    <start name="gpgpu">
+    <start name="gpgpu" priority="0">
 		<provides> <service name="gpgpu"/> </provides>
         <resource name="RAM" quantum="12G"/>
     </start>
-	<start name="hello_gpgpu">
-		<binary name="hello_gpgpu"/>
-		<resource name="RAM" quantum="1024M"/>
-		<config bench="2097152">
+	<start name="producer">
+		<binary name="producer"/>
+		<resource name="RAM" quantum="512M"/>
+		<config>
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="consumer (high)">
+		<binary name="consumer1"/>
+		<resource name="RAM" quantum="512M"/>
+		<config>
+			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
+			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+		</config>
+	</start>
+	<start name="consumer (low)">
+		<binary name="consumer2"/>
+		<resource name="RAM" quantum="512M"/>
+		<config >
 			<vfs> <dir name="dev"> <log/> <inline name="rtc">2022-07-20 14:30</inline> </dir> </vfs>
 			<libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
 		</config>
@@ -73,11 +93,11 @@ install_config $config
 
 # boot modules
 set boot_modules {
-	core ld.lib.so libc.lib.so vfs.lib.so libm.lib.so init gpgpu timer hello_gpgpu
+	core ld.lib.so libc.lib.so vfs.lib.so libm.lib.so init gpgpu timer producer consumer1 consumer2
 }
 append_platform_drv_boot_modules
 build_boot_image $boot_modules
 
 # qemu stuff
-append qemu_args " -nographic -m 16G"
-run_genode_until "hello gpgpu completed.*\n" 600
+append qemu_args " -nographic -m 24G"
+run_genode_until forever

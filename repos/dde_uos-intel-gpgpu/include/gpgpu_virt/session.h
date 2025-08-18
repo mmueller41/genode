@@ -14,6 +14,8 @@ struct Session : Genode::Session
 
 	virtual void register_vm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) = 0;
 	virtual void start_task(unsigned long kconf) = 0;
+	virtual void register_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap) = 0;
+	virtual void ask_shm(int id, Genode::size_t &size, Genode::Ram_dataspace_capability& ram_cap) = 0;
 
 	/*******************
 	 ** RPC interface **
@@ -21,9 +23,11 @@ struct Session : Genode::Session
 
 	GENODE_RPC(Rpc_register_vm, void, register_vm, Genode::size_t, Genode::Ram_dataspace_capability&);
 	GENODE_RPC(Rpc_start_task, void, start_task, unsigned long);
+	GENODE_RPC(Rpc_register_shm, void, register_shm, Genode::size_t, Genode::Ram_dataspace_capability&);
+	GENODE_RPC(Rpc_ask_shm, void, ask_shm, int, Genode::size_t&, Genode::Ram_dataspace_capability&);
 
 
-	GENODE_RPC_INTERFACE(Rpc_register_vm, Rpc_start_task);
+	GENODE_RPC_INTERFACE(Rpc_register_vm, Rpc_start_task, Rpc_register_shm, Rpc_ask_shm);
 };
 
 }
