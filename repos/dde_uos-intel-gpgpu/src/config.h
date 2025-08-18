@@ -3,7 +3,7 @@
 
 // #define QEMU_TEST
 
-#define VERBOSE
+// #define VERBOSE
 
 #define SCHED_CFS
 //#define SCHED_RR // default
