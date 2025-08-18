@@ -121,8 +121,6 @@ struct producer
 
         Libc::with_libc([&]
                         {
-            srand(time(NULL));
-
             int flip = 0;
 
             for (;;)
