@@ -87,7 +87,21 @@ void Session_component::start_task(unsigned long kconf)
         }
 		else // for pointer set phys addr
 		{
-			const Genode::addr_t addrBase = kc->buffConfigs[i].shmid == -1 ? base : SHM_manager::getInstance().getBase(kc->buffConfigs[i].shmid);
+			const int shmid = kc->buffConfigs[i].shmid;
+			Genode::addr_t addrBase;
+			if(shmid == -1) // no shm
+			{
+				addrBase = base;
+			}
+			else
+			{
+				if(!vgpu.hasSHM(shmid)) {
+					Genode::error("Invalid GPU SHM access: ", shmid);
+					_global_sched->trigger();
+					return;
+				}
+				addrBase = SHM_manager::getInstance().getBase(shmid);
+			}
 			kc->buffConfigs[i].buffer = (void*)((Genode::addr_t)kc->buffConfigs[i].buffer + addrBase);
 		}
     }
