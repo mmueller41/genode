@@ -45,11 +45,37 @@ namespace gpgpu_virt {
              */
             VGpu() : ctx(nullptr), ready_list(), prio(-1), curr_shm_id(0) {}
 
+            /**
+             * @brief assign shmid
+             * 
+             * @param id 
+             */
             void assignSHM(int id)
             {
                 shm_ids[curr_shm_id++] = id;
             }
 
+            /**
+             * @brief check if vgpu has shmid
+             * 
+             * @param id 
+             */
+            bool hasSHM(int id) const
+            {
+                for(int i = 0; i < MAX_SHM_REGIONS; ++i)
+                {
+                    if (shm_ids[i] == id){
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            /**
+             * @brief remove shmid
+             * 
+             * @param id 
+             */
             void removeSHM(int id)
             {
                 for(int i = 0; i < MAX_SHM_REGIONS; ++i)
