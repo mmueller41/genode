@@ -1,6 +1,6 @@
 #include "cl_genode.h"
 
-cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), allocator(), mapped_base(0), backend_driver(env), shm_mapped_base{0, }
+cl_genode::cl_genode(Genode::Env& env, unsigned long size) : env(env), allocator(), mapped_base(0), backend_driver(env), shm_allocator(), shm_mapped_base{0, }
 {
     // get shared memory with driver
     Genode::Ram_dataspace_capability ram_cap;
@@ -18,6 +18,24 @@ cl_genode::~cl_genode()
 
 }
 
+void cl_genode::get_shm(int shmid)
+{
+    // create shm for gpu
+    Genode::size_t total_size = 0;
+    Genode::Ram_dataspace_capability ram_cap;
+    while (total_size == 0)
+    {
+        backend_driver.ask_shm(shmid, total_size, ram_cap);
+    }
+
+    // attach shm to vm
+    shm_mapped_base[shmid] = env.rm().attach(ram_cap);
+
+    // use it in allocator
+    shm_allocator[shmid].add_range(shm_mapped_base[shmid], total_size);
+
+}
+
 void* cl_genode::aligned_alloc(Genode::uint32_t alignment, Genode::uint32_t size)
 {
     return allocator.alloc_aligned(alignment, size);
@@ -31,6 +49,21 @@ void* cl_genode::alloc(Genode::uint32_t size)
 void cl_genode::free(void* addr)
 {
     allocator.free(addr);
+}
+
+void* cl_genode::shm_aligned_alloc(int shmid, Genode::uint32_t alignment, Genode::uint32_t size)
+{
+    return shm_allocator[shmid].alloc_aligned(alignment, size);
+}
+
+void* cl_genode::shm_alloc(int shmid, Genode::uint32_t size)
+{
+    return shm_allocator[shmid].alloc(size);
+}
+
+void cl_genode::shm_free(int shmid, void* addr)
+{
+    shm_allocator[shmid].free(addr);
 }
 
 void cl_genode::enqueue_task(struct kernel_config* kconf)
@@ -55,9 +88,4 @@ void cl_genode::wait(struct kernel_config* kconf)
     {
         asm("nop");
     }
-}
-
-void cl_genode::add_shm_mapped_base(int shmid, Genode::addr_t mbase)
-{
-    shm_mapped_base[shmid] = mbase;
 }

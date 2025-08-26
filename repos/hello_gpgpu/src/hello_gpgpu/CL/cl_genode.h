@@ -33,7 +33,8 @@ private:
     // rpc
     gpgpu_virt::Connection backend_driver;
 
-    // shm mapped_bases
+    // shm
+    Genode::Allocator_stupid shm_allocator[MAX_SHM_REGIONS];
     Genode::addr_t shm_mapped_base[MAX_SHM_REGIONS];
 
     // do not allow copies
@@ -108,12 +109,38 @@ public:
     void reset() { allocator.reset(); }
 
     /**
-     * @brief 
+     * @brief Get the shm object
      * 
      * @param shmid 
-     * @param mbase 
      */
-    void add_shm_mapped_base(int shmid, Genode::addr_t mbase);
+    void get_shm(int shmid);
+
+    /**
+     * @brief allocate aligned memory
+     * 
+     * @param shmid the shared memory id
+     * @param alignment the alignment
+     * @param size the size in bytes
+     * @return void* the address of the allocated memory
+     */
+    void* shm_aligned_alloc(int shmid, Genode::uint32_t alignment, Genode::uint32_t size);
+
+    /**
+     * @brief 
+     * 
+     * @param shmid the shared memory id
+     * @param size 
+     * @return void* 
+     */
+    void* shm_alloc(int shmid, Genode::uint32_t size);
+
+    /**
+     * @brief free memory
+     * 
+     * @param shmid the shared memory id
+     * @param addr the address of the memory to be freed
+     */
+    void shm_free(int shmid, void* addr);
 };
 
 #endif // CL_GENODE_H

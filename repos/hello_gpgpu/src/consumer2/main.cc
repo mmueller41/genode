@@ -25,13 +25,8 @@ namespace ns_convolution_2d{int main(int argc, char *argv[]);};
 struct consumer_conv
 {
     Genode::Env &env;
-    gpgpu_virt::Connection backend_driver;
-    Genode::Allocator_stupid allocator;
-
     const unsigned long size = 0x40000000;
     cl_genode clg;
-    Genode::Ram_dataspace_capability vgpu_mem_ram_cap;
-    Genode::Ram_dataspace_capability vgpu_shm_ram_cap;
 
     volatile uint8_t *ready;
     const unsigned long img_size = 320 * 240 * sizeof(float);
@@ -42,28 +37,13 @@ struct consumer_conv
         Genode::log("===Init Consumer Conv===");
 		clInitGenode(clg);
 
-        // register vgpu (optional?)
-        const unsigned long size_vgpu_mem = 0x1000;
-        backend_driver.register_vm(size_vgpu_mem, vgpu_mem_ram_cap);
-
         // create shm for gpu
         const unsigned long id = 0;
-        Genode::size_t total_size = 0;
-        while (total_size == 0)
-        {
-            backend_driver.ask_shm(id, total_size, vgpu_shm_ram_cap);
-        }
-
-        // attach shm to vm
-        Genode::addr_t mapped_base = env.rm().attach(vgpu_shm_ram_cap);
-        clg.add_shm_mapped_base(id, mapped_base);
-
-        // use it in allocator
-        allocator.add_range(mapped_base, total_size);
+        clg.get_shm(id);
 
         // alloc whole data
-        ready = (uint8_t *)allocator.alloc(1);
-        data = (float *)allocator.alloc_aligned(0x10000, img_size);
+        ready = (uint8_t *)clg.shm_alloc(id, 1);
+        data = (float *)clg.shm_aligned_alloc(id, 0x10000, img_size);
     }
 
     void run()
@@ -86,7 +66,7 @@ struct consumer_conv
         Genode::log("Consumer Conv completed");
     }
 
-    consumer_conv(Genode::Env &e) : env(e), backend_driver(env), allocator(), clg(env, size), ready(nullptr), data(nullptr)
+    consumer_conv(Genode::Env &e) : env(e), clg(env, size), ready(nullptr), data(nullptr)
     {
     }
 };
