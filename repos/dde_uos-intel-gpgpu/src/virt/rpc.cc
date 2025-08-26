@@ -56,7 +56,7 @@ void SHM_manager::free_shm(int id)
 void Session_component::register_shm(Genode::size_t size, Genode::Ram_dataspace_capability& ram_cap_vm)
 {
 	// create shared mem
-	int shid = SHM_manager::getInstance().alloc_shm(size, ram_cap_vm);
+	const int shid = SHM_manager::getInstance().alloc_shm(size, ram_cap_vm);
 	vgpu.assignSHM(shid);
 }
 
