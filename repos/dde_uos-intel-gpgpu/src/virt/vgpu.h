@@ -34,16 +34,13 @@ namespace gpgpu_virt {
             int prio;
 
             /// assigned shared memory regions
-            int shm_ids[MAX_SHM_REGIONS];
-
-            /// local shm id counter
-            int curr_shm_id;
+            bool shm_ids[MAX_SHM_REGIONS];
 
         public:
             /**
              * @brief Construct a new VGpu object
              */
-            VGpu() : ctx(nullptr), ready_list(), prio(-1), curr_shm_id(0) {}
+            VGpu() : ctx(nullptr), ready_list(), prio(-1), shm_ids{0, } {}
 
             /**
              * @brief assign shmid
@@ -52,7 +49,7 @@ namespace gpgpu_virt {
              */
             void assignSHM(int id)
             {
-                shm_ids[curr_shm_id++] = id;
+                shm_ids[id] = true;
             }
 
             /**
@@ -62,13 +59,7 @@ namespace gpgpu_virt {
              */
             bool hasSHM(int id) const
             {
-                for(int i = 0; i < MAX_SHM_REGIONS; ++i)
-                {
-                    if (shm_ids[i] == id){
-                        return true;
-                    }
-                }
-                return false;
+                return shm_ids[id];
             }
 
             /**
@@ -78,12 +69,7 @@ namespace gpgpu_virt {
              */
             void removeSHM(int id)
             {
-                for(int i = 0; i < MAX_SHM_REGIONS; ++i)
-                {
-                    if (shm_ids[i] == id){
-                        shm_ids[i] = -1;
-                    }
-                }
+                shm_ids[id] = false;
             }
 
             /**
