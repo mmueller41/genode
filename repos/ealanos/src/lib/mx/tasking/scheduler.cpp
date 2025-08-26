@@ -89,7 +89,7 @@ void Scheduler::start_and_wait()
     Tukija::mword_t start_cpu = Tukija::Cip::cip()->get_cpu_index();
 
     Genode::Trace::Timestamp start = Genode::Trace::timestamp();
-    for (auto cpu = 2U; cpu < space.total(); ++cpu)
+    for (auto cpu = 1U; cpu < space.total(); ++cpu)
     {
         Genode::String<32> const name{"mx::worker#", cpu};
         Libc::pthread_create_from_session(&worker_threads[cpu], Worker::entry, _worker[cpu], 32 * 4096, name.string(),
@@ -119,6 +119,9 @@ void Scheduler::start_and_wait()
 	this->allocate_cores(_count_channels - Tukija::Cip::cip()->cores_current.count());
 
 	Genode::log("Allocated ", Tukija::Cip::cip()->channel_info.count, " CPU cores.");
+	Genode::log("Current cores ", Tukija::Cip::cip()->cores_current);
+	Genode::log("Allocated: ", Tukija::Cip::cip()->cores_new);
+	Genode::log("Excess queues: ", Tukija::Cip::cip()->channel_info.remainder);
 
     // ... and epoch management (if enabled).
     if constexpr (config::memory_reclamation() != config::None)
