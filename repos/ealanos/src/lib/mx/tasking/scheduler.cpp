@@ -1,5 +1,6 @@
 #include "scheduler.h"
 #include "mx/system/environment.h"
+#include "mx/util/field_alloc.h"
 #include "tukija/syscall-generic.h"
 #include <cassert>
 #include <mx/memory/global_heap.h>
@@ -25,6 +26,7 @@ Scheduler::Scheduler(const mx::util::core_set &core_set, const std::uint16_t pre
     : _core_set(core_set), _count_channels(core_set.size()),  _worker({}), _channel_numa_node_map({0U}),
       _epoch_manager(core_set.size(), resource_allocator, _is_running), _statistic(_count_channels)
 {
+	this->_vacant_channels_alloc = new (memory::GlobalHeap::allocate_cache_line_aligned(sizeof(util::Field_Allocator<config::max_cores()>))) util::Field_Allocator<config::max_cores()>(core_set.size());
     this->_worker.fill(nullptr);
     this->_channel_numa_node_map.fill(0U);
     Genode::log("Initializing scheduler");
@@ -37,20 +39,23 @@ Scheduler::Scheduler(const mx::util::core_set &core_set, const std::uint16_t pre
         auto ptr = memory::GlobalHeap::allocate(this->_channel_numa_node_map[worker_id], sizeof(Worker));
         this->_worker[worker_id] =
             new (ptr)
-                Worker(worker_id, core_id, this->_channel_numa_node_map[worker_id], this->_is_running, _vacant_channels_alloc, _remainder_channel_count,
+                Worker(worker_id, core_id, this->_channel_numa_node_map[worker_id], this->_is_running, *_vacant_channels_alloc, _remainder_channel_count,
                        prefetch_distance, this->_epoch_manager[worker_id], this->_epoch_manager.global_epoch(),
                        this->_statistic);
-        ptr = memory::GlobalHeap::allocate(this->_channel_numa_node_map[worker_id], sizeof(Channel));
-        this->_channels[worker_id] =
-            new (ptr) Channel(worker_id, this->_channel_numa_node_map[worker_id], prefetch_distance);
-        Genode::log("Channel ", worker_id, " created at ", _channels[worker_id]);
 	}
 
+	for (auto channel_id : core_set) {
+        auto ptr = memory::GlobalHeap::allocate(this->_channel_numa_node_map[channel_id], sizeof(Channel));
+        this->_channels[channel_id] =
+            new (ptr) Channel(channel_id, this->_channel_numa_node_map[channel_id], prefetch_distance);
+        Genode::log("Channel ", channel_id, " created at ", _channels[channel_id]);
+	}
+	
 	Genode::log("Using ", _count_channels, " Channels");
 	Genode::log("CPU freq: ", mx::system::Environment::get_cpu_freq(), "kHz");
 	/* We need to state the actual number of channels here. But as _count_channels only denotes the
        number of channels from the restricted core_set, defined by the application, we could end up reporting a number below the actual number of channels. This could lead to the queue stealing misbehaving, e.g. not all queues being taken by the workers. Furthermore, we must subtract the queue used by the foreman which is not stealable by definition.*/
-	Tukija::Cip::cip()->channel_info.count = worker_count - 1;
+	Tukija::Cip::cip()->channel_info.count = core_set.size() - 1;
 }
 
 Scheduler::~Scheduler() noexcept

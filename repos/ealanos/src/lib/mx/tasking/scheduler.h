@@ -83,8 +83,8 @@ public:
         //Genode::log("Allocation before resume ", allocation);
 
 		unsigned current_cores = Tukija::Cip::cip()->cores_current.count();
-        allocate_cores(_count_channels - current_cores);
-        _is_running = true;
+		allocate_cores(_count_channels - current_cores);
+		_is_running = true;
     }
 
     [[nodiscard]] inline Worker *my_self() noexcept {
@@ -281,7 +281,7 @@ private:
 
     alignas(64) std::array<Channel *, config::max_cores()> _channels{nullptr};
 
-    alignas(64) mx::util::Field_Allocator<config::max_cores()> _vacant_channels_alloc{63};
+    alignas(64) mx::util::Field_Allocator<config::max_cores()> *_vacant_channels_alloc{nullptr};
     alignas(64) std::atomic<std::int32_t> _remainder_channel_count{0};
 
     // Map of channel id to NUMA region id.
