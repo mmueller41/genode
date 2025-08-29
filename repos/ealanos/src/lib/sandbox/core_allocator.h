@@ -35,11 +35,15 @@ class Hoitaja::Core_allocator
 
         double _resource_coeff; // Coefficient used for calculating resource shares
 
-        unsigned int _cores_for_cells; // Number of cores available to cells. This is the total number of cores in the habitat minus the cores occupied by bricks.
+		unsigned int
+			_cores_for_cells; // Number of cores available to cells. This is the total number of
+		                      // cores in the habitat minus the cores occupied by bricks.
+
+		unsigned int _brick_end{0}; // CPU ID at which to start allocating cores for cells
 
     public:
         inline unsigned int _calculate_resource_share(long priority) {
-            double ref_share = static_cast<double>(_cores_for_cells) / _resource_coeff;
+            double ref_share = static_cast<double>(_cores_for_cells-_brick_end) / _resource_coeff;
             return static_cast<unsigned int>((1.0 / static_cast<double>(priority)) * ref_share);
         }
 
@@ -57,7 +61,12 @@ class Hoitaja::Core_allocator
 		{
             if (::Sandbox::is_brick_from_xml(start_node)) {
                 Genode::Affinity::Location brick = ::Sandbox::affinity_location_from_xml(_affinity_space, start_node);
-                _cores_for_cells -= brick.width();
+
+				unsigned int end_of_brick = brick.xpos() + brick.width();
+				if (end_of_brick > _brick_end) {
+					_brick_end = end_of_brick;
+				}
+				
                 return brick;
             }
 
@@ -69,8 +78,7 @@ class Hoitaja::Core_allocator
             _resource_coeff += (1.0/static_cast<double>(priority)); // treat priority 0 same as 1, to avoid division by zero here
 			Genode::log("Resource coefficient: ", _resource_coeff);
 
-            unsigned int cores_share = _calculate_resource_share(priority);
-            
+			unsigned int cores_share = _calculate_resource_share(priority);
          
             return Genode::Affinity::Location( _cores_for_cells-cores_share, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
         }
