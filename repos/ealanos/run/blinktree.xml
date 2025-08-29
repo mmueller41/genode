@@ -1,0 +1,28 @@
+<start name="bt" caps="10000">
+    <binary name="blinktree_benchmark"/>
+    <!--<affinity xpos="1" ypos="0" width="16" height="1"/>-->
+    <resource name="RAM" quantum="84G"/>
+    <!--<resource name="CPU" quantum="90"/>-->
+    <config>
+	    <vfs>
+	        <dir name="dev"> 
+		        <log/> 
+		        <inline name="rtc">2022-07-20 14:30</inline> 
+	        </dir>
+	        <dir name="workloads">
+		        <rom name="fill_randint_workloada"/>
+		        <rom name="mixed_randint_workloada"/>
+	        </dir>
+	    </vfs>
+        <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+    </config>
+    <route>
+            <service name="Timer"><child name="timer"/></service>
+            <service name="ROM" label_suffix=".lib.so"><parent/></service>
+            <service name="ROM" label_last="blinktree_benchmark"><child name="fs_rom"/></service>
+            <service name="ROM" label_suffix="workloada"><child name="fs_rom"/></service>
+            <any-service><parent/></any-service>
+    </route>
+</start> 
+<!-- vim:fenc=utf-8-->
+
