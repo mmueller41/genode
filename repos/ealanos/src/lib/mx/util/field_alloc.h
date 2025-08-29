@@ -32,6 +32,9 @@ class mx::util::Field_Allocator
             std::size_t candidate = offset;
        //      +rng.next(limit);
 
+			if (candidate >= _count)
+				return 0;
+			
             if (candidate > (offset + limit))
                 return 0;
 
@@ -52,5 +55,10 @@ class mx::util::Field_Allocator
         void release(std::size_t field) {
             _fields[field].reserved.store(false);
             free_fields.fetch_add(1);
-        }
+		}
+
+		bool has_free_fields()
+		{
+			return static_cast<bool>(free_fields.load());
+		}
 };

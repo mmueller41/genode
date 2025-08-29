@@ -74,12 +74,14 @@ void Worker::execute()
 
         self->pin(loc);
     }*/
+	_phys_core_id = Tukija::Cip::cip()->get_cpu_index();
 
     if (_id != 0) {
         sleep();
     } else if (_id == 0) /* foreman */ {
         Genode::log("Foreman starting");
-        current = _channels.pop_front();
+		current = _channels.pop_front();
+		registrate();
     }
     _is_sleeping = false;
 
@@ -87,8 +89,6 @@ void Worker::execute()
     wait_for_hooter();
     //Genode::log("Hooter sounded");
 
-	_phys_core_id = Tukija::Cip::cip()->get_cpu_index();
-    runtime::scheduler().register_worker(this);
     //Genode::log("Worker ", _id, "(", _phys_core_id, ")",
     //            " woke up. is_runnin = ", (_is_running ? "true" : "false"));
 
@@ -102,9 +102,12 @@ void Worker::execute()
     {
         handle_resume();
         //handle_channel_occupancy();
-        while (!current)
-        {
-            //Genode::log("Worker ",_id,": No queues for me.");
+		while (!current) {
+			if (steal(false)) {
+				current = _channels.pop_front();
+				break;
+			}	
+            Genode::warning("Worker ",_id,": No queues for me.");
             
             unsigned long expect = 0;
             bool shall_yield = !__atomic_compare_exchange_n(&(Tukija::Cip::cip()->worker_for_location(Genode::Thread::myself()->affinity()).yield_flag), &expect, 2, false, __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
@@ -125,7 +128,13 @@ void Worker::execute()
 
         auto channel_id = current->id();
 
-        current->fill();
+		current->fill();
+		
+		if (this->current->empty()) {
+		    steal(false);
+		    _channels.push_back(current);
+		    current = _channels.pop_front();
+		}
 
         if constexpr (config::task_statistics())
         {
@@ -207,13 +216,15 @@ void Worker::execute()
 
         }
 
-        steal(false);
+        //steal(false);
 
         handle_yield();
         handle_stop();
 
-        _channels.push_back(current);
-        current = _channels.pop_front();
+		/*
+		_channels.push_back(current);
+		current = _channels.pop_front();
+        */
     }
 }
 
