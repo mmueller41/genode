@@ -52,7 +52,7 @@ class Ealan::Memory::Core_heap
         {
             Tukija::uint8_t mem_regions = 0;
             _tip = const_cast<Tip *>(Tip::tip());
-            try {
+			try {
                 Tip::Memory_region &region = _tip->memory_for_domain(domain_id, &mem_regions);
                 Range_allocator::Range range = {.start = reinterpret_cast<addr_t>(region.start), .end = reinterpret_cast<addr_t>(region.end)};
 
@@ -92,7 +92,6 @@ class Ealan::Memory::Core_heap
         Sb *_allocate_superblock(unsigned domain_id, Genode::size_t sz_class)
         {
 			Hyperblock *hb = _allocate_hyperblock(domain_id, MAX * 2);
-			Genode::log("Need new superblock for sizeclass ", sz_class, " in domain ", domain_id);
             if (!hb) {
                 Genode::warning("Failed to allocate superblock for size class ", sz_class, " in domain ", domain_id);
                 return nullptr;
@@ -188,7 +187,7 @@ class Ealan::Memory::Core_heap
         }
 
         void free(void *ptr, Genode::size_t alignment = 0)
-        {
+		{
             if (!ptr) {
                 Genode::warning("Tried to free nullptr");
                 return;
