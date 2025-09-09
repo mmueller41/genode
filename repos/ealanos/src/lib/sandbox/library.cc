@@ -316,8 +316,8 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 
 	Genode::Xml_node* update(Child &child, Genode::Xml_node *config, Genode::Mutex &config_lock) {
 		if (child.exited()) {
-			_children.remove(&child);
-			_core_allocator->free_cores_from_cell(child);
+			//_children.remove(&child);
+			//_core_allocator->free_cores_from_cell(child);
 			/* Remove child from config */
 			try {
 				/* Find XML node for the child */
@@ -346,9 +346,14 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 				Genode::size_t tail_len = static_cast<Genode::size_t>(config_end - node_end);
 
 				/* Remove child's start node with memmove */
-				Genode::memmove(node_ptr-1, node_end, tail_len);
-				*(node_ptr + tail_len) = '\0';
+				for (; *node_ptr != '>'; node_ptr--);
+				
+				Genode::memmove(node_ptr + 1, node_end, tail_len);
 
+				/* Cut of junk after closing "config" tag */
+				for (; *(node_ptr + tail_len) != '>'; tail_len--);
+				*(node_ptr + tail_len + 1) = '\0';
+				
 				/* Reparse changed buffer */
 				Xml_node *new_config = new (_heap) Xml_node(config_ptr, config_len - len);
 				_heap.free(config, sizeof(Xml_node));
@@ -358,15 +363,13 @@ struct Genode::Sandbox::Library : ::Sandbox::State_reporter::Producer,
 			catch (Genode::Xml_node::Nonexistent_sub_node)
 			{
 				Genode::error("Could not find child's start node");
+				config_lock.release();
 				return config;
 			};
 
 			Genode::log("Removed child ", child.name());
 			_habitat->groom();
-			config_lock.acquire();
 			apply_config(*config);
-			config_lock.release();
-			maintain_cells();
 		} else {
 			_groom();
 		} 
