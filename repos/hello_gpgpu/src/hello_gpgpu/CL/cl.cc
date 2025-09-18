@@ -1,6 +1,7 @@
 #define CL_TARGET_OPENCL_VERSION 100
 #include "cl.h"
 #include <gpgpu/gpgpu.h>
+#include <util/string.h>
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 #ifdef __cplusplus
@@ -67,24 +68,21 @@ clGetPlatformInfo(cl_platform_id   platform,
     case CL_PLATFORM_NAME:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(name) && i < param_value_size; i++)
-            val[i] = name[i];
+        Genode::memcpy(val, name, Genode::min(sizeof(name), param_value_size));
         break;
     }
     
     case CL_PLATFORM_VERSION:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(ver) && i < param_value_size; i++)
-            val[i] = ver[i];
+        Genode::memcpy(val, ver, Genode::min(sizeof(ver), param_value_size));
         break;
     }
 
     case CL_PLATFORM_VENDOR:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(vendor) && i < param_value_size; i++)
-            val[i] = vendor[i];
+        Genode::memcpy(val, vendor, Genode::min(sizeof(vendor), param_value_size));
         break;
     }
 
@@ -132,8 +130,7 @@ clGetDeviceInfo(cl_device_id    device,
     case CL_DEVICE_NAME:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(name) && i < param_value_size; i++)
-            val[i] = name[i];
+        Genode::memcpy(val, name, Genode::min(sizeof(name), param_value_size));
         break;
     }
     
@@ -141,16 +138,14 @@ clGetDeviceInfo(cl_device_id    device,
     case CL_DEVICE_VERSION:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(ver) && i < param_value_size; i++)
-            val[i] = ver[i];
+        Genode::memcpy(val, ver, Genode::min(sizeof(ver), param_value_size));
         break;
     }
 
     case CL_DEVICE_VENDOR:
     {
         char* val = (char*)param_value;
-        for(size_t i = 0; i < sizeof(vendor) && i < param_value_size; i++)
-            val[i] = vendor[i];
+        Genode::memcpy(val, vendor, Genode::min(sizeof(vendor), param_value_size));
         break;
     }
 
@@ -792,23 +787,15 @@ clCreateKernel(cl_program      program,
     // we can not just set the binary, because its not in shared mem => copy it
     kc->binary = (uint8_t*)g_cl_genode->alloc(program->size);
     uint8_t* bin = (uint8_t*)program->binary;
-    for(size_t i = 0; i < program->size; i++)
-    {
-        kc->binary[i] = bin[i];
-    }
+    Genode::memcpy(kc->binary, bin, program->size);
 
     // preallocated 32 buff configs;
     kc->buffConfigs = new(g_cl_genode->getAlloc()) buffer_config[CL_MAX_KERNEL_ARGS];
 
     // get name size
-    size_t size = 0;
-    for(; kernel_name[size] != '\0'; size++);
-    size++; // add '\0'
+    size_t size = Genode::strlen(kernel_name);
     kc->kernelName = (char*)g_cl_genode->alloc(size * sizeof(char));
-    for(size_t i = 0; i < size; i++)
-    {
-        kc->kernelName[i] = kernel_name[i];
-    }
+    Genode::memcpy(kc->kernelName, kernel_name, size);
 
     *errcode_ret |= CL_SUCCESS;
     return (cl_kernel)kc;
@@ -880,10 +867,7 @@ clSetKernelArg(cl_kernel    kernel,
         bc.non_pointer_type = true;
 
         // copy value to shared mem
-        uint8_t* src = (uint8_t*)arg_value;
-        uint8_t* dst = (uint8_t*)bc.buffer;
-        for(size_t i = 0; i < arg_size; i++)
-            dst[i] = src[i];
+        Genode::memcpy(bc.buffer, arg_value, arg_size);
     }
     
     if(kc->buffCount < (arg_index + 1))
@@ -1099,12 +1083,7 @@ clEnqueueReadBuffer(cl_command_queue    command_queue,
         return CL_INVALID_VALUE;
     }
 
-    uint8_t* src = (uint8_t*)buffer->virt_vm;
-    uint8_t* dst = (uint8_t*)ptr;
-    for(size_t i = 0; i < size; i++)
-    {
-        dst[i] = src[i];
-    }
+    Genode::memcpy(ptr, buffer->virt_vm, size);
 
     return CL_SUCCESS;
 }
@@ -1149,12 +1128,7 @@ clEnqueueWriteBuffer(cl_command_queue   command_queue,
         return CL_INVALID_VALUE;
     }
 
-    uint8_t* src = (uint8_t*)ptr;
-    uint8_t* dst = (uint8_t*)buffer->virt_vm;
-    for(size_t i = 0; i < size; i++)
-    {
-        dst[i] = src[i];
-    }
+    Genode::memcpy(buffer->virt_vm, ptr, size);
 
     return CL_SUCCESS;
 }
