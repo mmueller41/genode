@@ -432,7 +432,7 @@ Core::Platform::Platform()
 	region_alloc().remove_range((addr_t)_tip, get_page_size() * 128);
 
 	/* exclude CIP */
-	region_alloc().remove_range((addr_t)Tukija::Cip::cip(), get_page_size() * 4);
+	region_alloc().remove_range((addr_t)Tukija::Cip::cip(), get_page_size() * 8);
 
 	/* sanity checks */
 	addr_t check [] = {

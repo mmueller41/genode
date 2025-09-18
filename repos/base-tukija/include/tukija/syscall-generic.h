@@ -219,7 +219,7 @@ namespace Tukija {
 			 */
 			struct Worker {
 				unsigned long yield_flag{0}; /* This flag will be set if a yield request has been filed */
-				unsigned long padding[3];
+				unsigned long padding[7];
 			};
 
 
@@ -329,7 +329,7 @@ namespace Tukija {
 			static Cip *
 			cip()
 			{
-				return reinterpret_cast<Cip *>(0x7fffbffd7000);
+				return reinterpret_cast<Cip *>(0x7fffbffd3000);
 			}
 	};
 
@@ -1087,7 +1087,7 @@ namespace Tukija {
 
 		public:
 
-			enum { DEFAULT_QUANTUM = 1000, DEFAULT_PRIORITY = 64 };
+			enum { DEFAULT_QUANTUM = 1500, DEFAULT_PRIORITY = 64 };
 
 			Qpd(mword_t quantum  = DEFAULT_QUANTUM,
 			    mword_t priority = DEFAULT_PRIORITY)

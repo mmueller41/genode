@@ -91,7 +91,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
              * Only a region map needs to be allocated here, because the kernel will already
              * allocate a frame for this cell CIP during the syscall.
              */
-            Core::platform().region_alloc().alloc_aligned(4 * Tukija::PAGE_SIZE_BYTE, Tukija::PAGE_SIZE_LOG2).with_result(
+            Core::platform().region_alloc().alloc_aligned(8 * Tukija::PAGE_SIZE_BYTE, Tukija::PAGE_SIZE_LOG2).with_result(
                 [&](void *ptr) { _cip = static_cast<Tukija::Cip*>(ptr); },
                 [&](Genode::Range_allocator::Alloc_error) { throw Genode::Out_of_ram(); });
 
