@@ -194,7 +194,7 @@ void Platform_thread::start(void *ip, void *sp)
 	                        pd_utcb, 0, _sel_exc_base,
 	                        THREAD_GLOBAL);
 	if (res != NOVA_OK) {
-		error("create_ec returned ", res);
+		error("create_ec returned ", res, " for ", _pd.name());
 		return;
 	}
 
