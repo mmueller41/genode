@@ -425,6 +425,12 @@ namespace Tukija {
 	}
 
 	ALWAYS_INLINE
+	inline uint8_t map_tip(mword_t pd)
+	{
+		return syscall_0(TUKIJA_MAP_TIP, 0, pd);
+	}
+	
+	ALWAYS_INLINE
 	inline uint8_t release(Tukija::Resource_type type, Tukija::Release_op op = Tukija::Release_op::RELEASE) 
 	{
 		Genode::Affinity::Location loc = Genode::Thread::myself()->affinity();

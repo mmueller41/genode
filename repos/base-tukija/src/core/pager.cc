@@ -158,6 +158,11 @@ void Pager_object::_page_fault_handler(Pager_object &obj)
 	/* lookup fault address and decide what to do */
 	unsigned error = (obj.pager(ipc_pager) == Pager_object::Pager_result::STOP);
 
+	if (ipc_pager.fault_addr() >= reinterpret_cast<Genode::addr_t>(Tukija::Tip::tip())) {
+		Genode::error("TIP is not mapped.");
+		Tukija::map_tip(obj.pd_sel());
+	}
+	
 	/* don't open receive window for pager threads */
 	if (utcb.crd_rcv.value())
 		nova_die();

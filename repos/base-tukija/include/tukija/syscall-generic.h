@@ -57,26 +57,27 @@ namespace Tukija {
 	 * NOVA system-call IDs
 	 */
 	enum Syscall {
-		NOVA_CALL       = 0x0,
-		NOVA_REPLY      = 0x1,
-		NOVA_CREATE_PD  = 0x2,
-		NOVA_CREATE_EC  = 0x3,
-		NOVA_CREATE_SC  = 0x4,
-		NOVA_CREATE_PT  = 0x5,
-		NOVA_CREATE_SM  = 0x6,
-		NOVA_REVOKE     = 0x7,
-		NOVA_MISC       = 0x8, /* lookup, delegate, acpi_suspend */
-		NOVA_EC_CTRL    = 0x9,
-		NOVA_SC_CTRL    = 0xa,
-		NOVA_PT_CTRL    = 0xb,
-		NOVA_SM_CTRL    = 0xc,
-		NOVA_ASSIGN_PCI = 0xd,
-		NOVA_ASSIGN_GSI = 0xe,
-		NOVA_PD_CTRL    = 0xf,
+		NOVA_CALL          = 0x0,
+		NOVA_REPLY         = 0x1,
+		NOVA_CREATE_PD     = 0x2,
+		NOVA_CREATE_EC     = 0x3,
+		NOVA_CREATE_SC     = 0x4,
+		NOVA_CREATE_PT     = 0x5,
+		NOVA_CREATE_SM     = 0x6,
+		NOVA_REVOKE        = 0x7,
+		NOVA_MISC          = 0x8, /* lookup, delegate, acpi_suspend */
+		NOVA_EC_CTRL       = 0x9,
+		NOVA_SC_CTRL       = 0xa,
+		NOVA_PT_CTRL       = 0xb,
+		NOVA_SM_CTRL       = 0xc,
+		NOVA_ASSIGN_PCI    = 0xd,
+		NOVA_ASSIGN_GSI    = 0xe,
+		NOVA_PD_CTRL       = 0xf,
 		TUKIJA_CREATE_CELL = 0x10,
-		TUKIJA_ALLOCATE	   = 0x11,
+		TUKIJA_ALLOCATE    = 0x11,
 		TUKIJA_CELL_CTRL   = 0x12,
-		TUKIJA_RELEASE	   = 0x13,
+		TUKIJA_RELEASE     = 0x13,
+		TUKIJA_MAP_TIP     = 0x14
 	};
 
 	/**
@@ -299,6 +300,25 @@ namespace Tukija {
 			{
 				Genode::Affinity::Location loc = Genode::Thread::myself()->affinity();
 				return location_to_index(loc);
+			}
+
+			Genode::Affinity::Location kernel_cpu_to_location(unsigned cpu)
+			{
+				unsigned idx = 0;
+				for (; idx < 256; idx++) {
+					if (idx_to_phys_cpu_id[idx] == cpu)
+						break;
+				}
+
+				if (idx >= habitat_affinity.total())
+					return Genode::Affinity::Location();
+
+				unsigned y = idx / habitat_affinity.width();
+				unsigned x = ((idx - y) / habitat_affinity.height() - location.xpos()) %
+				             habitat_affinity.width();
+
+				return Genode::Affinity::Location(x,y);
+
 			}
 			
 			/**
