@@ -7,6 +7,7 @@
 LIBC_PORT_DIR := $(call select_from_ports,libc)
 LIBC_DIR      := $(LIBC_PORT_DIR)/src/lib/libc
 LIBC_REP_DIR  := $(realpath $(call select_from_repositories,include/libc-genode)/../..)
+EALAN_REP_DIR := $(realpath $(call select_from_repositories,ealanos))
 
 # local libc includes
 INC_DIR += $(LIBC_DIR)/lib/libc/locale
@@ -14,6 +15,7 @@ INC_DIR += $(LIBC_DIR)/lib/libc/include
 INC_DIR += $(LIBC_DIR)/lib/libc/stdio
 INC_DIR += $(LIBC_DIR)/lib/libc/net
 INC_DIR += $(LIBC_DIR)/contrib/gdtoa
+INC_DIR += $(EALAN_REP_DIR)/include
 
 #CC_OPT += -DGENODE_RELEASE
 

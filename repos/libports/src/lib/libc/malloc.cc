@@ -13,6 +13,8 @@
  */
 
 /* Genode includes */
+#include "pd_session/pd_session.h"
+#include "region_map/region_map.h"
 #include <base/env.h>
 #include <base/log.h>
 #include <base/slab.h>
@@ -30,6 +32,7 @@ extern "C" {
 #include <internal/init.h>
 #include <internal/clone_session.h>
 #include <internal/errno.h>
+#include <ealanos/memory/hamstraaja.h>
 
 
 namespace Libc {
@@ -83,7 +86,7 @@ class Libc::Malloc
 			SLAB_START    = 5,  /* 32 bytes (log2) */
 			SLAB_STOP     = 11, /* 2048 bytes (log2) */
 			NUM_SLABS     = (SLAB_STOP - SLAB_START) + 1,
-			DEFAULT_ALIGN = 16
+			DEFAULT_ALIGN = 64
 		};
 
 		struct Metadata
@@ -232,10 +235,11 @@ class Libc::Malloc
 
 
 using namespace Libc;
+using Hamsterer = Ealan::Memory::Hamstraaja<32, 2048>;
 
+//static Malloc *mallocator;
 
-static Malloc *mallocator;
-
+static Hamsterer *mallocator;
 
 extern "C" void *malloc(size_t size)
 {
@@ -267,13 +271,21 @@ extern "C" void *realloc(void *ptr, size_t size)
 		return nullptr;
 	}
 
-	return mallocator->realloc(ptr, size);
+	void *new_addr = mallocator->alloc(size);
+
+	if (new_addr) {
+		::memcpy(new_addr, ptr, size);
+		free(ptr);
+	}
+	
+	return new_addr;
+	//return mallocator->realloc(ptr, size);
 }
 
 
 int posix_memalign(void **memptr, size_t alignment, size_t size)
 {
-	*memptr = mallocator->alloc(size, alignment);
+	*memptr = mallocator->aligned_alloc(size, alignment);
 
 	if (!*memptr)
 		return Errno(ENOMEM);
@@ -283,19 +295,19 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 
 
 /* space for singleton object w/o destructor */
-static long _malloc_obj[(sizeof(Malloc) + sizeof(long))/sizeof(long)];
+static long _malloc_obj[(sizeof(Hamsterer) + sizeof(long))/sizeof(long)];
 
 
-void Libc::init_malloc(Genode::Allocator &heap)
+void Libc::init_malloc(Genode::Pd_session &pd, Genode::Region_map &rm)
 {
-	mallocator = construct_at<Malloc>(_malloc_obj, heap);
+	mallocator = construct_at<Hamsterer>(_malloc_obj, pd, rm);
 }
 
 
 void Libc::init_malloc_cloned(Clone_connection &clone_connection)
 {
 	clone_connection.object_content(_malloc_obj);
-	mallocator = (Malloc *)_malloc_obj;
+	mallocator = (Hamsterer *)_malloc_obj;
 }
 
 

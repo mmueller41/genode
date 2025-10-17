@@ -45,6 +45,7 @@
 #include <internal/atexit.h>
 #include <internal/rtc.h>
 
+
 namespace Libc {
 	class Kernel;
 	class Main_blockade;

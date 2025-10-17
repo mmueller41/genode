@@ -15,6 +15,8 @@
 #define _LIBC__INTERNAL__INIT_H_
 
 /* Genode includes */
+#include "pd_session/pd_session.h"
+#include "region_map/region_map.h"
 #include <base/env.h>
 #include <base/heap.h>
 #include <util/xml_node.h>
@@ -98,7 +100,7 @@ namespace Libc {
 	/**
 	 * Malloc allocator
 	 */
-	void init_malloc(Genode::Allocator &);
+	void init_malloc(Genode::Pd_session &pd , Genode::Region_map &rm);
 	void init_malloc_cloned(Clone_connection &);
 	void reinit_malloc(Genode::Allocator &);
 

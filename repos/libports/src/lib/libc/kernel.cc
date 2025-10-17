@@ -500,7 +500,7 @@ Libc::Kernel::Kernel(Genode::Env &env, Genode::Allocator &heap)
 
 	} else {
 		_malloc_heap.construct(*_malloc_ram, _env.rm());
-		init_malloc(*_malloc_heap);
+		init_malloc(_env.pd(), _env.rm());
 	}
 
 	init_fork(_env, _fd_alloc, _libc_env, _heap, *_malloc_heap, _pid, *this,
