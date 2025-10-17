@@ -12,6 +12,7 @@
 #ifndef __INCLUDE__EALANOS__MEMORY__SUPERBLOCK_H_
 #define __INCLUDE__EALANOS__MEMORY__SUPERBLOCK_H_
 
+#include "base/log.h"
 #include <ealanos/util/lifo_queue.h>
 #include <base/stdint.h>
 #include <base/ram_allocator.h>
@@ -92,23 +93,28 @@ class Ealan::Memory::Superblock : public Hyperblock
 		alignas(64) Genode::addr_t _start{0}; /* Start address of the blocks */
 
     public:
-        Superblock(Genode::size_t sz) : _size_class(sz)
+        Superblock(Genode::size_t sz, bool debug=false) : _size_class(sz)
         {
             if (_size_class > SIZE) {
                 Genode::error("Size class ", _size_class, " is bigger than superblock size ", SIZE);
 			}
-            /*Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
-            Genode::log("Block metadata size is ", sizeof(Block));
-            Genode::log("Size class of superblock is ", _size_class);
-            Genode::log("Superblock ends at ", reinterpret_cast<void*>(_end));
-            Genode::log("Capacity is ", capacity());
-            Genode::log("-------------------");*/
-
 			Genode::addr_t end = reinterpret_cast<Genode::addr_t>(this) + SIZE - sizeof(Block) - _size_class;
+
+			if (debug) {
+                Genode::log("Superblock SIZE=", SIZE, " BASE=", BASE, " this at ", this);
+                Genode::log("Block metadata size is ", sizeof(Block));
+                Genode::log("Size class of superblock is ", _size_class);
+                Genode::log("Superblock ends at ", reinterpret_cast<void*>(end));
+                Genode::log("Capacity is ", capacity());
+                Genode::log("-------------------");
+            }
+
 			for (Genode::addr_t block = reinterpret_cast<Genode::addr_t>(&_start); block < end; block += sizeof(Block) + _size_class) {
 				Block *b = reinterpret_cast<Block *>(block);
 				b->_superblock = this;
 				_blocks.enqueue(b);
+				if (debug)
+					Genode::log("Enqueued block ", b);
 			}
 		}
 
@@ -123,24 +129,22 @@ class Ealan::Memory::Superblock : public Hyperblock
 			if (block)
                 return reinterpret_cast<Block*>(reinterpret_cast<Genode::addr_t>(block)+64);
 			/*if (block != nullptr) {
-				if (block->reserve(this)) {
-					__atomic_compare_exchange_n(&last_freed_block, &block, nullptr, false,
-					                            __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
-					return reinterpret_cast<void*>(reinterpret_cast<Genode::addr_t>(block)+64);
-				}
+			    if (block->reserve(this)) {
+			        __atomic_compare_exchange_n(&last_freed_block, &block, nullptr, false,
+			                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+			        return reinterpret_cast<void*>(reinterpret_cast<Genode::addr_t>(block)+64);
+			    }
 			}
 
 			Block *block = reinterpret_cast<Block *>(&_start);
-            Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE - 64);
-            while (block < end) {
-                Genode::addr_t next = reinterpret_cast<Genode::addr_t>(block) + sizeof(Block) + _size_class;
-                if (block->_superblock == nullptr) {
-					if (block->reserve(this)) {
-						return reinterpret_cast<void *>(reinterpret_cast<Genode::addr_t>(block) +
-						                                64);
-					}
-				}
-				block = reinterpret_cast<Block *>(next);
+			Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE -
+			64); while (block < end) { Genode::addr_t next = reinterpret_cast<Genode::addr_t>(block)
+			+ sizeof(Block) + _size_class; if (block->_superblock == nullptr) { if
+			(block->reserve(this)) { return reinterpret_cast<void
+			*>(reinterpret_cast<Genode::addr_t>(block) + 64);
+			        }
+			    }
+			    block = reinterpret_cast<Block *>(next);
 			}*/
             return nullptr;
         }
@@ -179,8 +183,10 @@ class Ealan::Memory::Superblock : public Hyperblock
 
             Block *b = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(ptr) - 64);
             Block *end = reinterpret_cast<Block *>(reinterpret_cast<Genode::addr_t>(this) + SIZE);
-            if (b > --end)
-                return;
+			/*if (b > --end && b < reinterpret_cast<Block *>(this)) {
+				Genode::warning("freeing Block that does not belong to this superblock");
+				return;
+            }*/
 			_blocks.enqueue(b);
 		}
 
