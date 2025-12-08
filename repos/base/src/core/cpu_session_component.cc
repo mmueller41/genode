@@ -267,7 +267,7 @@ Cpu_session_component::Cpu_session_component(Rpc_entrypoint         &session_ep,
 	_thread_alloc(_md_alloc), _priority(0),
 
 	/* map affinity to a location within the physical affinity space */
-	_location(affinity.scale_to(platform().affinity_space())),
+	_location(affinity.location()),
 
 	_trace_sources(trace_sources),
 	_trace_control_area(_ram_alloc, local_rm),
