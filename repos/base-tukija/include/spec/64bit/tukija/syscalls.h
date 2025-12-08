@@ -298,9 +298,15 @@ namespace Tukija {
 
 
 	ALWAYS_INLINE
-	inline uint8_t create_cell(mword_t pd, uint8_t prio, mword_t &cip, mword_t &dst)
+	inline uint8_t create_cell(mword_t pd, mword_t hsel, uint8_t prio, mword_t &cip, mword_t &dst)
 	{
-		return syscall_5(TUKIJA_CREATE_CELL, prio, pd, dst, cip);
+		return syscall_5(TUKIJA_CREATE_CELL, prio, pd, hsel, dst, cip);
+	}
+
+	ALWAYS_INLINE
+	inline uint8_t create_habitat(mword_t sel, mword_t dst)
+	{
+		return syscall_1(TUKIJA_CREATE_HABITAT, 0, sel, dst);
 	}
 
 	ALWAYS_INLINE

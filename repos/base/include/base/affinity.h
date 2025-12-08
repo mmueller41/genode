@@ -93,6 +93,13 @@ class Genode::Affinity
 					return Affinity::Space(node.attribute_value("width",  0U),
 					                       node.attribute_value("height", 0U));
 				}
+
+				template <typename FUNC> void for_each(const FUNC &f)
+				{
+					for (unsigned i = 0; i < total(); i++) {
+						f(location_of_index(i));
+					}	
+				}
 		};
 
 

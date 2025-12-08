@@ -57,27 +57,28 @@ namespace Tukija {
 	 * NOVA system-call IDs
 	 */
 	enum Syscall {
-		NOVA_CALL          = 0x0,
-		NOVA_REPLY         = 0x1,
-		NOVA_CREATE_PD     = 0x2,
-		NOVA_CREATE_EC     = 0x3,
-		NOVA_CREATE_SC     = 0x4,
-		NOVA_CREATE_PT     = 0x5,
-		NOVA_CREATE_SM     = 0x6,
-		NOVA_REVOKE        = 0x7,
-		NOVA_MISC          = 0x8, /* lookup, delegate, acpi_suspend */
-		NOVA_EC_CTRL       = 0x9,
-		NOVA_SC_CTRL       = 0xa,
-		NOVA_PT_CTRL       = 0xb,
-		NOVA_SM_CTRL       = 0xc,
-		NOVA_ASSIGN_PCI    = 0xd,
-		NOVA_ASSIGN_GSI    = 0xe,
-		NOVA_PD_CTRL       = 0xf,
-		TUKIJA_CREATE_CELL = 0x10,
-		TUKIJA_ALLOCATE    = 0x11,
-		TUKIJA_CELL_CTRL   = 0x12,
-		TUKIJA_RELEASE     = 0x13,
-		TUKIJA_MAP_TIP     = 0x14
+		NOVA_CALL             = 0x0,
+		NOVA_REPLY            = 0x1,
+		NOVA_CREATE_PD        = 0x2,
+		NOVA_CREATE_EC        = 0x3,
+		NOVA_CREATE_SC        = 0x4,
+		NOVA_CREATE_PT        = 0x5,
+		NOVA_CREATE_SM        = 0x6,
+		NOVA_REVOKE           = 0x7,
+		NOVA_MISC             = 0x8, /* lookup, delegate, acpi_suspend */
+		NOVA_EC_CTRL          = 0x9,
+		NOVA_SC_CTRL          = 0xa,
+		NOVA_PT_CTRL          = 0xb,
+		NOVA_SM_CTRL          = 0xc,
+		NOVA_ASSIGN_PCI       = 0xd,
+		NOVA_ASSIGN_GSI       = 0xe,
+		NOVA_PD_CTRL          = 0xf,
+		TUKIJA_CREATE_CELL    = 0x10,
+		TUKIJA_ALLOCATE       = 0x11,
+		TUKIJA_CELL_CTRL      = 0x12,
+		TUKIJA_RELEASE        = 0x13,
+		TUKIJA_MAP_TIP        = 0x14,
+		TUKIJA_CREATE_HABITAT = 0x15
 	};
 
 	/**
@@ -136,7 +137,11 @@ namespace Tukija {
 			inline mword_t bit_cpu(unsigned const cpu) const {
 				return cpu % CPUS_PER_VALUE;
 			}
-		
+
+			inline mword_t values()
+			{
+				return sizeof(raw) / sizeof(raw[0]);
+			}	
 		public:
 			inline explicit Cpuset(mword_t const v)
 			{
@@ -183,6 +188,16 @@ namespace Tukija {
 				}
 			}
 
+			unsigned first_cpu()
+			{
+				long cpu = -1;
+				for (unsigned i = 0; i < values(); i++) {
+					cpu = bit_scan_forward(raw[i]);
+					if (cpu != -1) break;
+				}
+				return static_cast<unsigned>(cpu);
+			}
+
 			unsigned count()
 			{
 				unsigned count = 0;
@@ -201,6 +216,17 @@ namespace Tukija {
 			}
 	};
 
+	/**
+	 * @brief Habitat Information page
+	 *
+	 */
+	struct Habitat_info_page
+	{
+		alignas(64) Cpuset reserved_cores{0};
+		alignas(64) Cpuset current_cores{0};
+		alignas(64) bool   resizable{false};
+	};
+	
 	/**
 	 * Cell information pages
 	 *

@@ -15,6 +15,7 @@
 #define _CORE__INCLUDE__CELL_COMPONENT_H_
 
 /* Genode includes */
+#include "tukija/stdint.h"
 #include <base/rpc_server.h>
 #include <base/session_label.h>
 #include <pd_session/client.h>
@@ -83,7 +84,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
     public:
 
-        Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio, Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep, Genode::Region_map &rm, Genode::Session_label const &label, bool is_brick) : _ep(ep),  _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap), _native_pd(_pd.native_pd()), _is_brick(is_brick) {
+        Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio, Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep, Genode::Region_map &rm, Genode::Session_label const &label, bool is_brick, Tukija::mword_t habitat_sel) : _ep(ep),  _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap), _native_pd(_pd.native_pd()), _is_brick(is_brick) {
             Tukija::mword_t cell_pd_sel = _native_pd.sel();
             Tukija::mword_t cip_phys = 0;
 
@@ -101,7 +102,7 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
              * a page frame for the CIP. The CIP will then be mapped by the kernel using the 
              * supplied virtual address from the previously allocated region map.
              */
-            if (Tukija::create_cell(cell_pd_sel, static_cast<Genode::uint8_t>(prio), cip_phys, cip_virt)) {
+            if (Tukija::create_cell(cell_pd_sel, habitat_sel, static_cast<Genode::uint8_t>(prio), cip_phys, cip_virt)) {
                 Genode::error("Failed to create cell at Tukija.");
                 throw Cell_creation_error();
             }
