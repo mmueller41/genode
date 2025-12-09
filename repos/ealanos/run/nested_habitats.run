@@ -1,0 +1,142 @@
+set build_components {
+    core init hoitaja timer lib/ld lib/libm lib/libc lib/stdcxx lib/vfs app/allocating_cell
+}
+
+build $build_components
+create_boot_directory
+
+install_config {
+<config prio_levels="32">
+
+	<parent-provides>
+		<service name="ROM"/>
+		<service name="IRQ"/>
+		<service name="IO_MEM"/>
+		<service name="IO_PORT"/>
+		<service name="PD"/>
+		<service name="RM"/>
+		<service name="CPU"/>
+		<service name="LOG"/>
+        <service name="Habitat"/>
+	</parent-provides>
+
+	<default-route>
+		<any-service> <parent/> <any-child/> </any-service>
+	</default-route>
+
+	<affinity-space width="64" height="1"/>
+	<default caps="500"/>
+
+	<start name="timer" brick="yes">
+		<resource name="RAM" quantum="16M"/>
+		<affinity xpos="0" ypos="0" width="1" height="1"/>
+		<provides> <service name="Timer"/> </provides>
+	</start>   
+
+    <start name="habitat_a" caps="1500" managing_system="yes" brick="yes">
+		<resource name="RAM" quantum="128G"/>
+		<affinity xpos="32" width="32" height="1" ypos="0"/>
+		<binary name="hoitaja"/>
+		<route>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+        <config prio_levels="32" verbose="yes">
+            <parent-provides>
+                <service name="ROM"/>
+                <service name="IRQ"/>
+                <service name="IO_MEM"/>
+                <service name="IO_PORT"/>
+                <service name="PD"/>
+                <service name="RM"/>
+                <service name="CPU"/>
+                <service name="LOG"/>
+                <service name="Timer"/>
+            </parent-provides>
+
+            <affinity-space width="32" height="1"/>
+
+            <default-route>
+                <any-service> <parent/> <any-child/> </any-service>
+            </default-route>
+
+            <default caps="500"/>
+
+            <start name="allocating_cell">
+                <binary name="allocating_cell"/>
+                <resource name="RAM" quantum="128M"/>
+                <config start_with="63" end_with="63" calls="300">
+                <vfs> <dir name="dev"> 
+                    <log/> 
+                    <inline name="rtc">2022-07-20 14:30</inline> 
+                    </dir>
+                </vfs> 
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+        </start>
+        </config>
+	</start>
+    <start name="habitat_b" caps="1500" managing_system="yes" brick="yes">
+		<resource name="RAM" quantum="128G"/>
+		<affinity xpos="0" width="32" height="1" ypos="0"/>
+		<binary name="hoitaja"/>
+		<route>
+			<service name="Timer"> <child name="timer"/> </service>
+			<any-service> <parent/> </any-service>
+		</route>
+        <config prio_levels="32" verbose="yes">
+            <parent-provides>
+                <service name="ROM"/>
+                <service name="IRQ"/>
+                <service name="IO_MEM"/>
+                <service name="IO_PORT"/>
+                <service name="PD"/>
+                <service name="RM"/>
+                <service name="CPU"/>
+                <service name="LOG"/>
+                <service name="Timer"/>
+            </parent-provides>
+
+            <affinity-space width="32" height="1"/>
+
+            <default-route>
+                <any-service> <parent/> <any-child/> </any-service>
+            </default-route>
+
+            <default caps="500"/>
+
+            <start name="allocating_cell">
+                <binary name="allocating_cell"/>
+                <resource name="RAM" quantum="128M"/>
+                <config start_with="63" end_with="63" calls="300">
+                <vfs> <dir name="dev"> 
+                    <log/> 
+                    <inline name="rtc">2022-07-20 14:30</inline> 
+                    </dir>
+                </vfs> 
+                <libc stdout="/dev/log" stderr="/dev/log" rtc="/dev/rtc"/>
+            </config>
+        </start>
+        </config>
+	</start>
+</config>
+}
+
+build_boot_image [build_artifacts]
+
+append qemu_args " -nographic "
+set succeeded 0
+set failed 0
+
+for {set i 0} { $i < 3000 } { incr i } {
+    if { ! [catch {run_genode_until ".*Changing cell timer\'s affinity to .*0,0,64.*" 60} result ] } {
+        incr succeeded
+        puts "\n $succeeded of 3000 succeeded"
+        kill_spawned $qemu_spawn_id
+    } else {
+        incr failed
+        kill_spawned $qemu_spawn_id
+    }
+}
+
+puts "\n $succeeded of $i succeeded. $failed of $i failed."
