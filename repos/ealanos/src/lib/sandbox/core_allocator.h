@@ -79,8 +79,15 @@ class Hoitaja::Core_allocator
 			Genode::log("Resource coefficient: ", _resource_coeff);
 
 			unsigned int cores_share = _calculate_resource_share(priority);
+
+			unsigned int xpos = _cores_for_cells - cores_share;
+
+			if (xpos <= 0) {
+				xpos = 1;
+				cores_share -= 1;
+			}
          
-            return Genode::Affinity::Location( _cores_for_cells-cores_share, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
+            return Genode::Affinity::Location( xpos, 0, cores_share, 1 ); /* always use the core_share last cores, for now */
         }
 
         void free_cores_from_cell(::Sandbox::Child &cell)
@@ -116,10 +123,17 @@ class Hoitaja::Core_allocator
 
             if (*xpos - static_cast<int>(cores_share) <= *lower_limit) {
                 cores_share-= *lower_limit; // Save one core for Hoitaja
-            }
+			}
 
-            Genode::Affinity::Location location(*xpos - cores_share, resources.affinity.location().ypos(), cores_share, resources.affinity.location().height());
-            
+			unsigned int new_xpos = *xpos - cores_share;
+			if (!new_xpos) {
+				new_xpos = 1;
+				cores_share -= 1;
+			}
+
+            Genode::Affinity::Location location(new_xpos, resources.affinity.location().ypos(), cores_share, resources.affinity.location().height());
+
+			Genode::log(cell.name(), ": ", location);
             /*if (resources.affinity.location() != location) { // Only update, if location has actually changed
                 cell.update_affinity(Genode::Affinity(resources.affinity.space(), location));
             }
