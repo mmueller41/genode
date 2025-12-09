@@ -15,6 +15,7 @@
 #define _CORE__INCLUDE__CELL_COMPONENT_H_
 
 /* Genode includes */
+#include "base/affinity.h"
 #include "tukija/stdint.h"
 #include <base/rpc_server.h>
 #include <base/session_label.h>
@@ -50,7 +51,8 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
         Genode::Region_map &_rm;
         Genode::Pd_session_capability _pd_cap;
         Genode::Pd_session_client _pd;
-        Genode::Tukija_native_pd_client _native_pd;
+		Genode::Tukija_native_pd_client _native_pd;
+		Genode::Affinity _habitat;
 
         Tukija::Cip *_cip{nullptr};
 
@@ -84,8 +86,14 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
 
     public:
 
-        Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio, Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep, Genode::Region_map &rm, Genode::Session_label const &label, bool is_brick, Tukija::mword_t habitat_sel) : _ep(ep),  _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap), _native_pd(_pd.native_pd()), _is_brick(is_brick) {
-            Tukija::mword_t cell_pd_sel = _native_pd.sel();
+		Cell_component(Genode::Pd_session_capability pd_cap, Genode::uint16_t prio,
+		               Genode::Affinity &affinity, Genode::Rpc_entrypoint &ep,
+		               Genode::Region_map &rm, Genode::Session_label const &label, bool is_brick,
+		               Tukija::mword_t habitat_sel, Genode::Affinity habitat_affinity)
+			: _ep(ep), _session_label(label), _rm(rm), _pd_cap(pd_cap), _pd(pd_cap),
+			  _native_pd(_pd.native_pd()), _habitat(habitat_affinity), _is_brick(is_brick)
+		{
+			Tukija::mword_t cell_pd_sel = _native_pd.sel();
             Tukija::mword_t cip_phys = 0;
 
             /* Allocate a region map for mapping the CIP of this new cell. 
@@ -128,9 +136,9 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
             _map_location_to_kernel(Genode::Affinity(affinity.space(), Genode::Affinity::Location(0,0,affinity.space().width(), affinity.space().height())));
 
             _ep.manage(this);
-        }
+		}
 
-        ~Cell_component()
+		~Cell_component()
         {
             Genode::log("Destroying Cell session");
             Core::platform().region_alloc().free(_cip);
@@ -148,10 +156,11 @@ class Ealan::Cell_component : public Genode::Rpc_object<Cell>,
         void update(Genode::Affinity &affinity) override {
             /* TODO: implement */
             Genode::log("Changing cell ", _session_label,"'s affinity to ", affinity);
-            _cip->cores_reserved.clear();
+			_cip->cores_reserved.clear();
+
             if (_cip->cores_reserved.count() != 0)
                 Genode::error("Failed clearing reserved cores");
-            _calculate_mask_for_location(&_cip->cores_reserved, affinity.location());
+            _calculate_mask_for_location(&_cip->cores_reserved, affinity.location().transpose(_habitat.location().xpos(), _habitat.location().ypos()));
             Genode::log(_session_label, "'s cores: ", _cip->cores_reserved);
             Tukija::cell_ctrl(_native_pd.sel(), Tukija::Cell_control::UPDATE_AFFINITY);
         }

@@ -1,6 +1,8 @@
 #ifndef __CORE_HABITAT_ROOT_H
 #define __CORE_HABITAT_ROOT_H
 
+#include "base/affinity.h"
+#include "platform_generic.h"
 #include <root/component.h>
 #include <base/log.h>
 
@@ -20,6 +22,8 @@ namespace Core {
 
             Habitat_session_component *_create_session(char const *args, Genode::Affinity const &affinity) override {
 
+				Genode::log("Creating new habitat ", affinity);
+				
                 size_t ram_quota =
                     Arg_string::find_arg(args, "ram_quota").ulong_value(0);
 
@@ -31,6 +35,10 @@ namespace Core {
                     throw Genode::Service_denied();
                 }
 
+				Genode::Affinity::Location session_location =
+					affinity.scale_to(Core::platform().affinity_space());
+
+				
                 return new (md_alloc()) Habitat_session_component(
                     *this->ep(),
                     session_resources_from_args(args),
@@ -38,7 +46,7 @@ namespace Core {
                     session_diag_from_args(args),
                     _ram_alloc,
                     _local_rm,
-                    affinity);
+                    Genode::Affinity(Core::platform().affinity_space(), session_location));
             }
 
             void _upgrade_session(Habitat_session_component *habitat, const char *args) override

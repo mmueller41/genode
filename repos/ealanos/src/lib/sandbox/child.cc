@@ -691,22 +691,24 @@ Genode::Affinity Sandbox::Child::filter_session_affinity(Affinity const &session
 	if (session_affinity.space().total() == 0)
 		return Affinity(child_space, child_location);
 
-	Affinity::Space    const &session_space    = session_affinity.space();
+	//Affinity::Space    const &session_space    = session_affinity.space();
 	Affinity::Location const &session_location = session_affinity.location();
 
-	/* scale resolution of resulting space */
-	Affinity::Space space(child_space.multiply(session_space));
-	Affinity::Location child_session(child_location.xpos(), child_location.ypos(),
-	                                 child_location.width() * session_location.width(),
-	                                 child_location.height() * session_location.height());
 
+	/* scale resolution of resulting space */
+	//Affinity::Space space(child_space.multiply(session_space));
+	Affinity::Location child_session(child_location.xpos(), child_location.ypos(),
+	                                 session_location.width(),
+	                                 session_location.height() );
+
+	
 	/* subordinate session affinity to child affinity subspace */
 	Affinity::Location location(child_session
-	                            .multiply_position(session_space)
-	                            .transpose(session_location.xpos() * child_location.width(),
-	                                       session_location.ypos() * child_location.height()));
+	                            //.multiply_position(session_space)
+	                            .transpose(session_location.xpos() ,
+	                                       session_location.ypos() ));
 
-	return Affinity(space, location);
+	return Affinity(child_space, location);
 }
 
 

@@ -467,7 +467,7 @@ bool Genode::Sandbox::Library::ready_to_create_child(Start_model::Name    const 
 	if (_affinity_space.constructed() && !_core_allocator.constructed()) {
 		log("Creating new core allocator for ", _affinity_space->total(), " cores.");
 		_core_allocator.construct(*_affinity_space, _prio_levels);
-		_habitat.construct(_env, Affinity(*_affinity_space, Affinity::Location(0,0)));
+		_habitat.construct(_env, Affinity(*_affinity_space, Affinity::Location(0,0, _affinity_space->width(), _affinity_space->height())));
 	}
 
 	Affinity::Location allocation = _core_allocator->allocate_cores_for_cell(start_node);
